@@ -371,6 +371,21 @@ a bird on a tree</textarea>
                 </select>
             </div>
             
+            <div class="form-group">
+                <label>Save to Directory</label>
+                <div style="display:flex;gap:8px;">
+                    <select id="model-subdir" style="flex:1;">
+                        <option value="">-- Root --</option>
+                    </select>
+                    <button onclick="createModelDir()" style="padding:12px 15px;background:#333;border:none;border-radius:8px;color:#00d4ff;cursor:pointer;white-space:nowrap;">+ New</button>
+                </div>
+                <div id="create-dir-row" style="display:none;margin-top:8px;gap:8px;align-items:center;">
+                    <input type="text" id="new-dir-name" placeholder="New directory name" style="flex:1;">
+                    <button onclick="confirmCreateDir()" style="padding:10px 15px;background:#00d4ff;border:none;border-radius:8px;color:#000;cursor:pointer;font-weight:600;">Create</button>
+                    <button onclick="cancelCreateDir()" style="padding:10px 15px;background:#333;border:none;border-radius:8px;color:#888;cursor:pointer;">Cancel</button>
+                </div>
+            </div>
+            
             <button class="btn" onclick="downloadModel()">Download Model</button>
             <div class="output" id="download-output">
                 <span class="placeholder">Download status will appear here</span>
@@ -437,6 +452,7 @@ a bird on a tree</textarea>
                     loadSettings();
                     loadTrainModels();
                     loadGenModels();
+                    loadModelDirs();
                 } else {
                     document.getElementById('login-modal').style.display = 'flex';
                     document.getElementById('main-content').style.display = 'none';
@@ -553,6 +569,7 @@ a bird on a tree</textarea>
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
             if (tab === 'generate') loadGenModels();
+            if (tab === 'loadmodel') { loadModels(); loadModelDirs(); }
         }
 
         function showSubTab(sub) {
@@ -1072,10 +1089,52 @@ a bird on a tree</textarea>
             }
         }
 
+        async function loadModelDirs() {
+            try {
+                const res = await fetch('/api/models/directories', { headers: { 'Authorization': 'Basic ' + auth } });
+                const data = await res.json();
+                const select = document.getElementById('model-subdir');
+                while (select.options.length > 1) select.remove(1);
+                (data.directories || []).forEach(function(d) {
+                    var opt = document.createElement('option');
+                    opt.value = opt.textContent = d;
+                    select.appendChild(opt);
+                });
+            } catch(e) {
+                console.error('Failed to load directories:', e);
+            }
+        }
+
+        function createModelDir() {
+            document.getElementById('create-dir-row').style.display = 'flex';
+            document.getElementById('new-dir-name').focus();
+        }
+
+        function cancelCreateDir() {
+            document.getElementById('create-dir-row').style.display = 'none';
+            document.getElementById('new-dir-name').value = '';
+        }
+
+        async function confirmCreateDir() {
+            var name = document.getElementById('new-dir-name').value.trim();
+            if (!name) return;
+            try {
+                var formData = new FormData();
+                formData.append('name', name);
+                var res = await fetch('/api/models/directories', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                cancelCreateDir();
+                loadModelDirs();
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
         async function downloadModel() {
             const output = document.getElementById('download-output');
             const url = document.getElementById('model-url').value;
             const source = document.getElementById('model-source').value;
+            const subdir = document.getElementById('model-subdir').value;
             
             if (!url) {
                 output.innerHTML = '<span class="error">Please enter a URL</span>';
@@ -1087,6 +1146,7 @@ a bird on a tree</textarea>
             const formData = new FormData();
             formData.append('url', url);
             formData.append('source', source);
+            formData.append('subdirectory', subdir);
             
             try {
                 const res = await fetch('/api/download_model', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });

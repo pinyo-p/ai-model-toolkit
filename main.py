@@ -502,13 +502,42 @@ async def delete_model(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/download_model")
-async def download_model(
-    url: str = Form(...),
-    source: str = Form("huggingface"),  # huggingface, civitai, other
+@app.get("/api/models/directories")
+async def list_model_directories(user: str = Depends(get_current_user)):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    if not os.path.exists(models_path):
+        return {"models_path": models_path, "directories": []}
+    dirs = []
+    for item in sorted(os.listdir(models_path)):
+        item_path = os.path.join(models_path, item)
+        if os.path.isdir(item_path) and not item.startswith("."):
+            dirs.append(item)
+    return {"models_path": models_path, "directories": dirs}
+
+
+@app.post("/api/models/directories")
+async def create_model_directory(
+    name: str = Form(...),
     user: str = Depends(get_current_user)
 ):
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    dest = os.path.join(models_path, name)
+    if os.path.exists(dest):
+        raise HTTPException(status_code=400, detail="Directory already exists")
+    os.makedirs(dest, exist_ok=True)
+    return {"status": "ok", "message": f"Created directory: {name}"}
+
+
+@app.post("/api/download_model")
+async def download_model(
+    url: str = Form(...),
+    source: str = Form("huggingface"),
+    subdirectory: str = Form(""),
+    user: str = Depends(get_current_user)
+):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    if subdirectory:
+        models_path = os.path.join(models_path, subdirectory)
     os.makedirs(models_path, exist_ok=True)
     
     result = {"status": "ok", "message": ""}
