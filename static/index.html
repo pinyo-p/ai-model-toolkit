@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Toolkit - SDXL</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+        #main-content { display: none; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; padding: 20px; color: #00d4ff; font-size: 2rem; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 20px; background: #1a1a1a; padding: 5px; border-radius: 10px; }
+        .tab { flex: 1; padding: 12px 20px; border: none; background: transparent; color: #888; cursor: pointer; border-radius: 8px; font-size: 14px; font-weight: 500; transition: all 0.3s; }
+        .tab.active { background: #00d4ff; color: #000; }
+        .tab:hover:not(.active) { background: #252525; color: #aaa; }
+        .panel { display: none; background: #1a1a1a; padding: 30px; border-radius: 15px; }
+        .panel.active { display: block; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
+        input, textarea, select { width: 100%; padding: 12px; background: #252525; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; }
+        input:focus, textarea:focus { outline: none; border-color: #00d4ff; }
+        textarea { min-height: 120px; resize: vertical; }
+        .row { display: flex; gap: 15px; flex-wrap: wrap; }
+        .col { flex: 1; min-width: 150px; }
+        button.btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
+        button.btn:hover { transform: scale(1.02); }
+        button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .output { margin-top: 20px; padding: 20px; background: #252525; border-radius: 10px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+        .output img { max-width: 100%; max-height: 400px; border-radius: 8px; }
+        .output .placeholder { color: #555; }
+        .loading { color: #00d4ff; }
+        .error { color: #ff4444; }
+        .sub-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .sub-tab { padding: 10px 20px; background: #252525; border: none; border-radius: 8px; color: #888; cursor: pointer; }
+        .sub-tab.active { background: #333; color: #00d4ff; }
+        .sub-panel { display: none; }
+        .sub-panel.active { display: block; }
+        .file-list { margin-top: 10px; color: #00d4ff; font-size: 14px; }
+        .gpu-info { background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; }
+        select.base-model { padding: 8px 10px; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div id="login-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#1a1a1a;padding:40px;border-radius:15px;width:350px;">
+            <h2 style="color:#00d4ff;margin-bottom:20px;text-align:center;">🔐 Login</h2>
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" id="login-username" placeholder="Username">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="login-password" placeholder="Password">
+            </div>
+            <button class="btn" onclick="login()">Login</button>
+            <p id="login-error" style="color:#ff4444;margin-top:15px;text-align:center;display:none;"></p>
+        </div>
+    </div>
+
+    <div class="container" id="main-content">
+        <h1>🚀 AI Toolkit - SDXL</h1>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('generate')">Generate</button>
+            <button class="tab" onclick="showTab('loadmodel')">Load Model</button>
+            <button class="tab" onclick="showTab('batch')">Batch</button>
+            <button class="tab" onclick="showTab('train')">Train LoRA</button>
+            <button class="tab" onclick="showTab('merge')">Merge/Extract</button>
+            <button class="tab" onclick="showTab('tools')">Tools</button>
+            <button class="tab" onclick="showTab('settings')">Settings</button>
+        </div>
+
+        <div id="generate" class="panel active">
+            <div class="form-group">
+                <label>Prompt</label>
+                <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
+            </div>
+            <div class="form-group">
+                <label>Negative Prompt</label>
+                <textarea id="gen-negative" placeholder="What to avoid..."></textarea>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <div class="form-group">
+                        <label>Steps</label>
+                        <input type="number" id="gen-steps" value="20" min="1" max="100">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>Seed</label>
+                        <input type="number" id="gen-seed" value="42">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>Width</label>
+                        <input type="number" id="gen-width" value="1024" step="8">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>Height</label>
+                        <input type="number" id="gen-height" value="1024" step="8">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>LoRA (optional)</label>
+                <input type="file" id="gen-lora" accept=".safetensors,.pt">
+            </div>
+            <button class="btn" onclick="generate()">Generate Image</button>
+            <div class="output" id="gen-output">
+                <span class="placeholder">Image will appear here</span>
+            </div>
+        </div>
+
+        <div id="batch" class="panel">
+            <div class="form-group">
+                <label>Prompts (one per line)</label>
+                <textarea id="batch-prompts" placeholder="a cat sitting on a couch&#10;a dog running in a park&#10;a bird on a tree">a cat sitting on a couch
+a dog running in a park
+a bird on a tree</textarea>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <div class="form-group">
+                        <label>Steps</label>
+                        <input type="number" id="batch-steps" value="20" min="1" max="100">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>Seed</label>
+                        <input type="number" id="batch-seed" value="42">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Negative Prompt</label>
+                <input type="text" id="batch-negative" placeholder="What to avoid...">
+            </div>
+            <div class="form-group">
+                <label>LoRA (optional)</label>
+                <input type="file" id="batch-lora" accept=".safetensors,.pt">
+            </div>
+            <button class="btn" onclick="batchGenerate()">Generate Batch (ZIP)</button>
+            <div class="output" id="batch-output">
+                <span class="placeholder">Download will start automatically</span>
+            </div>
+        </div>
+
+        <div id="train" class="panel">
+            <div class="sub-tabs">
+                <button class="sub-tab active" onclick="showSubTab('train-normal')">Train LoRA (50 images)</button>
+                <button class="sub-tab" onclick="showSubTab('train-image2lora')">Image to LoRA (1-3 images)</button>
+            </div>
+
+            <div id="train-normal" class="sub-panel active">
+                <div class="form-group">
+                    <label>Upload Images (5-50)</label>
+                    <input type="file" id="train-full-images" accept="image/*" multiple>
+                    <div class="file-list" id="train-full-file-list"></div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Concept Name</label>
+                            <input type="text" id="train-full-concept" placeholder="e.g., my_style">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Steps</label>
+                            <input type="number" id="train-full-steps" value="500" min="50">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Rank</label>
+                            <input type="number" id="train-full-rank" value="64" min="4" max="128">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Base Model</label>
+                    <select id="train-full-model" class="base-model" onchange="onModelSelect(this, 'train-full-model-custom')">
+                        <option value="">-- Select local model --</option>
+                        <option value="__custom__">Custom (type manually)...</option>
+                    </select>
+                    <input type="text" id="train-full-model-custom" placeholder="Model ID or path (e.g. stabilityai/stable-diffusion-xl-base-1.0)" style="display:none;margin-top:8px;">
+                </div>
+                <button class="btn" onclick="autoCaptionFull()" style="background:linear-gradient(135deg,#ff8c00,#cc7000);margin-bottom:20px;">🤖 Auto Caption Images</button>
+                <div class="form-group">
+                    <label>Captions (one per line, auto-filled from Auto Caption)</label>
+                    <textarea id="train-full-captions" placeholder="Captions will appear here after Auto Caption..." style="min-height:100px;font-size:12px;font-family:monospace;"></textarea>
+                </div>
+                <button class="btn" onclick="trainFull()">🚀 Train LoRA</button>
+                <div class="output" id="train-full-output">
+                    <span class="placeholder">Full LoRA training (50 images)</span>
+                </div>
+            </div>
+
+            <div id="train-image2lora" class="sub-panel">
+                <div class="form-group">
+                    <label>Upload Images (1-3)</label>
+                    <input type="file" id="train-img-images" accept="image/*" multiple>
+                    <div class="file-list" id="train-img-file-list"></div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Concept Name</label>
+                            <input type="text" id="train-img-concept" placeholder="e.g., my_style">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Steps</label>
+                            <input type="number" id="train-img-steps" value="50" min="10">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Rank</label>
+                            <input type="number" id="train-img-rank" value="16" min="4" max="128">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Base Model</label>
+                    <select id="train-img-model" class="base-model" onchange="onModelSelect(this, 'train-img-model-custom')">
+                        <option value="">-- Select local model --</option>
+                        <option value="__custom__">Custom (type manually)...</option>
+                    </select>
+                    <input type="text" id="train-img-model-custom" placeholder="Model ID or path (e.g. stabilityai/stable-diffusion-xl-base-1.0)" style="display:none;margin-top:8px;">
+                </div>
+                <button class="btn" onclick="trainImage2LoRA()">Image to LoRA</button>
+                <div class="output" id="train-img-output">
+                    <span class="placeholder">Quick LoRA (1-3 images)</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="merge" class="panel">
+            <div class="sub-tabs">
+                <button class="sub-tab active" onclick="showSubTab('merge-lora')">Merge LoRA</button>
+                <button class="sub-tab" onclick="showSubTab('extract-lora')">Extract LoRA</button>
+            </div>
+
+            <div id="merge-lora" class="sub-panel active">
+                <div class="form-group">
+                    <label>Upload LoRA Files (2+)</label>
+                    <input type="file" id="merge-files" accept=".safetensors,.pt" multiple>
+                    <div class="file-list" id="merge-file-list"></div>
+                </div>
+                <div class="form-group">
+                    <label>Weights (comma separated)</label>
+                    <input type="text" id="merge-weights" placeholder="1.0, 0.5, 0.5">
+                </div>
+                <button class="btn" onclick="mergeLora()">Merge LoRA</button>
+                <div class="output" id="merge-output">
+                    <span class="placeholder">Merged file will download automatically</span>
+                </div>
+            </div>
+
+            <div id="extract-lora" class="sub-panel">
+                <div class="form-group">
+                    <label>Upload Checkpoint (.safetensors or .ckpt)</label>
+                    <input type="file" id="extract-file" accept=".safetensors,.ckpt,.pt">
+                </div>
+                <button class="btn" onclick="extractLora()">Extract LoRA</button>
+                <div class="output" id="extract-output">
+                    <span class="placeholder">Extracted LoRA will download automatically</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="tools" class="panel">
+            <div class="gpu-info" id="gpu-info">Loading GPU info...</div>
+
+            <div class="sub-tabs">
+                <button class="sub-tab active" onclick="showSubTab('tool-caption')">Caption</button>
+                <button class="sub-tab" onclick="showSubTab('tool-upscale')">Upscale</button>
+                <button class="sub-tab" onclick="showSubTab('tool-info')">LoRA Info</button>
+            </div>
+
+            <div id="tool-caption" class="sub-panel active">
+                <div class="form-group">
+                    <label>Upload Image</label>
+                    <input type="file" id="caption-file" accept="image/*">
+                </div>
+                <button class="btn" onclick="captionImage()">Generate Caption</button>
+                <div class="output" id="caption-output">
+                    <span class="placeholder">Caption will appear here</span>
+                </div>
+            </div>
+
+            <div id="tool-upscale" class="sub-panel">
+                <div class="form-group">
+                    <label>Upload Image</label>
+                    <input type="file" id="upscale-file" accept="image/*">
+                </div>
+                <div class="form-group">
+                    <label>Scale (1-4)</label>
+                    <input type="number" id="upscale-scale" value="4" min="1" max="4">
+                </div>
+                <button class="btn" onclick="upscaleImage()">Upscale Image</button>
+                <div class="output" id="upscale-output">
+                    <span class="placeholder">Upscaled image will appear here</span>
+                </div>
+            </div>
+
+            <div id="tool-info" class="sub-panel">
+                <div class="form-group">
+                    <label>Upload LoRA File</label>
+                    <input type="file" id="info-file" accept=".safetensors">
+                </div>
+                <button class="btn" onclick="loraInfo()">Get LoRA Info</button>
+                <div class="output" id="info-output">
+                    <span class="placeholder">LoRA info will appear here</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadmodel" class="panel">
+            <h2 style="margin-bottom: 20px; color: #00d4ff;">Load Model</h2>
+            
+            <div class="form-group">
+                <label>Model URL</label>
+                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/...">
+            </div>
+            
+            <div class="form-group">
+                <label>Source</label>
+                <select id="model-source">
+                    <option value="huggingface">HuggingFace</option>
+                    <option value="civitai">CivitAI</option>
+                    <option value="other">Other (Direct URL)</option>
+                </select>
+            </div>
+            
+            <button class="btn" onclick="downloadModel()">Download Model</button>
+            <div class="output" id="download-output">
+                <span class="placeholder">Download status will appear here</span>
+            </div>
+
+            <hr style="margin:30px 0;border-color:#333;">
+
+            <h3 style="color:#00d4ff;margin-bottom:15px;display:inline-block;">Existing Models</h3>
+            <button onclick="loadModels()" style="margin-left:15px;padding:5px 10px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;">🔄 Reload</button>
+            <div id="models-list" style="background:#252525;padding:15px;border-radius:8px;max-height:300px;overflow-y:auto;">
+                <span class="placeholder">Loading models...</span>
+            </div>
+        </div>
+
+        <div id="settings" class="panel">
+            <h2 style="margin-bottom: 20px; color: #00d4ff;">Settings</h2>
+            <div class="form-group">
+                <label>HuggingFace Token (hf_token)</label>
+                <input type="password" id="settings-hf-token" placeholder="Enter HuggingFace token...">
+            </div>
+            <div class="form-group">
+                <label>CivitAI Token (civitai_token)</label>
+                <input type="password" id="settings-civitai-token" placeholder="Enter CivitAI token...">
+            </div>
+            <div class="form-group">
+                <label>Models Path</label>
+                <input type="text" id="settings-models-path" placeholder="/path/to/models">
+            </div>
+            <button class="btn" onclick="saveSettings()">Save Settings</button>
+            <div class="output" id="settings-output">
+                <span class="placeholder">Settings will appear here</span>
+            </div>
+
+            <hr style="margin:30px 0;border-color:#333;">
+
+            <h3 style="color:#ff6b6b;margin-bottom:15px;">Change Username & Password</h3>
+            <div class="form-group">
+                <label>New Username</label>
+                <input type="text" id="change-username" placeholder="New username">
+            </div>
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" id="change-password" placeholder="New password">
+            </div>
+            <button class="btn" style="background:linear-gradient(135deg,#ff6b6b,#cc5555);" onclick="changeCredentials()">Change Credentials</button>
+            <div class="output" id="change-output">
+                <span class="placeholder">Credential change result</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const auth = btoa(localStorage.getItem('username') + ':' + localStorage.getItem('password'));
+
+        async function checkLogin() {
+            try {
+                const res = await fetch('/api/login', {
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                if (res.ok) {
+                    document.getElementById('login-modal').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'block';
+                    checkGPU();
+                    loadSettings();
+                    loadTrainModels();
+                } else {
+                    document.getElementById('login-modal').style.display = 'flex';
+                    document.getElementById('main-content').style.display = 'none';
+                }
+            } catch(e) {
+                document.getElementById('login-modal').style.display = 'flex';
+                document.getElementById('main-content').style.display = 'none';
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const auth = btoa(username + ':' + password);
+            
+            try {
+                const res = await fetch('/api/login', {
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                if (res.ok) {
+                    localStorage.setItem('username', username);
+                    localStorage.setItem('password', password);
+                    window.location.reload();
+                } else {
+                    document.getElementById('login-error').textContent = 'Invalid username or password';
+                    document.getElementById('login-error').style.display = 'block';
+                }
+            } catch(e) {
+                document.getElementById('login-error').textContent = 'Login failed';
+                document.getElementById('login-error').style.display = 'block';
+            }
+        }
+
+        document.getElementById('login-password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') login();
+        });
+
+        checkLogin();
+
+        async function checkGPU() {
+            try {
+                const res = await fetch('/api/gpu');
+                const data = await res.json();
+                document.getElementById('gpu-info').textContent = 
+                    `GPU: ${data.gpu_name} | VRAM: ${data.vram_total_gb}GB | CUDA: ${data.cuda_version || 'N/A'}`;
+            } catch(e) {
+                document.getElementById('gpu-info').textContent = 'GPU info unavailable';
+            }
+        }
+        checkGPU();
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
+            document.getElementById(tab).classList.add('active');
+            if (tab === 'train') loadTrainModels();
+        }
+
+        function showSubTab(sub) {
+            const parent = document.querySelector(`#${sub}`).parentElement;
+            parent.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+            parent.querySelectorAll('.sub-panel').forEach(p => p.classList.remove('active'));
+            parent.querySelector(`.sub-tab[onclick="showSubTab('${sub}')"]`).classList.add('active');
+            document.getElementById(sub).classList.add('active');
+        }
+
+        function showOutput(id, html, isError = false) {
+            const el = document.getElementById(id);
+            el.innerHTML = html;
+            if (isError) el.style.color = '#ff4444';
+            else el.style.color = '';
+        }
+
+        async function generate() {
+            const output = document.getElementById('gen-output');
+            output.innerHTML = '<span class="loading">Generating...</span>';
+
+            const formData = new FormData();
+            formData.append('prompt', document.getElementById('gen-prompt').value);
+            formData.append('negative', document.getElementById('gen-negative').value);
+            formData.append('steps', document.getElementById('gen-steps').value);
+            formData.append('seed', document.getElementById('gen-seed').value);
+            formData.append('width', document.getElementById('gen-width').value);
+            formData.append('height', document.getElementById('gen-height').value);
+
+            const loraFile = document.getElementById('gen-lora').files[0];
+            if (loraFile) formData.append('lora_file', loraFile);
+
+            try {
+                const res = await fetch('/api/generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                output.innerHTML = `<img src="${url}" alt="Generated">`;
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function batchGenerate() {
+            const output = document.getElementById('batch-output');
+            output.innerHTML = '<span class="loading">Generating...</span>';
+
+            const formData = new FormData();
+            formData.append('prompts', document.getElementById('batch-prompts').value);
+            formData.append('negative', document.getElementById('batch-negative').value);
+            formData.append('steps', document.getElementById('batch-steps').value);
+            formData.append('seed', document.getElementById('batch-seed').value);
+
+            const loraFile = document.getElementById('batch-lora').files[0];
+            if (loraFile) formData.append('lora_file', loraFile);
+
+            try {
+                const res = await fetch('/api/batch_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'images.zip';
+                a.click();
+                output.innerHTML = '<span>Download started!</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function autoCaptionFull() {
+            const output = document.getElementById('train-full-output');
+            output.innerHTML = '<span class="loading">Auto-captioning...</span>';
+
+            const files = document.getElementById('train-full-images').files;
+            if (files.length < 1) {
+                output.innerHTML = '<span class="error">Please upload images first</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            for (const f of files) formData.append('files', f);
+
+            try {
+                const res = await fetch('/api/auto_caption', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+
+                let captionText = '';
+                data.captions.forEach((c, i) => {
+                    const label = c.source === 'metadata' ? '📋' : '🤖';
+                    captionText += `${i+1}. ${label} ${c.caption}\n`;
+                });
+
+                document.getElementById('train-full-captions').value = captionText;
+                output.innerHTML = '<span style="color:#00ff00;">Captions generated! Review and edit if needed, then Train.</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function trainFull() {
+            const output = document.getElementById('train-full-output');
+            output.innerHTML = '<span class="loading">Training...</span>';
+
+            const files = document.getElementById('train-full-images').files;
+            if (files.length < 5) {
+                output.innerHTML = '<span class="error">Please upload at least 5 images</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            for (const f of files) formData.append('files', f);
+            formData.append('concept', document.getElementById('train-full-concept').value);
+            formData.append('steps', document.getElementById('train-full-steps').value);
+            formData.append('rank', document.getElementById('train-full-rank').value);
+            formData.append('base_model', getModelValue('train-full-model', 'train-full-model-custom'));
+
+            const raw = document.getElementById('train-full-captions').value.trim();
+            if (raw) {
+                const lines = raw.split('\n').filter(l => l.trim());
+                const captions = lines.map(l => l.replace(/^\d+\.\s*[📋🤖]\s*/, '').trim());
+                formData.append('captions', JSON.stringify(captions));
+            }
+
+            try {
+                const res = await fetch('/api/train_lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = document.getElementById('train-full-concept').value + '.safetensors';
+                a.click();
+                output.innerHTML = '<span>LoRA trained and downloaded!</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function trainImage2LoRA() {
+            const output = document.getElementById('train-img-output');
+            output.innerHTML = '<span class="loading">Training...</span>';
+
+            const files = document.getElementById('train-img-images').files;
+            if (files.length < 1 || files.length > 3) {
+                output.innerHTML = '<span class="error">Please upload 1-3 images</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            for (const f of files) formData.append('files', f);
+            formData.append('concept', document.getElementById('train-img-concept').value);
+            formData.append('steps', document.getElementById('train-img-steps').value);
+            formData.append('rank', document.getElementById('train-img-rank').value);
+            formData.append('base_model', getModelValue('train-img-model', 'train-img-model-custom'));
+
+            try {
+                const res = await fetch('/api/image2lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = document.getElementById('train-img-concept').value + '.safetensors';
+                a.click();
+                output.innerHTML = '<span>LoRA trained and downloaded!</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function mergeLora() {
+            const output = document.getElementById('merge-output');
+            output.innerHTML = '<span class="loading">Merging...</span>';
+
+            const files = document.getElementById('merge-files').files;
+            const weights = document.getElementById('merge-weights').value;
+
+            if (files.length < 2) {
+                output.innerHTML = '<span class="error">Upload at least 2 files</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            for (const f of files) formData.append('files', f);
+            formData.append('weights', weights);
+
+            try {
+                const res = await fetch('/api/merge_lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'merged.safetensors';
+                a.click();
+                output.innerHTML = '<span>Merged LoRA downloaded!</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function extractLora() {
+            const output = document.getElementById('extract-output');
+            output.innerHTML = '<span class="loading">Extracting...</span>';
+
+            const file = document.getElementById('extract-file').files[0];
+            if (!file) {
+                output.innerHTML = '<span class="error">Upload a checkpoint file</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/extract_lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'extracted_lora.safetensors';
+                a.click();
+                output.innerHTML = '<span>LoRA extracted and downloaded!</span>';
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function captionImage() {
+            const output = document.getElementById('caption-output');
+            output.innerHTML = '<span class="loading">Processing...</span>';
+
+            const file = document.getElementById('caption-file').files[0];
+            if (!file) {
+                output.innerHTML = '<span class="error">Upload an image</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/caption', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                output.innerHTML = `<span>${data.caption}</span>`;
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function upscaleImage() {
+            const output = document.getElementById('upscale-output');
+            output.innerHTML = '<span class="loading">Upscaling...</span>';
+
+            const file = document.getElementById('upscale-file').files[0];
+            if (!file) {
+                output.innerHTML = '<span class="error">Upload an image</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('scale', document.getElementById('upscale-scale').value);
+
+            try {
+                const res = await fetch('/api/upscale', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                output.innerHTML = `<img src="${url}" alt="Upscaled">`;
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        async function loraInfo() {
+            const output = document.getElementById('info-output');
+            output.innerHTML = '<span class="loading">Loading...</span>';
+
+            const file = document.getElementById('info-file').files[0];
+            if (!file) {
+                output.innerHTML = '<span class="error">Upload a LoRA file</span>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/lora_info', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                output.innerHTML = `<pre style="color:#00d4ff;white-space:pre-wrap;">${JSON.stringify(data, null, 2)}</pre>`;
+            } catch(e) {
+                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            }
+        }
+
+        document.getElementById('train-full-images').addEventListener('change', function() {
+            const list = document.getElementById('train-full-file-list');
+            list.textContent = Array.from(this.files).map(f => f.name).join(', ');
+        });
+
+        document.getElementById('train-img-images').addEventListener('change', function() {
+            const list = document.getElementById('train-img-file-list');
+            list.textContent = Array.from(this.files).map(f => f.name).join(', ');
+        });
+
+        document.getElementById('merge-files').addEventListener('change', function() {
+            const list = document.getElementById('merge-file-list');
+            list.textContent = Array.from(this.files).map(f => f.name).join(', ');
+        });
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/settings', { headers: { 'Authorization': 'Basic ' + auth } });
+                const data = await res.json();
+                document.getElementById('settings-hf-token').value = data.hf_token || '';
+                document.getElementById('settings-civitai-token').value = data.civitai_token || '';
+                document.getElementById('settings-models-path').value = data.models_path || '';
+            } catch(e) {
+                console.error('Failed to load settings:', e);
+            }
+        }
+
+        function onModelSelect(select, customInputId) {
+            const customInput = document.getElementById(customInputId);
+            if (select.value === '__custom__') {
+                customInput.style.display = 'block';
+                customInput.focus();
+            } else {
+                customInput.style.display = 'none';
+            }
+        }
+
+        function getModelValue(selectId, customInputId) {
+            const select = document.getElementById(selectId);
+            if (select.value === '__custom__') {
+                return document.getElementById(customInputId).value;
+            }
+            return select.value;
+        }
+
+        async function loadTrainModels() {
+            try {
+                const res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth } });
+                const data = await res.json();
+                const modelsPath = data.models_path || '';
+                const localModels = data.models || [];
+                const selects = [
+                    document.getElementById('train-full-model'),
+                    document.getElementById('train-img-model')
+                ];
+                selects.forEach(function(select) {
+                    if (!select) return;
+                    while (select.options.length > 2) select.remove(2);
+                    localModels.forEach(function(m) {
+                        if (m.type === 'folder') {
+                            (m.files || []).forEach(function(f) {
+                                const relPath = m.name + '/' + f;
+                                const opt = document.createElement('option');
+                                opt.textContent = relPath;
+                                opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                                select.appendChild(opt);
+                            });
+                        } else {
+                            const opt = document.createElement('option');
+                            opt.textContent = m.name;
+                            opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                            select.appendChild(opt);
+                        }
+                    });
+                });
+            } catch(e) {
+                console.error('Failed to load train models:', e);
+            }
+        }
+
+        async function saveSettings() {
+            const output = document.getElementById('settings-output');
+            output.innerHTML = '<span class="loading">Saving...</span>';
+
+            const formData = new FormData();
+            formData.append('hf_token', document.getElementById('settings-hf-token').value);
+            formData.append('civitai_token', document.getElementById('settings-civitai-token').value);
+            formData.append('models_path', document.getElementById('settings-models-path').value);
+
+            try {
+                const res = await fetch('/api/settings', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+                loadTrainModels();
+                loadModels();
+            } catch(e) {
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+
+        async function changeCredentials() {
+            const output = document.getElementById('change-output');
+            const newUsername = document.getElementById('change-username').value;
+            const newPassword = document.getElementById('change-password').value;
+
+            if (!newUsername || !newPassword) {
+                output.innerHTML = '<span class="error">Please enter both username and password</span>';
+                return;
+            }
+
+            output.innerHTML = '<span class="loading">Changing...</span>';
+
+            const formData = new FormData();
+            formData.append('new_username', newUsername);
+            formData.append('new_password', newPassword);
+
+            try {
+                const res = await fetch('/api/change_password', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+                
+                localStorage.setItem('username', newUsername);
+                localStorage.setItem('password', newPassword);
+                setTimeout(() => window.location.reload(), 1500);
+            } catch(e) {
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+
+        loadSettings();
+        loadModels();
+
+        async function loadModels() {
+            try {
+                const res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth } });
+                const data = await res.json();
+                const container = document.getElementById('models-list');
+                
+                if (data.models && data.models.length > 0) {
+                    let html = '<div style="margin-bottom:10px;color:#888;">📁 ' + data.models_path + '</div>';
+                    html += '<table style="width:100%;border-collapse:collapse;">';
+                    data.models.forEach(m => {
+                        if (m.type === 'folder') {
+                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📁 <strong>' + m.name + '</strong></td><td style="padding:8px;color:#888;">' + m.count + ' files</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                            if (m.files && m.files.length > 0) {
+                                m.files.forEach(f => {
+                                    html += '<tr style="border-bottom:1px solid #222;"><td style="padding:8px;padding-left:30px;color:#aaa;">📄 ' + f + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '/' + f + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                                });
+                            }
+                        } else {
+                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📄 ' + m.name + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                        }
+                    });
+                    html += '</table>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<span class="placeholder">No models found</span>';
+                }
+            } catch(e) {
+                document.getElementById('models-list').innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+
+        async function deleteModel(path) {
+            if (!confirm('Delete ' + path + '?')) return;
+            
+            try {
+                const res = await fetch('/api/models?path=' + encodeURIComponent(path), { 
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Basic ' + auth } 
+                });
+                if (!res.ok) throw new Error(await res.text());
+                loadModels();
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function downloadModel() {
+            const output = document.getElementById('download-output');
+            const url = document.getElementById('model-url').value;
+            const source = document.getElementById('model-source').value;
+            
+            if (!url) {
+                output.innerHTML = '<span class="error">Please enter a URL</span>';
+                return;
+            }
+            
+            output.innerHTML = '<span class="loading">Downloading...</span>';
+            
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('source', source);
+            
+            try {
+                const res = await fetch('/api/download_model', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+                loadModels();
+            } catch(e) {
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+    </script>
+</body>
+</html>

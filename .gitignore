@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+server.log
+users.db
+settings.json
+*.safetensors
+*.ckpt
+*.pt
+*.pth
