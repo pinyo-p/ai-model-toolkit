@@ -2,6 +2,8 @@
 
 FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 
+> **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
+
 ## Features
 
 - **Generate** - SDXL image generation with LoRA support, custom prompt, negative prompt, steps, seed, resolution
