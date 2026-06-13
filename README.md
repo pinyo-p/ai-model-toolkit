@@ -1,45 +1,113 @@
-# AI Toolkit for Nvidia GB10 ARM64 + CUDA 12.8
+# AI Toolkit
+
+FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
+
+## Features
+
+- **Generate** - SDXL image generation with LoRA support, custom prompt, negative prompt, steps, seed, resolution
+- **Batch Generate** - Generate multiple images from prompts, download as ZIP
+- **Train LoRA** - Train LoRA from 5-50 images with auto-captioning (BLIP + metadata fallback), select base model from local models
+- **Image to LoRA** - Quick LoRA from 1-3 images
+- **Merge LoRA** - Merge multiple LoRA with weights
+- **Extract LoRA** - Extract LoRA from checkpoint
+- **Load Model** - Download models from HuggingFace, CivitAI, or direct URL; list/delete local models
+- **Caption** - Generate image captions via BLIP
+- **Upscale** - 1-4x upscale via OpenCV
+- **LoRA Info** - Inspect LoRA metadata
+- **Settings** - HuggingFace/CivitAI tokens, models path, user management
+
+## Requirements
+
+- Python 3.10+
+- CUDA recommended (CPU fallback available)
 
 ## Installation
 
+### Quick Install (Linux / macOS)
+
 ```bash
+git clone <repo-url> ai-toolkit
+cd ai-toolkit
+chmod +x install.bash
+./install.bash
+```
+
+### Manual Install
+
+```bash
+python3 -m venv venv
+source venv/bin/activate        # Linux / macOS
+# venv\Scripts\activate         # Windows
+
+pip install -r requirements.txt
+```
+
+### Windows
+
+```cmd
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
 ## Run
 
 ```bash
+# Activate venv first
+source venv/bin/activate        # Linux / macOS
+# venv\Scripts\activate         # Windows
+
 python main.py
 ```
 
-Server will start at `http://0.0.0.0:7800`
+Open `http://localhost:7800` in your browser.
+
+**Default login:** `admin` / `admin` (change in Settings)
 
 ## API Endpoints
 
-| Method | Endpoint | Function |
-|--------|----------|----------|
-| GET | /api/gpu | check_gpu |
-| POST | /api/caption | image_captioning |
-| POST | /api/train_lora | image2lora |
-| POST | /api/merge_lora | lora_merge |
-| POST | /api/generate | sdxl_generate |
-| POST | /api/batch_generate | batch_generate |
-| POST | /api/lora_info | lora_info |
-| POST | /api/extract_lora | extract_lora |
-| POST | /api/upscale | upscale |
-
-## Features
-
-- SDXL image generation with LoRA support
-- LoRA training from 1-5 images
-- LoRA merging and extraction
-- Image captioning with BLIP
-- Image upscaling with Real-ESRGAN
-- Batch generation with ZIP download
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/gpu` | GPU info (VRAM, CUDA) |
+| POST | `/api/generate` | Generate image |
+| POST | `/api/batch_generate` | Batch generate (ZIP) |
+| POST | `/api/image2lora` | LoRA from 1-3 images |
+| POST | `/api/train_lora` | LoRA from 5-50 images |
+| POST | `/api/merge_lora` | Merge LoRA files |
+| POST | `/api/lora_info` | LoRA metadata |
+| POST | `/api/extract_lora` | Extract LoRA from ckpt |
+| POST | `/api/caption` | BLIP captioning |
+| POST | `/api/auto_caption` | Auto caption with metadata fallback |
+| POST | `/api/upscale` | Image upscale |
+| GET | `/api/models` | List local models |
+| DELETE | `/api/models` | Delete model |
+| POST | `/api/download_model` | Download model from URL |
+| GET/POST | `/api/settings` | App settings |
+| POST | `/api/change_password` | Change credentials |
 
 ## Tech Stack
 
-- Python 3.12 + FastAPI + Uvicorn
-- PyTorch 2.8.0 + CUDA 12.8
-- Diffusers 0.30.3
-- Transformers 4.44.2
+- Python 3.10+, FastAPI, Uvicorn
+- PyTorch 2.9.0 + CUDA 12.8
+- Diffusers, Transformers, Accelerate
+- PEFT, Safetensors
+- OpenCV (upscale), Pillow
+
+## Project Structure
+
+```
+ai-toolkit/
+├── main.py              # FastAPI app, all endpoints
+├── core/
+│   ├── sdxl.py          # Image generation
+│   ├── lora.py          # LoRA train/merge/extract
+│   ├── caption.py       # BLIP captioning
+│   ├── image.py         # Upscale
+│   ├── gpu.py           # GPU detection
+│   └── utils.py         # Helpers
+├── static/
+│   └── index.html       # Web UI (single-page)
+├── requirements.txt
+├── Dockerfile
+└── install.bash
+```
