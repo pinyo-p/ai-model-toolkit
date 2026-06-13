@@ -243,6 +243,9 @@ async def api_generate(
     prompt: str = Form(...),
     negative: str = Form(""),
     lora_file: UploadFile = File(None),
+    model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
+    vae_path: str = Form(""),
+    text_encoder_path: str = Form(""),
     steps: int = Form(20),
     seed: int = Form(42),
     width: int = Form(1024),
@@ -262,6 +265,9 @@ async def api_generate(
             prompt=prompt,
             negative=negative,
             lora_path=lora_path,
+            model_path=model_path,
+            vae_path=vae_path or None,
+            text_encoder_path=text_encoder_path or None,
             steps=steps,
             seed=seed,
             width=width,
@@ -280,8 +286,8 @@ async def api_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def sdxl_generate(prompt, negative, lora_path, steps, seed, width, height):
-    return sdxl.sdxl_generate(prompt, negative, lora_path, steps, seed, width, height)
+def sdxl_generate(prompt, negative, lora_path, model_path, vae_path, text_encoder_path, steps, seed, width, height):
+    return sdxl.sdxl_generate(prompt, negative, lora_path, model_path, vae_path, text_encoder_path, steps, seed, width, height)
 
 
 @app.post("/api/batch_generate")
@@ -290,6 +296,9 @@ async def api_batch_generate(
     prompts: str = Form(...),
     negative: str = Form(""),
     lora_file: UploadFile = File(None),
+    model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
+    vae_path: str = Form(""),
+    text_encoder_path: str = Form(""),
     steps: int = Form(20),
     seed: int = Form(42),
 ):
@@ -305,7 +314,13 @@ async def api_batch_generate(
 
         utils.set_seed(seed)
 
-        images = sdxl.batch_generate(prompt_list, negative, lora_path, steps, seed)
+        images = sdxl.batch_generate(
+            prompt_list, negative, lora_path,
+            model_path=model_path,
+            vae_path=vae_path or None,
+            text_encoder_path=text_encoder_path or None,
+            steps=steps, seed=seed
+        )
 
         if lora_path and os.path.exists(lora_path):
             os.remove(lora_path)

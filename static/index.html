@@ -73,6 +73,36 @@
 
         <div id="generate" class="panel active">
             <div class="form-group">
+                <label>Model</label>
+                <select id="gen-model" class="base-model" onchange="onGenModelChange()">
+                    <option value="">-- Select local model --</option>
+                    <option value="__custom__">Custom (type manually)...</option>
+                </select>
+                <input type="text" id="gen-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
+            </div>
+            <div class="row">
+                <div class="col">
+                    <div class="form-group">
+                        <label>VAE (optional)</label>
+                        <select id="gen-vae" class="base-model" onchange="onModelSelect(this, 'gen-vae-custom')">
+                            <option value="">-- Default VAE --</option>
+                            <option value="__custom__">Custom...</option>
+                        </select>
+                        <input type="text" id="gen-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>Text Encoder (optional)</label>
+                        <select id="gen-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'gen-text-encoder-custom')">
+                            <option value="">-- Default --</option>
+                            <option value="__custom__">Custom...</option>
+                        </select>
+                        <input type="text" id="gen-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
                 <label>Prompt</label>
                 <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
             </div>
@@ -406,6 +436,7 @@ a bird on a tree</textarea>
                     checkGPU();
                     loadSettings();
                     loadTrainModels();
+                    loadGenModels();
                 } else {
                     document.getElementById('login-modal').style.display = 'flex';
                     document.getElementById('main-content').style.display = 'none';
@@ -457,12 +488,71 @@ a bird on a tree</textarea>
         }
         checkGPU();
 
+        function onGenModelChange() {
+            var select = document.getElementById('gen-model');
+            var customInput = document.getElementById('gen-model-custom');
+            var textEncoderRow = document.getElementById('gen-text-encoder');
+            var textEncoderCustom = document.getElementById('gen-text-encoder-custom');
+
+            if (select.value === '__custom__') {
+                customInput.style.display = 'block';
+                customInput.focus();
+            } else {
+                customInput.style.display = 'none';
+            }
+
+            var val = select.value === '__custom__' ? customInput.value : select.value;
+            var valLower = val.toLowerCase();
+            var isFlux = valLower.indexOf('flux') >= 0 || valLower.indexOf('z-image') >= 0 || valLower.indexOf('z_image') >= 0;
+
+            textEncoderRow.style.display = isFlux ? 'block' : 'none';
+            if (!isFlux) {
+                textEncoderRow.value = '';
+                textEncoderCustom.style.display = 'none';
+            }
+        }
+
+        async function loadGenModels() {
+            try {
+                var auth2 = btoa(localStorage.getItem('username') + ':' + localStorage.getItem('password'));
+                var res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth2 } });
+                var data = await res.json();
+                var modelsPath = data.models_path || '';
+                var localModels = data.models || [];
+                var selectIds = ['gen-model', 'gen-vae', 'gen-text-encoder'];
+                selectIds.forEach(function(id) {
+                    var select = document.getElementById(id);
+                    if (!select) return;
+                    while (select.options.length > 2) select.remove(2);
+                    localModels.forEach(function(m) {
+                        if (m.type === 'folder') {
+                            (m.files || []).forEach(function(f) {
+                                var relPath = m.name + '/' + f;
+                                var opt = document.createElement('option');
+                                opt.textContent = relPath;
+                                opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                                select.appendChild(opt);
+                            });
+                        } else {
+                            var opt = document.createElement('option');
+                            opt.textContent = m.name;
+                            opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                            select.appendChild(opt);
+                        }
+                    });
+                });
+            } catch(e) {
+                console.error('Failed to load gen models:', e);
+            }
+        }
+
         function showTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
+            if (tab === 'generate') loadGenModels();
         }
 
         function showSubTab(sub) {
@@ -492,6 +582,24 @@ a bird on a tree</textarea>
             formData.append('width', document.getElementById('gen-width').value);
             formData.append('height', document.getElementById('gen-height').value);
 
+            var genModelSelect = document.getElementById('gen-model');
+            var genModel = genModelSelect.value === '__custom__'
+                ? document.getElementById('gen-model-custom').value
+                : genModelSelect.value;
+            formData.append('model_path', genModel || 'stabilityai/stable-diffusion-xl-base-1.0');
+
+            var genVaeSelect = document.getElementById('gen-vae');
+            var genVae = genVaeSelect.value === '__custom__'
+                ? document.getElementById('gen-vae-custom').value
+                : genVaeSelect.value;
+            formData.append('vae_path', genVae || '');
+
+            var genTeSelect = document.getElementById('gen-text-encoder');
+            var genTe = genTeSelect.value === '__custom__'
+                ? document.getElementById('gen-text-encoder-custom').value
+                : genTeSelect.value;
+            formData.append('text_encoder_path', genTe || '');
+
             const loraFile = document.getElementById('gen-lora').files[0];
             if (loraFile) formData.append('lora_file', loraFile);
 
@@ -515,6 +623,24 @@ a bird on a tree</textarea>
             formData.append('negative', document.getElementById('batch-negative').value);
             formData.append('steps', document.getElementById('batch-steps').value);
             formData.append('seed', document.getElementById('batch-seed').value);
+
+            var batchModelSelect = document.getElementById('gen-model');
+            var batchModel = batchModelSelect.value === '__custom__'
+                ? document.getElementById('gen-model-custom').value
+                : batchModelSelect.value;
+            formData.append('model_path', batchModel || 'stabilityai/stable-diffusion-xl-base-1.0');
+
+            var batchVaeSelect = document.getElementById('gen-vae');
+            var batchVae = batchVaeSelect.value === '__custom__'
+                ? document.getElementById('gen-vae-custom').value
+                : batchVaeSelect.value;
+            formData.append('vae_path', batchVae || '');
+
+            var batchTeSelect = document.getElementById('gen-text-encoder');
+            var batchTe = batchTeSelect.value === '__custom__'
+                ? document.getElementById('gen-text-encoder-custom').value
+                : batchTeSelect.value;
+            formData.append('text_encoder_path', batchTe || '');
 
             const loraFile = document.getElementById('batch-lora').files[0];
             if (loraFile) formData.append('lora_file', loraFile);
