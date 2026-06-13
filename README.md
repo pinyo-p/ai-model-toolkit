@@ -6,32 +6,47 @@ FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 
 ## Features
 
-- **Generate** - SDXL image generation with LoRA support, custom prompt, negative prompt, steps, seed, resolution
-- **Batch Generate** - Generate multiple images from prompts, download as ZIP
-- **Train LoRA** - Train LoRA from 5-50 images with auto-captioning (BLIP + metadata fallback), select base model from local models
-- **Image to LoRA** - Quick LoRA from 1-3 images
-- **Merge LoRA** - Merge multiple LoRA with weights
-- **Extract LoRA** - Extract LoRA from checkpoint
-- **Load Model** - Download models from HuggingFace, CivitAI, or direct URL; list/delete local models
-- **Caption** - Generate image captions via BLIP
-- **Upscale** - 1-4x upscale via OpenCV
-- **LoRA Info** - Inspect LoRA metadata
-- **Settings** - HuggingFace/CivitAI tokens, models path, user management
+| Tab | Feature | Description |
+|-----|---------|-------------|
+| Generate | **SDXL Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
+| Batch | **Batch Generate** | Multiple prompts → ZIP download |
+| Train | **Train LoRA** | 5-50 images, auto-caption (BLIP + metadata), select base model from local models |
+| Train | **Image to LoRA** | Quick LoRA from 1-3 images |
+| Merge | **Merge LoRA** | Merge multiple LoRA with weights |
+| Merge | **Extract LoRA** | Extract LoRA from checkpoint |
+| Load Model | **Download** | HuggingFace, CivitAI, or direct URL |
+| Load Model | **Manage** | List/delete local models |
+| Tools | **Caption** | BLIP image captioning |
+| Tools | **Upscale** | 1-4x upscale (OpenCV) |
+| Tools | **LoRA Info** | Inspect LoRA metadata |
+| Settings | **Config** | HuggingFace/CivitAI tokens, models path |
+| Settings | **Auth** | User management, change password |
 
 ## Requirements
 
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
+- ~2GB disk for base SDXL model
 
-## Installation
+## Quick Start
 
-### Quick Install (Linux / macOS)
+### Linux / macOS
 
 ```bash
-git clone <repo-url> ai-toolkit
+git clone https://github.com/pinyo-p/ai-model-toolkit.git ai-toolkit
 cd ai-toolkit
-chmod +x install.bash
+chmod +x install.bash start.bash update.bash
 ./install.bash
+./start.bash
+```
+
+### Windows
+
+```cmd
+git clone https://github.com/pinyo-p/ai-model-toolkit.git ai-toolkit
+cd ai-toolkit
+install.bat
+start.bat
 ```
 
 ### Manual Install
@@ -39,32 +54,23 @@ chmod +x install.bash
 ```bash
 python3 -m venv venv
 source venv/bin/activate        # Linux / macOS
-# venv\Scripts\activate         # Windows
+venv\Scripts\activate           # Windows
 
 pip install -r requirements.txt
-```
-
-### Windows
-
-```cmd
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-## Run
-
-```bash
-# Activate venv first
-source venv/bin/activate        # Linux / macOS
-# venv\Scripts\activate         # Windows
-
 python main.py
 ```
 
-Open `http://localhost:7800` in your browser.
+Open **http://localhost:7800**
 
-**Default login:** `admin` / `admin` (change in Settings)
+Default login: `admin` / `admin` (change in Settings)
+
+## Scripts
+
+| Script | Linux/macOS | Windows | Description |
+|--------|-------------|---------|-------------|
+| Install | `install.bash` | `install.bat` | Create venv + install deps |
+| Start | `start.bash` | `start.bat` | Activate venv + run server |
+| Update | `update.bash` | `update.bat` | Git pull + install new deps |
 
 ## API Endpoints
 
@@ -111,5 +117,10 @@ ai-toolkit/
 │   └── index.html       # Web UI (single-page)
 ├── requirements.txt
 ├── Dockerfile
-└── install.bash
+├── install.bash         # Linux/macOS installer
+├── install.bat          # Windows installer
+├── start.bash           # Linux/macOS starter
+├── start.bat            # Windows starter
+├── update.bash          # Linux/macOS updater
+└── update.bat           # Windows updater
 ```
