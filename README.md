@@ -35,9 +35,9 @@ FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 ```bash
 git clone https://github.com/pinyo-p/ai-model-toolkit.git ai-toolkit
 cd ai-toolkit
-chmod +x install.bash start.bash update.bash
-./install.bash
-./start.bash
+chmod +x install.sh start.sh update.sh
+./install.sh
+./start.sh
 ```
 
 ### Windows
@@ -68,9 +68,9 @@ Default login: `admin` / `admin` (change in Settings)
 
 | Script | Linux/macOS | Windows | Description |
 |--------|-------------|---------|-------------|
-| Install | `install.bash` | `install.bat` | Create venv + install deps |
-| Start | `start.bash` | `start.bat` | Activate venv + run server |
-| Update | `update.bash` | `update.bat` | Git pull + install new deps |
+| Install | `install.sh` | `install.bat` | Create venv + install deps |
+| Start | `start.sh` | `start.bat` | Activate venv + run server |
+| Update | `update.sh` | `update.bat` | Git pull + install new deps |
 
 ## API Endpoints
 
@@ -117,10 +117,10 @@ ai-toolkit/
 │   └── index.html       # Web UI (single-page)
 ├── requirements.txt
 ├── Dockerfile
-├── install.bash         # Linux/macOS installer
+├── install.sh           # Linux/macOS installer
 ├── install.bat          # Windows installer
-├── start.bash           # Linux/macOS starter
+├── start.sh             # Linux/macOS starter
 ├── start.bat            # Windows starter
-├── update.bash          # Linux/macOS updater
+├── update.sh            # Linux/macOS updater
 └── update.bat           # Windows updater
 ```
