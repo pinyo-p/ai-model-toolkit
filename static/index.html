@@ -359,12 +359,12 @@ a bird on a tree</textarea>
             
             <div class="form-group">
                 <label>Model URL</label>
-                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/...">
+                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
             </div>
             
             <div class="form-group">
                 <label>Source</label>
-                <select id="model-source">
+                <select id="model-source" onchange="onSourceChange()">
                     <option value="huggingface">HuggingFace</option>
                     <option value="civitai">CivitAI</option>
                     <option value="other">Other (Direct URL)</option>
@@ -384,6 +384,11 @@ a bird on a tree</textarea>
                     <button onclick="confirmCreateDir()" style="padding:10px 15px;background:#00d4ff;border:none;border-radius:8px;color:#000;cursor:pointer;font-weight:600;">Create</button>
                     <button onclick="cancelCreateDir()" style="padding:10px 15px;background:#333;border:none;border-radius:8px;color:#888;cursor:pointer;">Cancel</button>
                 </div>
+            </div>
+            
+            <div id="headers-row" style="display:none;" class="form-group">
+                <label>Custom Headers (JSON)</label>
+                <textarea id="model-headers" placeholder='{"Authorization": "Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
             </div>
             
             <button class="btn" onclick="downloadModel()">Download Model</button>
@@ -1142,6 +1147,24 @@ a bird on a tree</textarea>
             }
         }
 
+        function detectSource() {
+            var url = document.getElementById('model-url').value;
+            var select = document.getElementById('model-source');
+            if (url.indexOf('huggingface.co') >= 0 || url.indexOf('hf.co') >= 0) {
+                select.value = 'huggingface';
+            } else if (url.indexOf('civitai.com') >= 0 || url.indexOf('civitai') >= 0) {
+                select.value = 'civitai';
+            } else if (url) {
+                select.value = 'other';
+            }
+            onSourceChange();
+        }
+
+        function onSourceChange() {
+            var source = document.getElementById('model-source').value;
+            document.getElementById('headers-row').style.display = source === 'other' ? 'block' : 'none';
+        }
+
         async function downloadModel() {
             const output = document.getElementById('download-output');
             const url = document.getElementById('model-url').value;
@@ -1159,6 +1182,10 @@ a bird on a tree</textarea>
             formData.append('url', url);
             formData.append('source', source);
             formData.append('subdirectory', subdir);
+            if (source === 'other') {
+                var headersVal = document.getElementById('model-headers').value.trim();
+                if (headersVal) formData.append('headers_json', headersVal);
+            }
             
             try {
                 const res = await fetch('/api/download_model', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });

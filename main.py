@@ -545,6 +545,7 @@ async def download_model(
     url: str = Form(...),
     source: str = Form("huggingface"),
     subdirectory: str = Form(""),
+    headers_json: str = Form(""),
     user: str = Depends(get_current_user)
 ):
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
@@ -608,11 +609,15 @@ async def download_model(
     else:  # other - direct URL
         try:
             import requests
+            extra_headers = {}
+            if headers_json:
+                import json
+                extra_headers = json.loads(headers_json)
             model_name = url.split("/")[-1] or "model"
             dest = os.path.join(models_path, model_name)
             os.makedirs(dest, exist_ok=True)
             
-            r = requests.get(url, stream=True)
+            r = requests.get(url, headers=extra_headers, stream=True)
             if r.status_code == 200:
                 filepath = os.path.join(dest, model_name)
                 with open(filepath, "wb") as f:
