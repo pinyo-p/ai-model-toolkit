@@ -1,4 +1,6 @@
 import os
+import secrets
+import datetime
 import shutil
 import tempfile
 import uuid
@@ -65,7 +67,8 @@ def load_settings():
         "hf_token": "",
         "civitai_token": "",
         "models_path": os.path.join(os.path.expanduser("~"), "models"),
-        "base_url": ""
+        "base_url": "",
+        "api_keys": []
     }
 
 def save_settings(settings):
@@ -461,6 +464,56 @@ async def update_settings(
     return {"status": "ok", "message": "Settings saved"}
 
 
+def check_api_key(key: str):
+    api_keys = settings.get("api_keys", [])
+    for k in api_keys:
+        if isinstance(k, dict) and k.get("key") == key:
+            return True
+        if isinstance(k, str) and k == key:
+            return True
+    return False
+
+
+@app.get("/api/settings/api-keys")
+async def list_api_keys(user: str = Depends(get_current_user)):
+    keys = settings.get("api_keys", [])
+    result = []
+    for k in keys:
+        if isinstance(k, dict):
+            result.append({"key": k.get("key", ""), "name": k.get("name", ""), "created": k.get("created", "")})
+        else:
+            result.append({"key": k, "name": "", "created": ""})
+    return {"api_keys": result}
+
+
+@app.post("/api/settings/api-keys")
+async def create_api_key(
+    name: str = Form(""),
+    user: str = Depends(get_current_user)
+):
+    api_keys = settings.get("api_keys", [])
+    new_key = secrets.token_urlsafe(32)
+    now = datetime.datetime.now().isoformat()
+    api_keys.append({"key": new_key, "name": name, "created": now})
+    settings["api_keys"] = api_keys
+    save_settings(settings)
+    return {"status": "ok", "key": new_key, "name": name}
+
+
+@app.delete("/api/settings/api-keys")
+async def delete_api_key(
+    key: str,
+    user: str = Depends(get_current_user)
+):
+    api_keys = settings.get("api_keys", [])
+    new_keys = [k for k in api_keys if (isinstance(k, dict) and k.get("key") != key) or (isinstance(k, str) and k != key)]
+    if len(new_keys) == len(api_keys):
+        raise HTTPException(status_code=404, detail="Key not found")
+    settings["api_keys"] = new_keys
+    save_settings(settings)
+    return {"status": "ok", "message": "Key deleted"}
+
+
 @app.get("/api/models")
 async def list_models(user: str = Depends(get_current_user)):
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
@@ -611,7 +664,9 @@ async def rename_model(
 
 
 @app.get("/api/models/download")
-async def download_model_file(path: str, user: str = Depends(get_current_user)):
+async def download_model_file(path: str, api_key: str = ""):
+    if not check_api_key(api_key):
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
     abs_models = os.path.abspath(models_path)
     abs_file = os.path.abspath(os.path.join(abs_models, path))

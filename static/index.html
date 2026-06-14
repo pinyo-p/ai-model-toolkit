@@ -443,6 +443,23 @@ a bird on a tree</textarea>
 
             <hr style="margin:30px 0;border-color:#333;">
 
+            <h3 style="color:#00d4ff;margin-bottom:15px;">🔑 API Keys</h3>
+            <p style="color:#888;font-size:13px;margin-bottom:10px;">API keys are required to download files via the secure download link.</p>
+            <div id="api-keys-list" style="margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;margin-bottom:15px;">
+                <input type="text" id="new-api-key-name" placeholder="Key name (optional)" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#e0e0e0;">
+                <button class="btn" onclick="generateApiKey()">Generate Key</button>
+            </div>
+            <div id="new-api-key-result" style="display:none;padding:10px;background:#1a2a1a;border:1px solid #2a4a2a;border-radius:5px;margin-bottom:10px;word-break:break-all;">
+                <label style="color:#4caf50;font-size:12px;">New API Key (copy now — won't be shown again):</label>
+                <div style="display:flex;gap:8px;margin-top:4px;">
+                    <input type="text" id="new-api-key-value" readonly style="flex:1;padding:8px;background:#111;border:1px solid #2a4a2a;border-radius:5px;color:#4caf50;font-family:monospace;font-size:12px;">
+                    <button onclick="copyApiKey()" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>
+                </div>
+            </div>
+
+            <hr style="margin:30px 0;border-color:#333;">
+
             <h3 style="color:#ff6b6b;margin-bottom:15px;">Change Username & Password</h3>
             <div class="form-group">
                 <label>New Username</label>
@@ -962,8 +979,86 @@ a bird on a tree</textarea>
                     bar.style.display = 'none';
                 }
                 window._baseUrl = data.base_url || '';
+                loadApiKeys();
             } catch(e) {
                 console.error('Failed to load settings:', e);
+            }
+        }
+
+        async function loadApiKeys() {
+            try {
+                const res = await fetch('/api/settings/api-keys', { headers: { 'Authorization': 'Basic ' + auth } });
+                const data = await res.json();
+                window._apiKeys = data.api_keys || [];
+                var container = document.getElementById('api-keys-list');
+                var keys = window._apiKeys;
+                if (keys.length === 0) {
+                    container.innerHTML = '<span style="color:#666;font-size:13px;">No API keys yet.</span>';
+                    return;
+                }
+                var html = '';
+                keys.forEach(function(k) {
+                    var masked = k.key.substring(0, 12) + '...';
+                    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;margin-bottom:5px;">'
+                        + '<div><span style="color:#4caf50;font-family:monospace;font-size:12px;">' + masked + '</span>'
+                        + (k.name ? '<span style="color:#888;font-size:11px;margin-left:8px;">(' + k.name + ')</span>' : '')
+                        + (k.created ? '<span style="color:#555;font-size:11px;margin-left:8px;">' + new Date(k.created).toLocaleDateString() + '</span>' : '')
+                        + '</div>'
+                        + '<div>'
+                        + '<button onclick="copyFullKey(\'' + k.key.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#00d4ff;cursor:pointer;padding:2px 5px;">📋</button>'
+                        + '<button onclick="deleteApiKey(\'' + k.key.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#ff4444;cursor:pointer;padding:2px 5px;">🗑️</button>'
+                        + '</div>'
+                        + '</div>';
+                });
+                container.innerHTML = html;
+                if (keys.length > 0 && !window._lastApiKey) {
+                    window._lastApiKey = keys[0].key;
+                }
+            } catch(e) {
+                console.error('Failed to load API keys:', e);
+            }
+        }
+
+        function copyFullKey(key) {
+            navigator.clipboard.writeText(key).then(function() {
+                showAlert('Copied', 'API key copied to clipboard');
+            });
+        }
+
+        async function generateApiKey() {
+            var name = document.getElementById('new-api-key-name').value.trim();
+            var formData = new FormData();
+            formData.append('name', name);
+            try {
+                const res = await fetch('/api/settings/api-keys', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                const data = await res.json();
+                document.getElementById('new-api-key-value').value = data.key;
+                document.getElementById('new-api-key-result').style.display = 'block';
+                document.getElementById('new-api-key-name').value = '';
+                window._lastApiKey = data.key;
+                loadApiKeys();
+            } catch(e) {
+                showAlert('Error', e.message);
+            }
+        }
+
+        function copyApiKey() {
+            var input = document.getElementById('new-api-key-value');
+            navigator.clipboard.writeText(input.value).then(function() {
+                showAlert('Copied', 'API key copied to clipboard');
+            });
+        }
+
+        async function deleteApiKey(key) {
+            var confirmed = await showConfirm('Delete this API key? This cannot be undone.');
+            if (!confirmed) return;
+            try {
+                const res = await fetch('/api/settings/api-keys?key=' + encodeURIComponent(key), { method: 'DELETE', headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                loadApiKeys();
+            } catch(e) {
+                showAlert('Error', e.message);
             }
         }
 
@@ -1377,7 +1472,9 @@ a bird on a tree</textarea>
             var sizeStr = formatSize(fileItem.size);
             var dateStr = formatDate(fileItem.modified);
             var baseUrl = window._baseUrl || window.location.origin;
-            var downloadUrl = baseUrl.replace(/\/+$/, '') + '/api/models/download?path=' + encodeURIComponent(path);
+            var apiKey = window._lastApiKey || (window._apiKeys && window._apiKeys.length > 0 ? window._apiKeys[0].key : '');
+            var apiKeyParam = apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '';
+            var downloadUrl = baseUrl.replace(/\/+$/, '') + '/api/models/download?path=' + encodeURIComponent(path) + apiKeyParam;
 
             content.innerHTML =
                 '<table style="width:100%;">'
@@ -1387,7 +1484,7 @@ a bird on a tree</textarea>
                 + '<tr><td style="color:#888;padding:4px 8px;">Type</td><td style="padding:4px 8px;">' + (fileItem.ext || '-') + '</td></tr>'
                 + '</table>'
                 + '<div style="margin-top:15px;padding-top:15px;border-top:1px solid #333;">'
-                + '<label style="color:#888;font-size:12px;">Secure Download URL (requires login):</label>'
+                + '<label style="color:#888;font-size:12px;">Secure Download URL (requires API key):</label>'
                 + '<div style="display:flex;gap:8px;margin-top:4px;">'
                 + '<input type="text" readonly value="' + downloadUrl + '" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#4caf50;font-size:12px;font-family:monospace;">'
                 + '<button onclick="copyDownloadUrl(\'' + downloadUrl.replace(/'/g, "\\'") + '\')" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>'
