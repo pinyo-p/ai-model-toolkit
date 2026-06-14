@@ -14,12 +14,13 @@ FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 | Train | **Image to LoRA** | Quick LoRA from 1-3 images |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
-| Load Model | **Download** | HuggingFace, CivitAI, or direct URL |
-| Load Model | **Manage** | List/delete local models |
+| Load Model | **File Manager** | Browse directories, upload (drag & drop), rename, create/delete dirs and files |
+| Load Model | **File Details** | View file info (size, date, type) + secure download URL with auth |
+| Load Model | **Download** | HuggingFace, CivitAI, or direct URL with optional save-as name + auto rename on conflict (-N suffix) |
 | Tools | **Caption** | BLIP image captioning |
 | Tools | **Upscale** | 1-4x upscale (OpenCV) |
 | Tools | **LoRA Info** | Inspect LoRA metadata |
-| Settings | **Config** | HuggingFace/CivitAI tokens, models path |
+| Settings | **Config** | HuggingFace/CivitAI tokens, models path, base URL |
 | Settings | **Auth** | User management, change password |
 
 ## Requirements
@@ -89,8 +90,13 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/upscale` | Image upscale |
 | GET | `/api/models` | List local models |
 | DELETE | `/api/models` | Delete model |
-| POST | `/api/download_model` | Download model from URL |
-| GET/POST | `/api/settings` | App settings |
+| GET | `/api/models/browse` | Browse directory (name, size, type, modified) |
+| POST | `/api/models/upload` | Upload files (drag & drop, multi-file) |
+| POST | `/api/models/rename` | Rename file/directory |
+| POST | `/api/models/directories` | List / create directories |
+| GET | `/api/models/download` | Download file with auth + path traversal protection |
+| POST | `/api/download_model` | Download model from URL (HuggingFace/CivitAI/Other) |
+| GET/POST | `/api/settings` | App settings (including base URL) |
 | POST | `/api/change_password` | Change credentials |
 
 ## Tech Stack
@@ -105,7 +111,7 @@ Default login: `admin` / `admin` (change in Settings)
 
 ```
 ai-toolkit/
-├── main.py              # FastAPI app, all endpoints
+├── main.py              # FastAPI app, all endpoints (browse/upload/rename/download)
 ├── core/
 │   ├── sdxl.py          # Image generation
 │   ├── lora.py          # LoRA train/merge/extract
@@ -114,13 +120,10 @@ ai-toolkit/
 │   ├── gpu.py           # GPU detection
 │   └── utils.py         # Helpers
 ├── static/
-│   └── index.html       # Web UI (single-page)
+│   └── index.html       # Web UI (single-page, 7 tabs + modals)
 ├── requirements.txt
 ├── Dockerfile
-├── install.sh           # Linux/macOS installer
-├── install.bat          # Windows installer
-├── start.sh             # Linux/macOS starter
-├── start.bat            # Windows starter
-├── update.sh            # Linux/macOS updater
-└── update.bat           # Windows updater
+├── install.sh / .bat    # Linux/macOS / Windows installer
+├── start.sh / .bat      # Linux/macOS / Windows starter
+└── update.sh / .bat     # Linux/macOS / Windows updater
 ```
