@@ -1390,7 +1390,7 @@ a bird on a tree</textarea>
                 + '<label style="color:#888;font-size:12px;">Secure Download URL (requires login):</label>'
                 + '<div style="display:flex;gap:8px;margin-top:4px;">'
                 + '<input type="text" readonly value="' + downloadUrl + '" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#4caf50;font-size:12px;font-family:monospace;">'
-                + '<button onclick="navigator.clipboard.writeText(\'' + downloadUrl.replace(/'/g, "\\'") + '\');showAlert(\'Copied\',\'Download URL copied to clipboard\')" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#fff;cursor:pointer;">📋</button>'
+                + '<button onclick="copyDownloadUrl(\'' + downloadUrl.replace(/'/g, "\\'") + '\')" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>'
                 + '</div>'
                 + '<a href="' + downloadUrl + '" target="_blank" style="display:inline-block;margin-top:8px;padding:8px 16px;background:#00d4ff;border:none;border-radius:5px;color:#000;text-decoration:none;font-weight:600;">⬇ Download File</a>'
                 + '</div>';
@@ -1400,6 +1400,14 @@ a bird on a tree</textarea>
             document.getElementById('alert-title').textContent = 'ℹ️ ' + title;
             document.getElementById('alert-msg').textContent = msg;
             document.getElementById('alert-modal').style.display = 'flex';
+        }
+
+        function copyDownloadUrl(url) {
+            navigator.clipboard.writeText(url).then(function() {
+                showAlert('Copied', 'Download URL copied to clipboard');
+            }).catch(function() {
+                showAlert('Error', 'Failed to copy');
+            });
         }
 
         function showConfirm(msg) {
