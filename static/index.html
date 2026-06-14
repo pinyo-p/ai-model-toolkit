@@ -6,51 +6,133 @@
     <title>AI Toolkit - SDXL</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
         #main-content { display: none; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        h1 { text-align: center; padding: 20px; color: #00d4ff; font-size: 2rem; }
-        .tabs { display: flex; gap: 5px; margin-bottom: 20px; background: #1a1a1a; padding: 5px; border-radius: 10px; }
-        .tab { flex: 1; padding: 12px 20px; border: none; background: transparent; color: #888; cursor: pointer; border-radius: 8px; font-size: 14px; font-weight: 500; transition: all 0.3s; }
-        .tab.active { background: #00d4ff; color: #000; }
-        .tab:hover:not(.active) { background: #252525; color: #aaa; }
-        .panel { display: none; background: #1a1a1a; padding: 30px; border-radius: 15px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+        /* Header */
+        .app-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: linear-gradient(135deg, #0d1b2a, #1b2838); border-bottom: 1px solid #1e3a5f; margin-bottom: 24px; border-radius: 12px; }
+        .app-header h1 { font-size: 1.3rem; color: #00d4ff; font-weight: 700; letter-spacing: -0.5px; }
+        .app-header .subtitle { color: #5a7a9a; font-size: 0.75rem; margin-top: 2px; }
+        .app-header .gpu-badge { display: flex; align-items: center; gap: 6px; padding: 6px 14px; background: #141e2b; border-radius: 20px; font-size: 0.75rem; color: #7aa2c0; font-family: monospace; border: 1px solid #1e3a5f; }
+        .app-header .gpu-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; display: inline-block; }
+        .app-header .gpu-dot.off { background: #f44336; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #111822; padding: 4px; border-radius: 10px; border: 1px solid #1a2a3a; }
+        .tab { flex: 1; padding: 10px 16px; border: none; background: transparent; color: #5a7a9a; cursor: pointer; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.2s; }
+        .tab.active { background: linear-gradient(135deg, #00d4ff, #0088cc); color: #000; font-weight: 600; box-shadow: 0 2px 8px rgba(0,212,255,0.25); }
+        .tab:hover:not(.active) { background: #1a2a3a; color: #8ab4d0; }
+
+        /* Base URL bar */
+        #base-url-bar { margin-bottom: 20px; }
+
+        /* Panels / Cards */
+        .panel { display: none; }
         .panel.active { display: block; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
-        input, textarea, select { width: 100%; padding: 12px; background: #252525; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 14px; }
-        input:focus, textarea:focus { outline: none; border-color: #00d4ff; }
-        textarea { min-height: 120px; resize: vertical; }
-        .row { display: flex; gap: 15px; flex-wrap: wrap; }
-        .col { flex: 1; min-width: 150px; }
-        button.btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #00d4ff, #0099cc); border: none; border-radius: 8px; color: #000; font-size: 16px; font-weight: 600; cursor: pointer; transition: transform 0.2s; }
-        button.btn:hover { transform: scale(1.02); }
-        button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        @keyframes progressPulse {
-            0% { width: 10%; } 50% { width: 70%; } 100% { width: 10%; }
-        }
-        .output { margin-top: 20px; padding: 20px; background: #252525; border-radius: 10px; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+        .card { background: #111822; border: 1px solid #1a2a3a; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+        .card h2 { color: #00d4ff; font-size: 1.1rem; margin-bottom: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .card h3 { color: #e0e0e0; font-size: 0.95rem; margin-bottom: 15px; font-weight: 600; }
+
+        /* Forms */
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 6px; color: #7aa2c0; font-size: 13px; font-weight: 500; }
+        input, textarea, select { width: 100%; padding: 10px 14px; background: #0d1420; border: 1px solid #1e2d3d; border-radius: 8px; color: #e0e0e0; font-size: 14px; transition: border-color 0.2s; }
+        input:focus, textarea:focus { outline: none; border-color: #00d4ff; box-shadow: 0 0 0 3px rgba(0,212,255,0.1); }
+        textarea { min-height: 100px; resize: vertical; }
+        select { cursor: pointer; }
+        select option { background: #111822; }
+
+        /* Buttons */
+        .btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #00d4ff, #0088cc); border: none; border-radius: 8px; color: #000; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,212,255,0.3); }
+        .btn:active { transform: translateY(0); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        .btn-sm { padding: 8px 14px; font-size: 12px; width: auto; display: inline-flex; align-items: center; gap: 4px; }
+        .btn-ghost { background: transparent; border: 1px solid #1e2d3d; color: #7aa2c0; }
+        .btn-ghost:hover { border-color: #00d4ff; color: #00d4ff; box-shadow: none; transform: none; }
+        .btn-danger { background: linear-gradient(135deg, #ff4444, #cc0000); }
+        .btn-danger:hover { box-shadow: 0 4px 12px rgba(255,68,68,0.3); }
+
+        /* Action bar (file manager) */
+        .action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+        .action-bar .btn-sm { flex: 0 0 auto; }
+
+        /* Breadcrumb */
+        .breadcrumb { color: #5a7a9a; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #0d1420; border-radius: 8px; border: 1px solid #1a2a3a; }
+
+        /* File Table */
+        .file-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .file-table th { padding: 10px 12px; text-align: left; color: #5a7a9a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-bottom: 1px solid #1a2a3a; }
+        .file-table td { padding: 10px 12px; border-bottom: 1px solid #0d1420; }
+        .file-table tr:hover { background: #0d1420; }
+        .file-table .file-name { color: #e0e0e0; text-decoration: none; }
+        .file-table .file-name:hover { color: #00d4ff; }
+        .file-table .file-size { color: #5a7a9a; font-size: 13px; font-family: monospace; }
+        .file-table .file-date { color: #3a5a7a; font-size: 12px; }
+        .file-table .file-actions { text-align: right; white-space: nowrap; }
+
+        /* Output boxes */
+        .output { margin-top: 16px; padding: 20px; background: #0d1420; border: 1px solid #1a2a3a; border-radius: 10px; min-height: 120px; display: flex; align-items: center; justify-content: center; }
         .output img { max-width: 100%; max-height: 400px; border-radius: 8px; }
-        .output .placeholder { color: #555; }
+        .output .placeholder { color: #3a5a7a; }
         .loading { color: #00d4ff; }
-        .error { color: #ff4444; }
-        .sub-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .sub-tab { padding: 10px 20px; background: #252525; border: none; border-radius: 8px; color: #888; cursor: pointer; }
-        .sub-tab.active { background: #333; color: #00d4ff; }
+        .error { color: #ff6b6b; }
+
+        /* Sub tabs */
+        .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+        .sub-tab { padding: 8px 16px; background: #0d1420; border: 1px solid #1a2a3a; border-radius: 8px; color: #5a7a9a; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .sub-tab.active { background: #1a2a3a; border-color: #00d4ff; color: #00d4ff; }
+        .sub-tab:hover:not(.active) { border-color: #2a4a6a; }
         .sub-panel { display: none; }
         .sub-panel.active { display: block; }
-        .file-list { margin-top: 10px; color: #00d4ff; font-size: 14px; }
-        .gpu-info { background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; }
-        select.base-model { padding: 8px 10px; font-size: 13px; }
+
+        .gpu-info { background: #0d1420; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #7aa2c0; border: 1px solid #1a2a3a; }
+
+        /* Drop zone */
+        .drop-zone { border: 2px dashed #1a2a3a; border-radius: 10px; padding: 30px; text-align: center; color: #3a5a7a; transition: all 0.2s; cursor: pointer; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #00d4ff; background: rgba(0,212,255,0.05); color: #00d4ff; }
+
+        /* Row / Col */
+        .row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .col { flex: 1; min-width: 180px; }
+
+        /* Progress */
+        @keyframes progressPulse { 0% { width: 10%; } 50% { width: 70%; } 100% { width: 10%; } }
+
         /* Modals */
-        .modal-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:none;align-items:center;justify-content:center; }
-        .modal-box { background:#1a1a1a;border-radius:12px;padding:25px;min-width:400px;max-width:600px;max-height:80vh;overflow-y:auto; }
-        .modal-box h3 { color:#00d4ff;margin-bottom:15px; }
-        .modal-close { float:right;background:none;border:none;color:#888;font-size:22px;cursor:pointer; }
+        .modal-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:10000;display:none;align-items:center;justify-content:center; backdrop-filter: blur(4px); }
+        .modal-box { background:#111822;border-radius:14px;padding:28px;min-width:400px;max-width:600px;max-height:85vh;overflow-y:auto; border: 1px solid #1a2a3a; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .modal-box h3 { color:#00d4ff;margin-bottom:16px;font-size:1.1rem; }
+        .modal-close { float:right;background:none;border:none;color:#3a5a7a;font-size:24px;cursor:pointer;transition:color 0.2s; line-height:1; }
+        .modal-close:hover { color:#e0e0e0; }
         .modal-actions { display:flex;gap:10px;justify-content:flex-end;margin-top:20px; }
-        .modal-actions button { padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600; }
-        .modal-actions .btn-primary { background:#00d4ff;color:#000; }
-        .modal-actions .btn-secondary { background:#333;color:#e0e0e0; }
+        .modal-actions button { padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-weight:600; font-size:14px; }
+        .modal-actions .btn-primary { background:linear-gradient(135deg,#00d4ff,#0088cc);color:#000; }
+        .modal-actions .btn-secondary { background:#1a2a3a;color:#7aa2c0; }
+
+        /* API key section */
+        .api-key-item { display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0d1420;border:1px solid #1a2a3a;border-radius:8px;margin-bottom:6px; }
+        .api-key-item .key-value { color:#4caf50;font-family:monospace;font-size:12px; }
+        .api-key-item .key-meta { color:#3a5a7a;font-size:11px;margin-left:8px; }
+        .api-key-item .key-actions { display:flex;gap:4px; }
+
+        /* File detail table inside modal */
+        .detail-table { width:100%; }
+        .detail-table td { padding:6px 12px; }
+        .detail-table td:first-child { color:#5a7a9a; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container { padding: 12px; }
+            .app-header { flex-direction: column; gap: 8px; text-align: center; }
+            .tabs { flex-wrap: wrap; }
+            .tab { flex: 1 0 calc(33% - 4px); font-size: 12px; padding: 8px 8px; }
+            .modal-box { min-width: auto; margin: 0 12px; }
+            .action-bar { gap: 6px; }
+            .action-bar .btn-sm { font-size: 11px; padding: 6px 10px; }
+        }
     </style>
 </head>
 <body>
@@ -71,7 +153,16 @@
     </div>
 
     <div class="container" id="main-content">
-        <h1>🚀 AI Toolkit - SDXL</h1>
+        <div class="app-header">
+            <div>
+                <h1>🚀 AI Toolkit</h1>
+                <div class="subtitle">SDXL · LoRA · Caption</div>
+            </div>
+            <div class="gpu-badge" id="gpu-badge">
+                <span class="gpu-dot" id="gpu-dot"></span>
+                <span id="gpu-text">Loading...</span>
+            </div>
+        </div>
 
         <div class="tabs">
             <button class="tab active" onclick="showTab('generate')">Generate</button>
@@ -86,7 +177,8 @@
         <div id="base-url-bar" style="display:none;padding:6px 15px;background:#1a2a1a;border-bottom:1px solid #2a4a2a;font-size:12px;color:#4caf50;text-align:center;word-break:break-all;"></div>
 
         <div id="generate" class="panel active">
-            <div class="form-group">
+            <div class="card">
+                <h2>🎨 Generate</h2>
                 <label>Model</label>
                 <select id="gen-model" class="base-model" onchange="onGenModelChange()">
                     <option value="">-- Select local model --</option>
@@ -158,11 +250,13 @@
             <div class="output" id="gen-output">
                 <span class="placeholder">Image will appear here</span>
             </div>
+            </div>
         </div>
 
         <div id="batch" class="panel">
-            <div class="form-group">
-                <label>Prompts (one per line)</label>
+            <div class="card">
+                <h2>📦 Batch Generate</h2>
+                <div class="form-group">
                 <textarea id="batch-prompts" placeholder="a cat sitting on a couch&#10;a dog running in a park&#10;a bird on a tree">a cat sitting on a couch
 a dog running in a park
 a bird on a tree</textarea>
@@ -196,7 +290,9 @@ a bird on a tree</textarea>
         </div>
 
         <div id="train" class="panel">
-            <div class="sub-tabs">
+            <div class="card">
+                <h2>🧠 Train LoRA</h2>
+                <div class="sub-tabs">
                 <button class="sub-tab active" onclick="showSubTab('train-normal')">Train LoRA (50 images)</button>
                 <button class="sub-tab" onclick="showSubTab('train-image2lora')">Image to LoRA (1-3 images)</button>
             </div>
@@ -285,10 +381,13 @@ a bird on a tree</textarea>
                     <span class="placeholder">Quick LoRA (1-3 images)</span>
                 </div>
             </div>
+            </div>
         </div>
 
         <div id="merge" class="panel">
-            <div class="sub-tabs">
+            <div class="card">
+                <h2>🔧 Merge / Extract</h2>
+                <div class="sub-tabs">
                 <button class="sub-tab active" onclick="showSubTab('merge-lora')">Merge LoRA</button>
                 <button class="sub-tab" onclick="showSubTab('extract-lora')">Extract LoRA</button>
             </div>
@@ -323,6 +422,7 @@ a bird on a tree</textarea>
 
         <div id="tools" class="panel">
             <div class="gpu-info" id="gpu-info">Loading GPU info...</div>
+            <div class="card">
 
             <div class="sub-tabs">
                 <button class="sub-tab active" onclick="showSubTab('tool-caption')">Caption</button>
@@ -366,19 +466,21 @@ a bird on a tree</textarea>
                     <span class="placeholder">LoRA info will appear here</span>
                 </div>
             </div>
+            </div>
         </div>
 
         <div id="loadmodel" class="panel">
-            <h2 style="margin-bottom:20px;color:#00d4ff;">File Manager</h2>
+            <div class="card">
+                <h2>📂 File Manager</h2>
 
             <!-- File Browser -->
-            <div style="background:#1a1a1a;border-radius:10px;padding:15px;">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-                    <span id="breadcrumb" style="flex:1;color:#888;font-size:13px;">📁 /</span>
-                    <button onclick="showDownloadModal()" style="padding:6px 12px;background:#00d4ff;border:none;border-radius:5px;color:#000;cursor:pointer;font-size:13px;font-weight:600;">⬇ Download</button>
-                    <button onclick="showCreateDir()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">+ Folder</button>
-                    <button onclick="document.getElementById('upload-input').click()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">📤 Upload</button>
-                    <button onclick="browseFiles()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#888;cursor:pointer;font-size:13px;">🔄</button>
+            <div style="margin-top:16px;">
+                <div class="action-bar">
+                    <span class="breadcrumb" id="breadcrumb" style="flex:1;margin:0;">📁 /</span>
+                    <button onclick="showDownloadModal()" class="btn-sm btn" style="background:linear-gradient(135deg,#00d4ff,#0088cc);color:#000;font-weight:600;">⬇ Download</button>
+                    <button onclick="showCreateDir()" class="btn-sm btn-ghost">+ Folder</button>
+                    <button onclick="document.getElementById('upload-input').click()" class="btn-sm btn-ghost">📤 Upload</button>
+                    <button onclick="browseFiles()" class="btn-sm btn-ghost">🔄</button>
                 </div>
 
                 <!-- Create dir row -->
@@ -419,7 +521,8 @@ a bird on a tree</textarea>
         </div>
 
         <div id="settings" class="panel">
-            <h2 style="margin-bottom: 20px; color: #00d4ff;">Settings</h2>
+            <div class="card">
+                <h2>⚙️ Settings</h2>
             <div class="form-group">
                 <label>HuggingFace Token (hf_token)</label>
                 <input type="password" id="settings-hf-token" placeholder="Enter HuggingFace token...">
@@ -537,8 +640,17 @@ a bird on a tree</textarea>
                 const data = await res.json();
                 document.getElementById('gpu-info').textContent = 
                     `GPU: ${data.gpu_name} | VRAM: ${data.vram_total_gb}GB | CUDA: ${data.cuda_version || 'N/A'}`;
+                var gpuText = document.getElementById('gpu-text');
+                var gpuDot = document.getElementById('gpu-dot');
+                if (data.cuda_available) {
+                    gpuText.textContent = data.gpu_name + ' · ' + data.vram_total_gb + 'GB VRAM';
+                } else {
+                    gpuText.textContent = 'No GPU (CPU mode)';
+                    gpuDot.classList.add('off');
+                }
             } catch(e) {
                 document.getElementById('gpu-info').textContent = 'GPU info unavailable';
+                document.getElementById('gpu-text').textContent = 'GPU unavailable';
             }
         }
         checkGPU();
@@ -1203,38 +1315,40 @@ a bird on a tree</textarea>
                 return;
             }
 
-            let html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
+            let html = '<table class="file-table">';
+            html += '<thead><tr><th style="width:50%;">Name</th><th style="width:15%;">Size</th><th style="width:25%;">Modified</th><th style="width:10%;"></th></tr></thead><tbody>';
 
             // Parent dir
             if (data.parent_path !== undefined && data.current_path) {
-                html += '<tr style="border-bottom:1px solid #222;cursor:pointer;" onclick="browseFiles(\'' + data.parent_path + '\')">'
-                    + '<td style="padding:8px;">📂 <span style="color:#fff;">..</span></td>'
-                    + '<td style="padding:8px;color:#666;"></td>'
-                    + '<td style="padding:8px;color:#666;"></td>'
-                    + '<td style="padding:8px;"></td>'
+                html += '<tr style="cursor:pointer;" onclick="browseFiles(\'' + data.parent_path + '\')">'
+                    + '<td class="file-name" style="color:#5a7a9a;">📂 ..</td>'
+                    + '<td class="file-size"></td>'
+                    + '<td class="file-date"></td>'
+                    + '<td class="file-actions"></td>'
                     + '</tr>';
             }
 
             data.items.forEach(function(item) {
                 var icon = item.type === 'dir' ? '📁' : '📄';
                 var nameHtml = item.type === 'dir'
-                    ? '<a href="#" onclick="browseFiles(\'' + (data.current_path ? data.current_path + '/' : '') + item.name + '\');return false;" style="color:#fff;">' + item.name + '</a>'
-                    : '<span style="color:#aaa;">' + item.name + '</span>';
+                    ? '<a href="#" onclick="browseFiles(\'' + (data.current_path ? data.current_path + '/' : '') + item.name + '\');return false;" class="file-name">' + item.name + '</a>'
+                    : '<span class="file-name">' + item.name + '</span>';
                 var size = item.type === 'file' ? formatSize(item.size) : '';
                 var date = formatDate(item.modified);
                 var delPath = data.current_path ? data.current_path + '/' + item.name : item.name;
-                html += '<tr style="border-bottom:1px solid #222;" onmouseover="this.style.background=\'#2a2a2a\'" onmouseout="this.style.background=\'\'">'
-                    + '<td style="padding:8px;">' + icon + ' ' + nameHtml + ' ' + (item.public ? '<span style="color:#4caf50;font-size:10px;">🔓</span>' : '<span style="color:#888;font-size:10px;">🔒</span>') + '</td>'
-                    + '<td style="padding:8px;color:#888;">' + size + '</td>'
-                    + '<td style="padding:8px;color:#666;font-size:12px;">' + date + '</td>'
-                    + '<td style="padding:8px;text-align:right;white-space:nowrap;">'
-                    + (item.type === 'file' ? '<button onclick="showFileDetail(\'' + delPath.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#00d4ff;cursor:pointer;padding:2px 5px;" title="Details">ℹ️</button>' : '')
-                    + '<button onclick="showRename(\'' + delPath.replace(/'/g, "\\'") + '\',\'' + item.name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#888;cursor:pointer;padding:2px 5px;">✏️</button>'
-                    + '<button onclick="deleteFile(\'' + delPath.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#ff4444;cursor:pointer;padding:2px 5px;">🗑️</button>'
+                var badge = item.public ? '<span style="color:#4caf50;font-size:11px;">🔓</span>' : '<span style="color:#3a5a7a;font-size:11px;">🔒</span>';
+                html += '<tr>'
+                    + '<td>' + icon + ' ' + nameHtml + ' ' + badge + '</td>'
+                    + '<td class="file-size">' + size + '</td>'
+                    + '<td class="file-date">' + date + '</td>'
+                    + '<td class="file-actions">'
+                    + (item.type === 'file' ? '<button onclick="showFileDetail(\'' + delPath.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;" title="Details">ℹ️</button>' : '')
+                    + '<button onclick="showRename(\'' + delPath.replace(/'/g, "\\'") + '\',\'' + item.name.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;">✏️</button>'
+                    + '<button onclick="deleteFile(\'' + delPath.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;color:#ff6b6b;">🗑️</button>'
                     + '</td>'
                     + '</tr>';
             });
-            html += '</table>';
+            html += '</tbody></table>';
             list.innerHTML = html;
         }
 
