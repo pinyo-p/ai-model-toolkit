@@ -557,17 +557,44 @@ async def download_model(
     result = {"status": "ok", "message": ""}
     
     if source == "huggingface":
-        import shutil
         hf_token = settings.get("hf_token", "")
-        model_name = url.replace("https://huggingface.co/", "").replace("https://HF.co/", "").strip("/")
-        dest = os.path.join(models_path, model_name.replace("/", "_"))
+        
+        # Parse HuggingFace URL: https://huggingface.co/{namespace}/{repo}[/{blob|resolve|tree}/{branch}/{path}]
+        hf_url = url.replace("https://huggingface.co/", "").replace("https://HF.co/", "").strip("/")
+        for sep in ("/blob/", "/resolve/", "/tree/"):
+            if sep in hf_url:
+                repo_id, after = hf_url.split(sep, 1)
+                # after = branch[/path]
+                parts = after.split("/", 1)
+                filename = parts[1] if len(parts) > 1 else ""
+                break
+        else:
+            repo_id = hf_url
+            filename = ""
+            repo_parts = repo_id.split("/")
+            if len(repo_parts) > 2:
+                repo_id = "/".join(repo_parts[:2])
+                filename = "/".join(repo_parts[2:])
+        
+        dest_name = repo_id.replace("/", "_")
+        if filename:
+            safe_fn = filename.replace("/", "_")
+            dest = os.path.join(models_path, f"{dest_name}_{safe_fn}")
+        else:
+            dest = os.path.join(models_path, dest_name)
         
         if shutil.which("hf"):
-            cmd = ["hf", "download", model_name, "--local-dir", dest]
+            cmd = ["hf", "download", repo_id]
+            if filename:
+                cmd.append(filename)
+            cmd.extend(["--local-dir", dest])
             if hf_token:
                 cmd.extend(["--token", hf_token])
         else:
-            cmd = ["huggingface-cli", "download", model_name, "--local-dir", dest]
+            cmd = ["huggingface-cli", "download", repo_id]
+            if filename:
+                cmd.append(filename)
+            cmd.extend(["--local-dir", dest])
             if hf_token:
                 cmd.extend(["--token", hf_token])
         
