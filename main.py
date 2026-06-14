@@ -614,18 +614,22 @@ async def download_model(
                 import json
                 extra_headers = json.loads(headers_json)
             model_name = url.split("/")[-1] or "model"
-            dest = os.path.join(models_path, model_name)
-            os.makedirs(dest, exist_ok=True)
+            filepath = os.path.join(models_path, model_name)
+            os.makedirs(models_path, exist_ok=True)
             
-            r = requests.get(url, headers=extra_headers, stream=True)
-            if r.status_code == 200:
-                filepath = os.path.join(dest, model_name)
-                with open(filepath, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
+            r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            with open(filepath, "wb") as f:
+                downloaded = 0
+                for chunk in r.iter_content(chunk_size=65536):
+                    if chunk:
                         f.write(chunk)
-                result["message"] = f"Downloaded to {filepath}"
-            else:
-                raise HTTPException(status_code=500, detail=f"Download failed: {r.status_code}")
+                        downloaded += len(chunk)
+            if total and downloaded < total:
+                os.remove(filepath)
+                raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
+            result["message"] = f"Downloaded to {filepath}"
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
@@ -634,4 +638,4 @@ async def download_model(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7800)
+    uvicorn.run(app, host="0.0.0.0", port=7800, timeout_keep_alive=600, timeout_graceful_shutdown=600)
