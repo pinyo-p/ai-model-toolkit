@@ -1320,6 +1320,7 @@ a bird on a tree</textarea>
         function showDownloadModal() {
             document.getElementById('download-output').innerHTML = '<span style="color:#555;">Ready</span>';
             document.getElementById('download-progress').style.display = 'none';
+            document.getElementById('download-subdir').value = currentBrowsePath;
             document.getElementById('download-modal').style.display = 'flex';
         }
 
