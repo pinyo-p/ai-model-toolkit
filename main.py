@@ -540,6 +540,72 @@ async def create_model_directory(
     return {"status": "ok", "message": f"Created directory: {name}"}
 
 
+@app.get("/api/models/browse")
+async def browse_models(path: str = "", user: str = Depends(get_current_user)):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    full = os.path.join(models_path, path) if path else models_path
+    if not os.path.exists(full):
+        raise HTTPException(status_code=404, detail="Path not found")
+    if not os.path.isdir(full):
+        raise HTTPException(status_code=400, detail="Not a directory")
+    items = []
+    for name in sorted(os.listdir(full)):
+        if name.startswith("."):
+            continue
+        item_path = os.path.join(full, name)
+        stat = os.stat(item_path)
+        items.append({
+            "name": name,
+            "type": "dir" if os.path.isdir(item_path) else "file",
+            "size": stat.st_size,
+            "modified": stat.st_mtime,
+            "ext": os.path.splitext(name)[1].lower() if os.path.isfile(item_path) else "",
+        })
+    return {
+        "models_path": models_path,
+        "current_path": path or "",
+        "parent_path": "/".join(path.split("/")[:-1]) if path else "",
+        "items": items,
+    }
+
+
+@app.post("/api/models/upload")
+async def upload_models(
+    files: list[UploadFile] = File(...),
+    path: str = Form(""),
+    user: str = Depends(get_current_user)
+):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    dest_dir = os.path.join(models_path, path) if path else models_path
+    os.makedirs(dest_dir, exist_ok=True)
+    saved = []
+    for f in files:
+        filepath = os.path.join(dest_dir, f.filename or "unnamed")
+        content = await f.read()
+        with open(filepath, "wb") as fh:
+            fh.write(content)
+        saved.append(f.filename or "unnamed")
+    return {"status": "ok", "saved": saved}
+
+
+@app.post("/api/models/rename")
+async def rename_model(
+    old_path: str = Form(...),
+    new_path: str = Form(...),
+    user: str = Depends(get_current_user)
+):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    src = os.path.join(models_path, old_path)
+    dst = os.path.join(models_path, new_path)
+    if not os.path.exists(src):
+        raise HTTPException(status_code=404, detail="Source not found")
+    if os.path.exists(dst):
+        raise HTTPException(status_code=400, detail="Destination already exists")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    os.rename(src, dst)
+    return {"status": "ok", "message": f"Renamed to {new_path}"}
+
+
 @app.post("/api/download_model")
 async def download_model(
     url: str = Form(...),

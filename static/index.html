@@ -358,60 +358,89 @@ a bird on a tree</textarea>
         </div>
 
         <div id="loadmodel" class="panel">
-            <h2 style="margin-bottom: 20px; color: #00d4ff;">Load Model</h2>
-            
-            <div class="form-group">
-                <label>Model URL</label>
-                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
-            </div>
-            
-            <div class="form-group">
-                <label>Source</label>
-                <select id="model-source" onchange="onSourceChange()">
-                    <option value="huggingface">HuggingFace</option>
-                    <option value="civitai">CivitAI</option>
-                    <option value="other">Other (Direct URL)</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label>Save to Directory</label>
-                <div style="display:flex;gap:8px;">
-                    <select id="model-subdir" style="flex:1;">
-                        <option value="">-- Root --</option>
+            <h2 style="margin-bottom:20px;color:#00d4ff;">File Manager</h2>
+
+            <!-- Download Section -->
+            <details style="margin-bottom:20px;" open>
+                <summary style="cursor:pointer;color:#00d4ff;font-size:15px;font-weight:600;margin-bottom:10px;">⬇ Download Model</summary>
+                <div class="form-group">
+                    <label>Model URL</label>
+                    <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
+                </div>
+                <div class="form-group">
+                    <label>Source</label>
+                    <select id="model-source" onchange="onSourceChange()">
+                        <option value="huggingface">HuggingFace</option>
+                        <option value="civitai">CivitAI</option>
+                        <option value="other">Other (Direct URL)</option>
                     </select>
-                    <button onclick="createModelDir()" style="padding:12px 15px;background:#333;border:none;border-radius:8px;color:#00d4ff;cursor:pointer;white-space:nowrap;">+ New</button>
                 </div>
-                <div id="create-dir-row" style="display:none;margin-top:8px;gap:8px;align-items:center;">
-                    <input type="text" id="new-dir-name" placeholder="New directory name" style="flex:1;">
-                    <button onclick="confirmCreateDir()" style="padding:10px 15px;background:#00d4ff;border:none;border-radius:8px;color:#000;cursor:pointer;font-weight:600;">Create</button>
-                    <button onclick="cancelCreateDir()" style="padding:10px 15px;background:#333;border:none;border-radius:8px;color:#888;cursor:pointer;">Cancel</button>
+                <div class="form-group" id="headers-row" style="display:none;">
+                    <label>Custom Headers (JSON)</label>
+                    <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
                 </div>
-            </div>
-            
-            <div id="headers-row" style="display:none;" class="form-group">
-                <label>Custom Headers (JSON)</label>
-                <textarea id="model-headers" placeholder='{"Authorization": "Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
-            </div>
-            
-            <button class="btn" id="download-btn" onclick="downloadModel()">Download Model</button>
-            <div class="output" id="download-output">
-                <span class="placeholder">Download status will appear here</span>
-            </div>
-            <div id="download-progress" style="display:none;margin-top:8px;">
-                <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;animation:progressPulse 2s ease-in-out infinite;"></div>
+                <div class="form-group">
+                    <label>Save to Directory</label>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="download-subdir" placeholder="e.g. checkpoints/sd1.5" style="flex:1;">
+                    </div>
                 </div>
-                <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
-            </div>
+                <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
+                <div id="download-progress" style="display:none;margin-top:8px;">
+                    <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
+                        <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;animation:progressPulse 2s ease-in-out infinite;"></div>
+                    </div>
+                    <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
+                </div>
+                <div class="output" id="download-output" style="min-height:30px;margin-top:10px;padding:10px;">
+                    <span class="placeholder">Download status</span>
+                </div>
+            </details>
 
-            <hr style="margin:30px 0;border-color:#333;">
+            <!-- File Browser -->
+            <div style="background:#1a1a1a;border-radius:10px;padding:15px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+                    <span id="breadcrumb" style="flex:1;color:#888;font-size:13px;">📁 /</span>
+                    <button onclick="showCreateDir()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">+ Folder</button>
+                    <button onclick="document.getElementById('upload-input').click()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">📤 Upload</button>
+                    <button onclick="browseFiles()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#888;cursor:pointer;font-size:13px;">🔄</button>
+                </div>
 
-            <h3 style="color:#00d4ff;margin-bottom:15px;display:inline-block;">Existing Models</h3>
-            <button onclick="loadModels()" style="margin-left:15px;padding:5px 10px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;">🔄 Reload</button>
-            <div id="models-list" style="background:#252525;padding:15px;border-radius:8px;max-height:300px;overflow-y:auto;">
-                <span class="placeholder">Loading models...</span>
+                <!-- Create dir row -->
+                <div id="create-dir-row" style="display:none;margin-bottom:10px;gap:8px;align-items:center;">
+                    <input type="text" id="new-dir-name" placeholder="Directory name" style="flex:1;padding:8px;">
+                    <button onclick="confirmCreateDir()" style="padding:8px 15px;background:#00d4ff;border:none;border-radius:5px;color:#000;cursor:pointer;font-weight:600;">Create</button>
+                    <button onclick="cancelCreateDir()" style="padding:8px 15px;background:#333;border:none;border-radius:5px;color:#888;cursor:pointer;">Cancel</button>
+                </div>
+
+                <!-- Drop zone -->
+                <div id="drop-zone" style="border:2px dashed #444;border-radius:8px;padding:20px;text-align:center;color:#666;margin-bottom:10px;cursor:pointer;transition:0.2s;" ondragover="this.style.borderColor='#00d4ff';event.preventDefault();" ondragleave="this.style.borderColor='#444';" ondrop="handleDrop(event)">
+                    📤 Drop files here or click to select
+                    <input type="file" id="upload-input" multiple style="display:none" onchange="handleUpload(this.files)">
+                </div>
+
+                <!-- Upload progress -->
+                <div id="upload-progress" style="display:none;margin-bottom:10px;padding:8px;background:#252525;border-radius:5px;">
+                    <div id="up-text" style="font-size:13px;color:#00d4ff;">Uploading...</div>
+                    <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                        <div id="up-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                    </div>
+                </div>
+
+                <!-- File list -->
+                <div id="file-list" style="min-height:100px;">
+                    <span class="placeholder">Loading...</span>
+                </div>
+
+                <!-- Rename dialog -->
+                <div id="rename-row" style="display:none;margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid #333;">
+                    <span style="color:#888;font-size:13px;">Rename:</span>
+                    <input type="text" id="rename-input" style="flex:1;padding:8px;">
+                    <button onclick="confirmRename()" style="padding:8px 15px;background:#00d4ff;border:none;border-radius:5px;color:#000;cursor:pointer;font-weight:600;">Rename</button>
+                    <button onclick="cancelRename()" style="padding:8px 15px;background:#333;border:none;border-radius:5px;color:#888;cursor:pointer;">Cancel</button>
+                </div>
             </div>
+        </div>
         </div>
 
         <div id="settings" class="panel">
@@ -466,7 +495,7 @@ a bird on a tree</textarea>
                     loadSettings();
                     loadTrainModels();
                     loadGenModels();
-                    loadModelDirs();
+                    browseFiles();
                 } else {
                     document.getElementById('login-modal').style.display = 'flex';
                     document.getElementById('main-content').style.display = 'none';
@@ -583,7 +612,7 @@ a bird on a tree</textarea>
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
             if (tab === 'generate') loadGenModels();
-            if (tab === 'loadmodel') { loadModels(); loadModelDirs(); }
+            if (tab === 'loadmodel') { browseFiles(); }
         }
 
         function showSubTab(sub) {
@@ -1018,7 +1047,7 @@ a bird on a tree</textarea>
                 const data = await res.json();
                 output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
                 loadTrainModels();
-                loadModels();
+                browseFiles();
             } catch(e) {
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
             }
@@ -1055,83 +1084,92 @@ a bird on a tree</textarea>
         }
 
         loadSettings();
-        loadModels();
+        browseFiles();
 
-        async function loadModels() {
-            try {
-                const res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth } });
-                const data = await res.json();
-                const container = document.getElementById('models-list');
-                
-                if (data.models && data.models.length > 0) {
-                    let html = '<div style="margin-bottom:10px;color:#888;">📁 ' + data.models_path + '</div>';
-                    html += '<table style="width:100%;border-collapse:collapse;">';
-                    data.models.forEach(m => {
-                        if (m.type === 'folder') {
-                            var info = '';
-                            if (m.files && m.files.length > 0) info += m.files.length + ' files';
-                            if (m.subdirs && m.subdirs.length > 0) {
-                                if (info) info += ', ';
-                                info += m.subdirs.length + ' subdirectories';
-                            }
-                            if (!info) info = 'empty';
-                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📁 <strong>' + m.name + '</strong></td><td style="padding:8px;color:#888;">' + info + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
-                            if (m.subdirs && m.subdirs.length > 0) {
-                                m.subdirs.forEach(function(sd) {
-                                    html += '<tr style="border-bottom:1px solid #222;"><td style="padding:8px;padding-left:30px;color:#888;">📂 ' + sd + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '/' + sd + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
-                                });
-                            }
-                            if (m.files && m.files.length > 0) {
-                                m.files.forEach(f => {
-                                    html += '<tr style="border-bottom:1px solid #222;"><td style="padding:8px;padding-left:30px;color:#aaa;">📄 ' + f + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '/' + f + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
-                                });
-                            }
-                        } else {
-                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📄 ' + m.name + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
-                        }
-                    });
-                    html += '</table>';
-                    container.innerHTML = html;
-                } else {
-                    container.innerHTML = '<span class="placeholder">No models found</span>';
-                }
-            } catch(e) {
-                document.getElementById('models-list').innerHTML = '<span class="error">Error: ' + e.message + '</span>';
-            }
-        }
+        // ---- File Manager ----
+        let currentBrowsePath = '';
+        let renameTarget = '';
 
-        async function deleteModel(path) {
-            if (!confirm('Delete ' + path + '?')) return;
-            
+        async function browseFiles(subdir) {
+            if (subdir !== undefined) currentBrowsePath = subdir;
+            const path = currentBrowsePath;
+            const list = document.getElementById('file-list');
+            list.innerHTML = '<span class="loading">Loading...</span>';
             try {
-                const res = await fetch('/api/models?path=' + encodeURIComponent(path), { 
-                    method: 'DELETE',
-                    headers: { 'Authorization': 'Basic ' + auth } 
-                });
+                const res = await fetch('/api/models/browse?path=' + encodeURIComponent(path), { headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
-                loadModels();
-            } catch(e) {
-                alert('Error: ' + e.message);
-            }
-        }
-
-        async function loadModelDirs() {
-            try {
-                const res = await fetch('/api/models/directories', { headers: { 'Authorization': 'Basic ' + auth } });
                 const data = await res.json();
-                const select = document.getElementById('model-subdir');
-                while (select.options.length > 1) select.remove(1);
-                (data.directories || []).forEach(function(d) {
-                    var opt = document.createElement('option');
-                    opt.value = opt.textContent = d;
-                    select.appendChild(opt);
-                });
+                renderFileList(data);
             } catch(e) {
-                console.error('Failed to load directories:', e);
+                list.innerHTML = '<span class="error">' + e.message + '</span>';
             }
         }
 
-        function createModelDir() {
+        function renderFileList(data) {
+            const list = document.getElementById('file-list');
+            const crumb = document.getElementById('breadcrumb');
+            const parts = data.current_path ? data.current_path.split('/') : [];
+            let crumbHtml = '📁 <a href="#" onclick="browseFiles(\'\');return false;" style="color:#00d4ff;">root</a>';
+            let pathSoFar = '';
+            parts.forEach(function(p) {
+                pathSoFar = pathSoFar ? pathSoFar + '/' + p : p;
+                crumbHtml += ' / <a href="#" onclick="browseFiles(\'' + pathSoFar + '\');return false;" style="color:#fff;">' + p + '</a>';
+            });
+            crumb.innerHTML = crumbHtml;
+
+            if (!data.items || data.items.length === 0) {
+                list.innerHTML = '<span class="placeholder">Empty directory</span>';
+                return;
+            }
+
+            let html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
+
+            // Parent dir
+            if (data.parent_path !== undefined && data.current_path) {
+                html += '<tr style="border-bottom:1px solid #222;cursor:pointer;" onclick="browseFiles(\'' + data.parent_path + '\')">'
+                    + '<td style="padding:8px;">📂 <span style="color:#fff;">..</span></td>'
+                    + '<td style="padding:8px;color:#666;"></td>'
+                    + '<td style="padding:8px;color:#666;"></td>'
+                    + '<td style="padding:8px;"></td>'
+                    + '</tr>';
+            }
+
+            data.items.forEach(function(item) {
+                var icon = item.type === 'dir' ? '📁' : '📄';
+                var nameHtml = item.type === 'dir'
+                    ? '<a href="#" onclick="browseFiles(\'' + (data.current_path ? data.current_path + '/' : '') + item.name + '\');return false;" style="color:#fff;">' + item.name + '</a>'
+                    : '<span style="color:#aaa;">' + item.name + '</span>';
+                var size = item.type === 'file' ? formatSize(item.size) : '';
+                var date = formatDate(item.modified);
+                var delPath = data.current_path ? data.current_path + '/' + item.name : item.name;
+                html += '<tr style="border-bottom:1px solid #222;" onmouseover="this.style.background=\'#2a2a2a\'" onmouseout="this.style.background=\'\'">'
+                    + '<td style="padding:8px;">' + icon + ' ' + nameHtml + '</td>'
+                    + '<td style="padding:8px;color:#888;">' + size + '</td>'
+                    + '<td style="padding:8px;color:#666;font-size:12px;">' + date + '</td>'
+                    + '<td style="padding:8px;text-align:right;white-space:nowrap;">'
+                    + '<button onclick="showRename(\'' + delPath.replace(/'/g, "\\'") + '\',\'' + item.name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#888;cursor:pointer;padding:2px 5px;">✏️</button>'
+                    + '<button onclick="deleteFile(\'' + delPath.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#ff4444;cursor:pointer;padding:2px 5px;">🗑️</button>'
+                    + '</td>'
+                    + '</tr>';
+            });
+            html += '</table>';
+            list.innerHTML = html;
+        }
+
+        function formatSize(bytes) {
+            if (!bytes) return '';
+            var u = ['B','KB','MB','GB','TB'], i = 0;
+            while (bytes >= 1024 && i < u.length - 1) { bytes /= 1024; i++; }
+            return bytes.toFixed(i > 0 ? 1 : 0) + ' ' + u[i];
+        }
+
+        function formatDate(ts) {
+            if (!ts) return '';
+            var d = new Date(ts * 1000);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        }
+
+        function showCreateDir() {
             document.getElementById('create-dir-row').style.display = 'flex';
             document.getElementById('new-dir-name').focus();
         }
@@ -1144,17 +1182,99 @@ a bird on a tree</textarea>
         async function confirmCreateDir() {
             var name = document.getElementById('new-dir-name').value.trim();
             if (!name) return;
+            var fullPath = currentBrowsePath ? currentBrowsePath + '/' + name : name;
             try {
-                var formData = new FormData();
-                formData.append('name', name);
-                var res = await fetch('/api/models/directories', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                var fd = new FormData();
+                fd.append('name', fullPath);
+                var res = await fetch('/api/models/directories', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
                 cancelCreateDir();
-                loadModelDirs();
+                browseFiles();
             } catch(e) {
                 alert('Error: ' + e.message);
             }
         }
+
+        async function deleteFile(path) {
+            if (!confirm('Delete "' + path + '"?')) return;
+            try {
+                const res = await fetch('/api/models?path=' + encodeURIComponent(path), { 
+                    method: 'DELETE', headers: { 'Authorization': 'Basic ' + auth } 
+                });
+                if (!res.ok) throw new Error(await res.text());
+                browseFiles();
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function showRename(path, name) {
+            renameTarget = path;
+            document.getElementById('rename-input').value = name;
+            document.getElementById('rename-row').style.display = 'flex';
+            document.getElementById('rename-input').focus();
+        }
+
+        function cancelRename() {
+            document.getElementById('rename-row').style.display = 'none';
+            document.getElementById('rename-input').value = '';
+            renameTarget = '';
+        }
+
+        async function confirmRename() {
+            var newName = document.getElementById('rename-input').value.trim();
+            if (!newName || !renameTarget) return;
+            var parts = renameTarget.split('/');
+            parts[parts.length - 1] = newName;
+            var newPath = parts.join('/');
+            try {
+                var fd = new FormData();
+                fd.append('old_path', renameTarget);
+                fd.append('new_path', newPath);
+                var res = await fetch('/api/models/rename', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                cancelRename();
+                browseFiles();
+            } catch(e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // ---- Upload ----
+        function handleDrop(e) {
+            e.preventDefault();
+            document.getElementById('drop-zone').style.borderColor = '#444';
+            handleUpload(e.dataTransfer.files);
+        }
+
+        async function handleUpload(files) {
+            if (!files || files.length === 0) return;
+            var progress = document.getElementById('upload-progress');
+            var bar = document.getElementById('up-bar');
+            var text = document.getElementById('up-text');
+            progress.style.display = 'block';
+            text.textContent = 'Uploading ' + files.length + ' file(s)...';
+            bar.style.animation = 'none';
+            bar.style.width = '0%';
+
+            var fd = new FormData();
+            fd.append('path', currentBrowsePath);
+            for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
+
+            try {
+                var res = await fetch('/api/models/upload', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                var data = await res.json();
+                bar.style.width = '100%';
+                text.textContent = '✅ ' + data.saved.length + ' file(s) uploaded';
+                setTimeout(function() { progress.style.display = 'none'; }, 2000);
+                browseFiles();
+            } catch(e) {
+                text.textContent = '❌ ' + e.message;
+                setTimeout(function() { progress.style.display = 'none'; }, 3000);
+            }
+        }
+        // ---- End File Manager ----
 
         function detectSource() {
             var url = document.getElementById('model-url').value;
@@ -1178,7 +1298,7 @@ a bird on a tree</textarea>
             const output = document.getElementById('download-output');
             const url = document.getElementById('model-url').value;
             const source = document.getElementById('model-source').value;
-            const subdir = document.getElementById('model-subdir').value;
+            const subdir = document.getElementById('download-subdir').value;
             const btn = document.getElementById('download-btn');
             const progress = document.getElementById('download-progress');
             const progressText = document.getElementById('progress-text');
@@ -1209,13 +1329,13 @@ a bird on a tree</textarea>
                 const data = await res.json();
                 progress.style.display = 'none';
                 output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
-                loadModels();
+                browseFiles();
             } catch(e) {
                 progress.style.display = 'none';
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Download Model';
+                btn.textContent = 'Download';
             }
         }
     </script>
