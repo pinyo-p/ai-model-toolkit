@@ -506,7 +506,6 @@ async def delete_model(
     
     try:
         if os.path.isdir(full_path):
-            import shutil
             shutil.rmtree(full_path)
         else:
             os.remove(full_path)
@@ -647,10 +646,8 @@ async def download_model(
     
     else:  # other - direct URL
         try:
-            import shutil
             extra_headers = {}
             if headers_json:
-                import json
                 extra_headers = json.loads(headers_json)
             model_name = url.split("/")[-1] or "model"
             filepath = os.path.join(models_path, model_name)
