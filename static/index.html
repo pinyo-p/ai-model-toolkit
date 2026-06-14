@@ -1020,9 +1020,7 @@ a bird on a tree</textarea>
         }
 
         function copyFullKey(key) {
-            navigator.clipboard.writeText(key).then(function() {
-                showAlert('Copied', 'API key copied to clipboard');
-            });
+            copyToClipboard(key, 'API key copied to clipboard');
         }
 
         async function generateApiKey() {
@@ -1045,9 +1043,7 @@ a bird on a tree</textarea>
 
         function copyApiKey() {
             var input = document.getElementById('new-api-key-value');
-            navigator.clipboard.writeText(input.value).then(function() {
-                showAlert('Copied', 'API key copied to clipboard');
-            });
+            copyToClipboard(input.value, 'API key copied to clipboard');
         }
 
         async function deleteApiKey(key) {
@@ -1172,7 +1168,7 @@ a bird on a tree</textarea>
         browseFiles();
 
         // ---- File Manager ----
-        let currentBrowsePath = '';
+        var currentBrowsePath = '';
         let renameTarget = '';
 
         async function browseFiles(subdir) {
@@ -1253,6 +1249,34 @@ a bird on a tree</textarea>
             if (!ts) return '';
             var d = new Date(ts * 1000);
             return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        }
+
+        function copyToClipboard(text, msg) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    showAlert('Copied', msg || 'Copied to clipboard');
+                }).catch(function() {
+                    fallbackCopy(text, msg);
+                });
+            } else {
+                fallbackCopy(text, msg);
+            }
+        }
+
+        function fallbackCopy(text, msg) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showAlert('Copied', msg || 'Copied to clipboard');
+            } catch(e) {
+                showAlert('Error', 'Press Ctrl+C / Cmd+C to copy');
+            }
+            document.body.removeChild(ta);
         }
 
         function showCreateDir() {
@@ -1500,11 +1524,7 @@ a bird on a tree</textarea>
         }
 
         function copyDownloadUrl(url) {
-            navigator.clipboard.writeText(url).then(function() {
-                showAlert('Copied', 'Download URL copied to clipboard');
-            }).catch(function() {
-                showAlert('Error', 'Failed to copy');
-            });
+            copyToClipboard(url, 'Download URL copied to clipboard');
         }
 
         function showConfirm(msg) {
