@@ -1291,6 +1291,8 @@ a bird on a tree</textarea>
             formData.append('url', url);
             formData.append('source', source);
             formData.append('subdirectory', subdir);
+            var saveAsVal = document.getElementById('model-save-as').value.trim();
+            if (saveAsVal) formData.append('save_as', saveAsVal);
             if (source === 'other') {
                 var headersVal = document.getElementById('model-headers').value.trim();
                 if (headersVal) formData.append('headers_json', headersVal);
@@ -1372,6 +1374,10 @@ a bird on a tree</textarea>
             <div class="form-group">
                 <label>Save to Directory</label>
                 <input type="text" id="download-subdir" placeholder="e.g. checkpoints/sd1.5" style="width:100%;">
+            </div>
+            <div class="form-group">
+                <label>Save as (optional)</label>
+                <input type="text" id="model-save-as" placeholder="Leave empty to use original filename" style="width:100%;">
             </div>
             <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
             <div id="download-progress" style="display:none;margin-top:10px;">

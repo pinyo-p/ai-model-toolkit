@@ -606,12 +606,23 @@ async def rename_model(
     return {"status": "ok", "message": f"Renamed to {new_path}"}
 
 
+def unique_path(filepath):
+    if not os.path.exists(filepath):
+        return filepath
+    base, ext = os.path.splitext(filepath)
+    i = 1
+    while os.path.exists(f"{base}-{i}{ext}"):
+        i += 1
+    return f"{base}-{i}{ext}"
+
+
 @app.post("/api/download_model")
 async def download_model(
     url: str = Form(...),
     source: str = Form("huggingface"),
     subdirectory: str = Form(""),
     headers_json: str = Form(""),
+    save_as: str = Form(""),
     user: str = Depends(get_current_user)
 ):
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
@@ -646,9 +657,11 @@ async def download_model(
         
         if filename:
             just_filename = filename.split("/")[-1] if "/" in filename else filename
+            if save_as:
+                just_filename = save_as
             dest = base
             os.makedirs(dest, exist_ok=True)
-            filepath = os.path.join(dest, just_filename)
+            filepath = unique_path(os.path.join(dest, just_filename))
             
             if shutil.which("hf"):
                 cmd = ["hf", "download", repo_id, filename, "--local-dir", dest]
@@ -669,7 +682,7 @@ async def download_model(
                 raise HTTPException(status_code=500, detail=detail)
             result["message"] = f"Downloaded to {filepath} ({os.path.getsize(filepath)} bytes)"
         else:
-            dest_name = repo_id.replace("/", "_")
+            dest_name = save_as if save_as else repo_id.replace("/", "_")
             dest = os.path.join(base, dest_name)
             
             if shutil.which("hf"):
@@ -714,10 +727,11 @@ async def download_model(
                     
                     r = requests.get(download_url, headers=headers)
                     if r.status_code == 200:
-                        filename = os.path.join(dest, f"{model_name}.safetensors")
-                        with open(filename, "wb") as f:
+                        base_name = save_as if save_as else f"{model_name}.safetensors"
+                        filepath = unique_path(os.path.join(dest, base_name))
+                        with open(filepath, "wb") as f:
                             f.write(r.content)
-                        result["message"] = f"Downloaded to {filename}"
+                        result["message"] = f"Downloaded to {filepath}"
                     else:
                         raise HTTPException(status_code=500, detail=f"Download failed: {r.status_code}")
                 else:
@@ -732,8 +746,8 @@ async def download_model(
             extra_headers = {}
             if headers_json:
                 extra_headers = json.loads(headers_json)
-            model_name = url.split("/")[-1] or "model"
-            filepath = os.path.join(models_path, model_name)
+            model_name = save_as if save_as else (url.split("/")[-1] or "model")
+            filepath = unique_path(os.path.join(models_path, model_name))
             os.makedirs(models_path, exist_ok=True)
             
             wget_available = shutil.which("wget") is not None
