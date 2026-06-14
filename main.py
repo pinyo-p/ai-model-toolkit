@@ -68,7 +68,8 @@ def load_settings():
         "civitai_token": "",
         "models_path": os.path.join(os.path.expanduser("~"), "models"),
         "base_url": "",
-        "api_keys": []
+        "api_keys": [],
+        "public_downloads": []
     }
 
 def save_settings(settings):
@@ -611,12 +612,15 @@ async def browse_models(path: str = "", user: str = Depends(get_current_user)):
             continue
         item_path = os.path.join(full, name)
         stat = os.stat(item_path)
+        rel_path = (path + "/" + name) if path else name
+        public_list = settings.get("public_downloads", [])
         items.append({
             "name": name,
             "type": "dir" if os.path.isdir(item_path) else "file",
             "size": stat.st_size,
             "modified": stat.st_mtime,
             "ext": os.path.splitext(name)[1].lower() if os.path.isfile(item_path) else "",
+            "public": rel_path in public_list,
         })
     return {
         "models_path": models_path,
@@ -663,10 +667,25 @@ async def rename_model(
     return {"status": "ok", "message": f"Renamed to {new_path}"}
 
 
+@app.post("/api/models/toggle-public")
+async def toggle_public(
+    path: str = Form(...),
+    public: bool = Form(False),
+    user: str = Depends(get_current_user)
+):
+    public_list = settings.get("public_downloads", [])
+    if public:
+        if path not in public_list:
+            public_list.append(path)
+    else:
+        public_list = [p for p in public_list if p != path]
+    settings["public_downloads"] = public_list
+    save_settings(settings)
+    return {"status": "ok", "public": public}
+
+
 @app.get("/api/models/download")
 async def download_model_file(path: str, api_key: str = ""):
-    if not check_api_key(api_key):
-        raise HTTPException(status_code=403, detail="Invalid or missing API key")
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
     abs_models = os.path.abspath(models_path)
     abs_file = os.path.abspath(os.path.join(abs_models, path))
@@ -674,6 +693,12 @@ async def download_model_file(path: str, api_key: str = ""):
         raise HTTPException(status_code=403, detail="Access denied")
     if not os.path.isfile(abs_file):
         raise HTTPException(status_code=404, detail="File not found")
+
+    public = settings.get("public_downloads", [])
+    is_public = path in public
+    if not is_public and not check_api_key(api_key):
+        raise HTTPException(status_code=403, detail="Invalid or missing API key")
+
     return FileResponse(abs_file, filename=os.path.basename(path), media_type="application/octet-stream", headers={"Content-Disposition": f"attachment; filename=\"{os.path.basename(path)}\""})
 
 

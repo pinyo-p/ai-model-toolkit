@@ -1224,7 +1224,7 @@ a bird on a tree</textarea>
                 var date = formatDate(item.modified);
                 var delPath = data.current_path ? data.current_path + '/' + item.name : item.name;
                 html += '<tr style="border-bottom:1px solid #222;" onmouseover="this.style.background=\'#2a2a2a\'" onmouseout="this.style.background=\'\'">'
-                    + '<td style="padding:8px;">' + icon + ' ' + nameHtml + '</td>'
+                    + '<td style="padding:8px;">' + icon + ' ' + nameHtml + ' ' + (item.public ? '<span style="color:#4caf50;font-size:10px;">🔓</span>' : '<span style="color:#888;font-size:10px;">🔒</span>') + '</td>'
                     + '<td style="padding:8px;color:#888;">' + size + '</td>'
                     + '<td style="padding:8px;color:#666;font-size:12px;">' + date + '</td>'
                     + '<td style="padding:8px;text-align:right;white-space:nowrap;">'
@@ -1496,8 +1496,9 @@ a bird on a tree</textarea>
             var sizeStr = formatSize(fileItem.size);
             var dateStr = formatDate(fileItem.modified);
             var baseUrl = window._baseUrl || window.location.origin;
+            var isPublic = fileItem.public === true;
             var apiKey = window._lastApiKey || (window._apiKeys && window._apiKeys.length > 0 ? window._apiKeys[0].key : '');
-            var apiKeyParam = apiKey ? '&api_key=' + encodeURIComponent(apiKey) : '';
+            var apiKeyParam = (apiKey && !isPublic) ? '&api_key=' + encodeURIComponent(apiKey) : '';
             var downloadUrl = baseUrl.replace(/\/+$/, '') + '/api/models/download?path=' + encodeURIComponent(path) + apiKeyParam;
 
             content.innerHTML =
@@ -1508,13 +1509,30 @@ a bird on a tree</textarea>
                 + '<tr><td style="color:#888;padding:4px 8px;">Type</td><td style="padding:4px 8px;">' + (fileItem.ext || '-') + '</td></tr>'
                 + '</table>'
                 + '<div style="margin-top:15px;padding-top:15px;border-top:1px solid #333;">'
-                + '<label style="color:#888;font-size:12px;">Secure Download URL (requires API key):</label>'
+                + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px;">'
+                + '<input type="checkbox" ' + (isPublic ? 'checked' : '') + ' onchange="togglePublic(\'' + path.replace(/'/g, "\\'") + '\', this.checked)">'
+                + '<span style="color:#e0e0e0;">Allow public download <span style="color:#888;font-size:12px;">(no API key needed)</span></span>'
+                + '</label>'
+                + '<label style="color:#888;font-size:12px;">' + (isPublic ? '🔓 Public' : '🔒 Private') + ' Download URL' + (isPublic ? '' : ' (requires API key)') + ':</label>'
                 + '<div style="display:flex;gap:8px;margin-top:4px;">'
                 + '<input type="text" readonly value="' + downloadUrl + '" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#4caf50;font-size:12px;font-family:monospace;">'
                 + '<button onclick="copyDownloadUrl(\'' + downloadUrl.replace(/'/g, "\\'") + '\')" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>'
                 + '</div>'
                 + '<a href="' + downloadUrl + '" target="_blank" style="display:inline-block;margin-top:8px;padding:8px 16px;background:#00d4ff;border:none;border-radius:5px;color:#000;text-decoration:none;font-weight:600;">⬇ Download File</a>'
                 + '</div>';
+        }
+
+        async function togglePublic(path, isPublic) {
+            var fd = new FormData();
+            fd.append('path', path);
+            fd.append('public', isPublic ? 'true' : 'false');
+            try {
+                var res = await fetch('/api/models/toggle-public', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                browseFiles();
+            } catch(e) {
+                showAlert('Error', e.message);
+            }
         }
 
         function showAlert(title, msg) {
