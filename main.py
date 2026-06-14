@@ -620,15 +620,21 @@ async def download_model(
             r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
             r.raise_for_status()
             total = int(r.headers.get("content-length", 0))
-            with open(filepath, "wb") as f:
+            tmp = filepath + ".partial"
+            with open(tmp, "wb") as f:
                 downloaded = 0
                 for chunk in r.iter_content(chunk_size=65536):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
+                f.flush()
+                os.fsync(f.fileno())
             if total and downloaded < total:
-                os.remove(filepath)
+                os.remove(tmp)
                 raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
+            os.replace(tmp, filepath)
+            if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                raise HTTPException(status_code=500, detail="File missing or empty after save")
             result["message"] = f"Downloaded to {filepath}"
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
