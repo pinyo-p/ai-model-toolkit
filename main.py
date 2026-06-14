@@ -565,10 +565,15 @@ async def download_model(
             cmd.extend(["--token", hf_token])
         
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-            result["message"] = f"Downloaded to {dest}"
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="huggingface-cli timed out after 1 hour")
+        if r.returncode != 0:
+            detail = r.stderr.strip() or r.stdout.strip() or f"huggingface-cli exited with code {r.returncode}"
+            raise HTTPException(status_code=500, detail=detail)
+        if not os.path.isdir(dest) or not any(True for _ in os.scandir(dest)):
+            raise HTTPException(status_code=500, detail="Download directory is empty")
+        result["message"] = f"Downloaded to {dest}"
     
     elif source == "civitai":
         civit_token = settings.get("civitai_token", "")
@@ -624,12 +629,22 @@ async def download_model(
                 cmd = ["wget", "-O", filepath, url]
                 for k, v in extra_headers.items():
                     cmd.extend(["--header", f"{k}: {v}"])
-                subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+                if r.returncode != 0:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                    detail = r.stderr.strip() or r.stdout.strip() or f"wget exited with code {r.returncode}"
+                    raise HTTPException(status_code=500, detail=detail)
             elif curl_available:
                 cmd = ["curl", "-L", "-o", filepath, url]
                 for k, v in extra_headers.items():
                     cmd.extend(["-H", f"{k}: {v}"])
-                subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+                if r.returncode != 0:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                    detail = r.stderr.strip() or r.stdout.strip() or f"curl exited with code {r.returncode}"
+                    raise HTTPException(status_code=500, detail=detail)
             else:
                 import requests
                 r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
@@ -649,9 +664,19 @@ async def download_model(
                     raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
                 os.replace(tmp, filepath)
             
-            if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-                raise HTTPException(status_code=500, detail="File missing or empty after save")
-            result["message"] = f"Downloaded to {filepath}"
+            if not os.path.exists(filepath):
+                raise HTTPException(status_code=500, detail="File not found after download")
+            size = os.path.getsize(filepath)
+            if size == 0:
+                os.remove(filepath)
+                raise HTTPException(status_code=500, detail="Downloaded file is empty (0 bytes)")
+            result["message"] = f"Downloaded to {filepath} ({size} bytes)"
+        except HTTPException:
+            raise
+        except subprocess.TimeoutExpired:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            raise HTTPException(status_code=504, detail="Download timed out after 2 hours")
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
