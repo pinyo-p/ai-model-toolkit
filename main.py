@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import uuid
 import json
@@ -556,23 +557,29 @@ async def download_model(
     result = {"status": "ok", "message": ""}
     
     if source == "huggingface":
+        import shutil
         hf_token = settings.get("hf_token", "")
         model_name = url.replace("https://huggingface.co/", "").replace("https://HF.co/", "").strip("/")
         dest = os.path.join(models_path, model_name.replace("/", "_"))
         
-        cmd = ["huggingface-cli", "download", model_name, "--local-dir", dest]
-        if hf_token:
-            cmd.extend(["--token", hf_token])
+        if shutil.which("hf"):
+            cmd = ["hf", "download", model_name, "--local-dir", dest]
+            if hf_token:
+                cmd.extend(["--token", hf_token])
+        else:
+            cmd = ["huggingface-cli", "download", model_name, "--local-dir", dest]
+            if hf_token:
+                cmd.extend(["--token", hf_token])
         
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=504, detail="huggingface-cli timed out after 1 hour")
-        if r.returncode != 0:
-            detail = r.stderr.strip() or r.stdout.strip() or f"huggingface-cli exited with code {r.returncode}"
-            raise HTTPException(status_code=500, detail=detail)
+            raise HTTPException(status_code=504, detail="Download timed out after 1 hour")
+        
+        # huggingface-cli may exit non-zero with only deprecation warnings; check actual result
         if not os.path.isdir(dest) or not any(True for _ in os.scandir(dest)):
-            raise HTTPException(status_code=500, detail="Download directory is empty")
+            detail = r.stderr.strip() or r.stdout.strip() or f"Command exited with code {r.returncode}"
+            raise HTTPException(status_code=500, detail=detail)
         result["message"] = f"Downloaded to {dest}"
     
     elif source == "civitai":
