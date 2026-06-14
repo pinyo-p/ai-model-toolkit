@@ -558,12 +558,11 @@ async def download_model(
     if source == "huggingface":
         hf_token = settings.get("hf_token", "")
         
-        # Parse HuggingFace URL: https://huggingface.co/{namespace}/{repo}[/{blob|resolve|tree}/{branch}/{path}]
+        # Parse HuggingFace URL
         hf_url = url.replace("https://huggingface.co/", "").replace("https://HF.co/", "").strip("/")
         for sep in ("/blob/", "/resolve/", "/tree/"):
             if sep in hf_url:
                 repo_id, after = hf_url.split(sep, 1)
-                # after = branch[/path]
                 parts = after.split("/", 1)
                 filename = parts[1] if len(parts) > 1 else ""
                 break
@@ -575,38 +574,56 @@ async def download_model(
                 repo_id = "/".join(repo_parts[:2])
                 filename = "/".join(repo_parts[2:])
         
-        dest_name = repo_id.replace("/", "_")
+        base = models_path
+        if subdirectory:
+            base = os.path.join(models_path, subdirectory)
+        
         if filename:
-            safe_fn = filename.replace("/", "_")
-            dest = os.path.join(models_path, f"{dest_name}_{safe_fn}")
+            just_filename = filename.split("/")[-1] if "/" in filename else filename
+            dest = base
+            os.makedirs(dest, exist_ok=True)
+            filepath = os.path.join(dest, just_filename)
+            
+            if shutil.which("hf"):
+                cmd = ["hf", "download", repo_id, filename, "--local-dir", dest]
+                if hf_token:
+                    cmd.extend(["--token", hf_token])
+            else:
+                cmd = ["huggingface-cli", "download", repo_id, filename, "--local-dir", dest]
+                if hf_token:
+                    cmd.extend(["--token", hf_token])
+            
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            except subprocess.TimeoutExpired:
+                raise HTTPException(status_code=504, detail="Download timed out after 1 hour")
+            
+            if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                detail = r.stderr.strip() or r.stdout.strip() or "File not found after download"
+                raise HTTPException(status_code=500, detail=detail)
+            result["message"] = f"Downloaded to {filepath} ({os.path.getsize(filepath)} bytes)"
         else:
-            dest = os.path.join(models_path, dest_name)
-        
-        if shutil.which("hf"):
-            cmd = ["hf", "download", repo_id]
-            if filename:
-                cmd.append(filename)
-            cmd.extend(["--local-dir", dest])
-            if hf_token:
-                cmd.extend(["--token", hf_token])
-        else:
-            cmd = ["huggingface-cli", "download", repo_id]
-            if filename:
-                cmd.append(filename)
-            cmd.extend(["--local-dir", dest])
-            if hf_token:
-                cmd.extend(["--token", hf_token])
-        
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=504, detail="Download timed out after 1 hour")
-        
-        # huggingface-cli may exit non-zero with only deprecation warnings; check actual result
-        if not os.path.isdir(dest) or not any(True for _ in os.scandir(dest)):
-            detail = r.stderr.strip() or r.stdout.strip() or f"Command exited with code {r.returncode}"
-            raise HTTPException(status_code=500, detail=detail)
-        result["message"] = f"Downloaded to {dest}"
+            dest_name = repo_id.replace("/", "_")
+            dest = os.path.join(base, dest_name)
+            
+            if shutil.which("hf"):
+                cmd = ["hf", "download", repo_id, "--local-dir", dest]
+                if hf_token:
+                    cmd.extend(["--token", hf_token])
+            else:
+                cmd = ["huggingface-cli", "download", repo_id, "--local-dir", dest]
+                if hf_token:
+                    cmd.extend(["--token", hf_token])
+            
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            except subprocess.TimeoutExpired:
+                raise HTTPException(status_code=504, detail="Download timed out after 1 hour")
+            
+            if not os.path.isdir(dest) or not any(True for _ in os.scandir(dest)):
+                detail = r.stderr.strip() or r.stdout.strip() or "Download directory is empty"
+                raise HTTPException(status_code=500, detail=detail)
+            result["message"] = f"Downloaded to {dest}"
     
     elif source == "civitai":
         civit_token = settings.get("civitai_token", "")
