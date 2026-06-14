@@ -83,6 +83,8 @@
             <button class="tab" onclick="showTab('settings')">Settings</button>
         </div>
 
+        <div id="base-url-bar" style="display:none;padding:6px 15px;background:#1a2a1a;border-bottom:1px solid #2a4a2a;font-size:12px;color:#4caf50;text-align:center;word-break:break-all;"></div>
+
         <div id="generate" class="panel active">
             <div class="form-group">
                 <label>Model</label>
@@ -429,6 +431,10 @@ a bird on a tree</textarea>
             <div class="form-group">
                 <label>Models Path</label>
                 <input type="text" id="settings-models-path" placeholder="/path/to/models">
+            </div>
+            <div class="form-group">
+                <label>Base URL (shown in app)</label>
+                <input type="text" id="settings-base-url" placeholder="e.g. http://192.168.1.100:7800">
             </div>
             <button class="btn" onclick="saveSettings()">Save Settings</button>
             <div class="output" id="settings-output">
@@ -947,6 +953,15 @@ a bird on a tree</textarea>
                 document.getElementById('settings-hf-token').value = data.hf_token || '';
                 document.getElementById('settings-civitai-token').value = data.civitai_token || '';
                 document.getElementById('settings-models-path').value = data.models_path || '';
+                document.getElementById('settings-base-url').value = data.base_url || '';
+                var bar = document.getElementById('base-url-bar');
+                if (data.base_url) {
+                    bar.textContent = '🔗 ' + data.base_url;
+                    bar.style.display = 'block';
+                } else {
+                    bar.style.display = 'none';
+                }
+                window._baseUrl = data.base_url || '';
             } catch(e) {
                 console.error('Failed to load settings:', e);
             }
@@ -1013,12 +1028,14 @@ a bird on a tree</textarea>
             formData.append('hf_token', document.getElementById('settings-hf-token').value);
             formData.append('civitai_token', document.getElementById('settings-civitai-token').value);
             formData.append('models_path', document.getElementById('settings-models-path').value);
+            formData.append('base_url', document.getElementById('settings-base-url').value);
 
             try {
                 const res = await fetch('/api/settings', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();
                 output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
+                loadSettings();
                 loadTrainModels();
                 browseFiles();
             } catch(e) {
@@ -1120,6 +1137,7 @@ a bird on a tree</textarea>
                     + '<td style="padding:8px;color:#888;">' + size + '</td>'
                     + '<td style="padding:8px;color:#666;font-size:12px;">' + date + '</td>'
                     + '<td style="padding:8px;text-align:right;white-space:nowrap;">'
+                    + (item.type === 'file' ? '<button onclick="showFileDetail(\'' + delPath.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#00d4ff;cursor:pointer;padding:2px 5px;" title="Details">ℹ️</button>' : '')
                     + '<button onclick="showRename(\'' + delPath.replace(/'/g, "\\'") + '\',\'' + item.name.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#888;cursor:pointer;padding:2px 5px;">✏️</button>'
                     + '<button onclick="deleteFile(\'' + delPath.replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#ff4444;cursor:pointer;padding:2px 5px;">🗑️</button>'
                     + '</td>'
@@ -1222,6 +1240,14 @@ a bird on a tree</textarea>
 
         async function handleUpload(files) {
             if (!files || files.length === 0) return;
+            var fileNames = [];
+            for (var i = 0; i < files.length; i++) fileNames.push(files[i].name);
+            var dirLabel = currentBrowsePath || '(root)';
+            var confirmed = await showConfirm('Upload ' + files.length + ' file(s) to <strong>' + dirLabel + '</strong>?<br><br><small style="color:#888;">' + fileNames.join(', ') + '</small>');
+            if (!confirmed) {
+                document.getElementById('upload-input').value = '';
+                return;
+            }
             var progress = document.getElementById('upload-progress');
             var bar = document.getElementById('up-bar');
             var text = document.getElementById('up-text');
@@ -1324,6 +1350,52 @@ a bird on a tree</textarea>
             document.getElementById('download-modal').style.display = 'flex';
         }
 
+        async function showFileDetail(path) {
+            var content = document.getElementById('file-detail-content');
+            var title = document.getElementById('file-detail-title');
+            title.textContent = '📄 ' + path.split('/').pop();
+            content.innerHTML = '<span class="loading">Loading...</span>';
+            document.getElementById('file-detail-modal').style.display = 'flex';
+
+            try {
+                const res = await fetch('/api/models/browse?path=' + encodeURIComponent(path), { headers: { 'Authorization': 'Basic ' + auth } });
+                if (res.ok) { throw new Error('not a file'); }
+            } catch(e) {}
+
+            const browseRes = await fetch('/api/models/browse?path=' + encodeURIComponent(path.substring(0, path.lastIndexOf('/'))), { headers: { 'Authorization': 'Basic ' + auth } });
+            if (!browseRes.ok) { content.innerHTML = '<span class="error">Failed to load details</span>'; return; }
+            const browseData = await browseRes.json();
+            var fileName = path.split('/').pop();
+            var fileItem = null;
+            if (browseData.items) {
+                browseData.items.forEach(function(it) {
+                    if (it.name === fileName && it.type === 'file') fileItem = it;
+                });
+            }
+            if (!fileItem) { content.innerHTML = '<span class="error">File not found</span>'; return; }
+
+            var sizeStr = formatSize(fileItem.size);
+            var dateStr = formatDate(fileItem.modified);
+            var baseUrl = window._baseUrl || window.location.origin;
+            var downloadUrl = baseUrl.replace(/\/+$/, '') + '/api/models/download?path=' + encodeURIComponent(path);
+
+            content.innerHTML =
+                '<table style="width:100%;">'
+                + '<tr><td style="color:#888;padding:4px 8px;">Name</td><td style="padding:4px 8px;">' + fileName + '</td></tr>'
+                + '<tr><td style="color:#888;padding:4px 8px;">Size</td><td style="padding:4px 8px;">' + sizeStr + ' (' + fileItem.size + ' bytes)</td></tr>'
+                + '<tr><td style="color:#888;padding:4px 8px;">Modified</td><td style="padding:4px 8px;">' + dateStr + '</td></tr>'
+                + '<tr><td style="color:#888;padding:4px 8px;">Type</td><td style="padding:4px 8px;">' + (fileItem.ext || '-') + '</td></tr>'
+                + '</table>'
+                + '<div style="margin-top:15px;padding-top:15px;border-top:1px solid #333;">'
+                + '<label style="color:#888;font-size:12px;">Secure Download URL (requires login):</label>'
+                + '<div style="display:flex;gap:8px;margin-top:4px;">'
+                + '<input type="text" readonly value="' + downloadUrl + '" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#4caf50;font-size:12px;font-family:monospace;">'
+                + '<button onclick="navigator.clipboard.writeText(\'' + downloadUrl.replace(/'/g, "\\'") + '\');showAlert(\'Copied\',\'Download URL copied to clipboard\')" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#fff;cursor:pointer;">📋</button>'
+                + '</div>'
+                + '<a href="' + downloadUrl + '" target="_blank" style="display:inline-block;margin-top:8px;padding:8px 16px;background:#00d4ff;border:none;border-radius:5px;color:#000;text-decoration:none;font-weight:600;">⬇ Download File</a>'
+                + '</div>';
+        }
+
         function showAlert(title, msg) {
             document.getElementById('alert-title').textContent = 'ℹ️ ' + title;
             document.getElementById('alert-msg').textContent = msg;
@@ -1388,6 +1460,18 @@ a bird on a tree</textarea>
                 <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
             </div>
             <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
+        </div>
+    </div>
+
+    <!-- File Detail Modal -->
+    <div class="modal-overlay" id="file-detail-modal">
+        <div class="modal-box" style="min-width:400px;max-width:600px;">
+            <button class="modal-close" onclick="closeModal('file-detail-modal')">✕</button>
+            <h3 id="file-detail-title">📄 File Details</h3>
+            <div id="file-detail-content" style="margin:15px 0;font-size:14px;line-height:1.8;"></div>
+            <div class="modal-actions">
+                <button class="btn-primary" onclick="closeModal('file-detail-modal')">Close</button>
+            </div>
         </div>
     </div>
 

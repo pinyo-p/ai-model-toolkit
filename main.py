@@ -64,7 +64,8 @@ def load_settings():
     return {
         "hf_token": "",
         "civitai_token": "",
-        "models_path": os.path.join(os.path.expanduser("~"), "models")
+        "models_path": os.path.join(os.path.expanduser("~"), "models"),
+        "base_url": ""
     }
 
 def save_settings(settings):
@@ -436,7 +437,8 @@ async def get_settings(user: str = Depends(get_current_user)):
     return {
         "hf_token": settings.get("hf_token", ""),
         "civitai_token": settings.get("civitai_token", ""),
-        "models_path": settings.get("models_path", "")
+        "models_path": settings.get("models_path", ""),
+        "base_url": settings.get("base_url", "")
     }
 
 
@@ -445,6 +447,7 @@ async def update_settings(
     hf_token: str = Form(""),
     civitai_token: str = Form(""),
     models_path: str = Form(""),
+    base_url: str = Form(""),
     user: str = Depends(get_current_user)
 ):
     if hf_token:
@@ -453,6 +456,7 @@ async def update_settings(
         settings["civitai_token"] = civitai_token
     if models_path:
         settings["models_path"] = models_path
+    settings["base_url"] = base_url
     save_settings(settings)
     return {"status": "ok", "message": "Settings saved"}
 
@@ -604,6 +608,18 @@ async def rename_model(
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     os.rename(src, dst)
     return {"status": "ok", "message": f"Renamed to {new_path}"}
+
+
+@app.get("/api/models/download")
+async def download_model_file(path: str, user: str = Depends(get_current_user)):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    abs_models = os.path.abspath(models_path)
+    abs_file = os.path.abspath(os.path.join(abs_models, path))
+    if not abs_file.startswith(abs_models):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not os.path.isfile(abs_file):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(abs_file, filename=os.path.basename(path), media_type="application/octet-stream", headers={"Content-Disposition": f"attachment; filename=\"{os.path.basename(path)}\""})
 
 
 def unique_path(filepath):
