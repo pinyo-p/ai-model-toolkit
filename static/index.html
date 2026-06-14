@@ -42,6 +42,15 @@
         .file-list { margin-top: 10px; color: #00d4ff; font-size: 14px; }
         .gpu-info { background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-family: monospace; }
         select.base-model { padding: 8px 10px; font-size: 13px; }
+        /* Modals */
+        .modal-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10000;display:none;align-items:center;justify-content:center; }
+        .modal-box { background:#1a1a1a;border-radius:12px;padding:25px;min-width:400px;max-width:600px;max-height:80vh;overflow-y:auto; }
+        .modal-box h3 { color:#00d4ff;margin-bottom:15px; }
+        .modal-close { float:right;background:none;border:none;color:#888;font-size:22px;cursor:pointer; }
+        .modal-actions { display:flex;gap:10px;justify-content:flex-end;margin-top:20px; }
+        .modal-actions button { padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600; }
+        .modal-actions .btn-primary { background:#00d4ff;color:#000; }
+        .modal-actions .btn-secondary { background:#333;color:#e0e0e0; }
     </style>
 </head>
 <body>
@@ -360,47 +369,11 @@ a bird on a tree</textarea>
         <div id="loadmodel" class="panel">
             <h2 style="margin-bottom:20px;color:#00d4ff;">File Manager</h2>
 
-            <!-- Download Section -->
-            <details style="margin-bottom:20px;" open>
-                <summary style="cursor:pointer;color:#00d4ff;font-size:15px;font-weight:600;margin-bottom:10px;">⬇ Download Model</summary>
-                <div class="form-group">
-                    <label>Model URL</label>
-                    <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
-                </div>
-                <div class="form-group">
-                    <label>Source</label>
-                    <select id="model-source" onchange="onSourceChange()">
-                        <option value="huggingface">HuggingFace</option>
-                        <option value="civitai">CivitAI</option>
-                        <option value="other">Other (Direct URL)</option>
-                    </select>
-                </div>
-                <div class="form-group" id="headers-row" style="display:none;">
-                    <label>Custom Headers (JSON)</label>
-                    <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Save to Directory</label>
-                    <div style="display:flex;gap:8px;">
-                        <input type="text" id="download-subdir" placeholder="e.g. checkpoints/sd1.5" style="flex:1;">
-                    </div>
-                </div>
-                <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
-                <div id="download-progress" style="display:none;margin-top:8px;">
-                    <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                        <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;animation:progressPulse 2s ease-in-out infinite;"></div>
-                    </div>
-                    <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
-                </div>
-                <div class="output" id="download-output" style="min-height:30px;margin-top:10px;padding:10px;">
-                    <span class="placeholder">Download status</span>
-                </div>
-            </details>
-
             <!-- File Browser -->
             <div style="background:#1a1a1a;border-radius:10px;padding:15px;">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
                     <span id="breadcrumb" style="flex:1;color:#888;font-size:13px;">📁 /</span>
+                    <button onclick="showDownloadModal()" style="padding:6px 12px;background:#00d4ff;border:none;border-radius:5px;color:#000;cursor:pointer;font-size:13px;font-weight:600;">⬇ Download</button>
                     <button onclick="showCreateDir()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">+ Folder</button>
                     <button onclick="document.getElementById('upload-input').click()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:13px;">📤 Upload</button>
                     <button onclick="browseFiles()" style="padding:6px 12px;background:#333;border:none;border-radius:5px;color:#888;cursor:pointer;font-size:13px;">🔄</button>
@@ -1191,12 +1164,12 @@ a bird on a tree</textarea>
                 cancelCreateDir();
                 browseFiles();
             } catch(e) {
-                alert('Error: ' + e.message);
+                showAlert('Error', e.message);
             }
         }
 
         async function deleteFile(path) {
-            if (!confirm('Delete "' + path + '"?')) return;
+            if (!(await showConfirm('Delete "' + path + '"?'))) return;
             try {
                 const res = await fetch('/api/models?path=' + encodeURIComponent(path), { 
                     method: 'DELETE', headers: { 'Authorization': 'Basic ' + auth } 
@@ -1204,7 +1177,7 @@ a bird on a tree</textarea>
                 if (!res.ok) throw new Error(await res.text());
                 browseFiles();
             } catch(e) {
-                alert('Error: ' + e.message);
+                showAlert('Error', e.message);
             }
         }
 
@@ -1236,7 +1209,7 @@ a bird on a tree</textarea>
                 cancelRename();
                 browseFiles();
             } catch(e) {
-                alert('Error: ' + e.message);
+                showAlert('Error', e.message);
             }
         }
 
@@ -1338,6 +1311,100 @@ a bird on a tree</textarea>
                 btn.textContent = 'Download';
             }
         }
+
+        // ---- Modals ----
+        let confirmResolver = null;
+
+        function showDownloadModal() {
+            document.getElementById('download-output').innerHTML = '<span style="color:#555;">Ready</span>';
+            document.getElementById('download-progress').style.display = 'none';
+            document.getElementById('download-modal').style.display = 'flex';
+        }
+
+        function showAlert(title, msg) {
+            document.getElementById('alert-title').textContent = 'ℹ️ ' + title;
+            document.getElementById('alert-msg').textContent = msg;
+            document.getElementById('alert-modal').style.display = 'flex';
+        }
+
+        function showConfirm(msg) {
+            return new Promise(function(resolve) {
+                confirmResolver = resolve;
+                document.getElementById('confirm-msg').textContent = msg;
+                document.getElementById('confirm-modal').style.display = 'flex';
+            });
+        }
+
+        function confirmAnswer(answer) {
+            document.getElementById('confirm-modal').style.display = 'none';
+            if (confirmResolver) {
+                confirmResolver(answer);
+                confirmResolver = null;
+            }
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
     </script>
+
+    <!-- Download Modal -->
+    <div class="modal-overlay" id="download-modal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('download-modal')">✕</button>
+            <h3>⬇ Download Model</h3>
+            <div class="form-group">
+                <label>Model URL</label>
+                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
+            </div>
+            <div class="form-group">
+                <label>Source</label>
+                <select id="model-source" onchange="onSourceChange()">
+                    <option value="huggingface">HuggingFace</option>
+                    <option value="civitai">CivitAI</option>
+                    <option value="other">Other (Direct URL)</option>
+                </select>
+            </div>
+            <div class="form-group" id="headers-row" style="display:none;">
+                <label>Custom Headers (JSON)</label>
+                <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Save to Directory</label>
+                <input type="text" id="download-subdir" placeholder="e.g. checkpoints/sd1.5" style="width:100%;">
+            </div>
+            <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
+            <div id="download-progress" style="display:none;margin-top:10px;">
+                <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
+                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;animation:progressPulse 2s ease-in-out infinite;"></div>
+                </div>
+                <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
+            </div>
+            <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div class="modal-overlay" id="confirm-modal">
+        <div class="modal-box" style="min-width:350px;">
+            <h3>⚠️ Confirm</h3>
+            <p id="confirm-msg" style="margin:15px 0;font-size:15px;"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="confirmAnswer(false)">Cancel</button>
+                <button class="btn-primary" onclick="confirmAnswer(true)">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div class="modal-overlay" id="alert-modal">
+        <div class="modal-box" style="min-width:350px;">
+            <h3 id="alert-title">ℹ️ Notice</h3>
+            <p id="alert-msg" style="margin:15px 0;font-size:15px;"></p>
+            <div class="modal-actions">
+                <button class="btn-primary" onclick="closeModal('alert-modal')">OK</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
