@@ -541,15 +541,15 @@ a bird on a tree</textarea>
                     if (!select) return;
                     while (select.options.length > 2) select.remove(2);
                     localModels.forEach(function(m) {
-                        if (m.type === 'folder') {
-                            (m.files || []).forEach(function(f) {
+                        if (m.type === 'folder' && m.files && m.files.length > 0) {
+                            (m.files).forEach(function(f) {
                                 var relPath = m.name + '/' + f;
                                 var opt = document.createElement('option');
                                 opt.textContent = relPath;
                                 opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
                                 select.appendChild(opt);
                             });
-                        } else {
+                        } else if (m.type === 'file') {
                             var opt = document.createElement('option');
                             opt.textContent = m.name;
                             opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
@@ -968,15 +968,15 @@ a bird on a tree</textarea>
                     if (!select) return;
                     while (select.options.length > 2) select.remove(2);
                     localModels.forEach(function(m) {
-                        if (m.type === 'folder') {
-                            (m.files || []).forEach(function(f) {
+                        if (m.type === 'folder' && m.files && m.files.length > 0) {
+                            (m.files).forEach(function(f) {
                                 const relPath = m.name + '/' + f;
                                 const opt = document.createElement('option');
                                 opt.textContent = relPath;
                                 opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
                                 select.appendChild(opt);
                             });
-                        } else {
+                        } else if (m.type === 'file') {
                             const opt = document.createElement('option');
                             opt.textContent = m.name;
                             opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
@@ -1054,7 +1054,19 @@ a bird on a tree</textarea>
                     html += '<table style="width:100%;border-collapse:collapse;">';
                     data.models.forEach(m => {
                         if (m.type === 'folder') {
-                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📁 <strong>' + m.name + '</strong></td><td style="padding:8px;color:#888;">' + m.count + ' files</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                            var info = '';
+                            if (m.files && m.files.length > 0) info += m.files.length + ' files';
+                            if (m.subdirs && m.subdirs.length > 0) {
+                                if (info) info += ', ';
+                                info += m.subdirs.length + ' subdirectories';
+                            }
+                            if (!info) info = 'empty';
+                            html += '<tr style="border-bottom:1px solid #333;"><td style="padding:8px;">📁 <strong>' + m.name + '</strong></td><td style="padding:8px;color:#888;">' + info + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                            if (m.subdirs && m.subdirs.length > 0) {
+                                m.subdirs.forEach(function(sd) {
+                                    html += '<tr style="border-bottom:1px solid #222;"><td style="padding:8px;padding-left:30px;color:#888;">📂 ' + sd + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '/' + sd + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';
+                                });
+                            }
                             if (m.files && m.files.length > 0) {
                                 m.files.forEach(f => {
                                     html += '<tr style="border-bottom:1px solid #222;"><td style="padding:8px;padding-left:30px;color:#aaa;">📄 ' + f + '</td><td style="padding:8px;"><button onclick="deleteModel(\'' + m.name + '/' + f + '\')" style="background:#ff4444;border:none;padding:3px 8px;border-radius:4px;color:#fff;cursor:pointer;">🗑️</button></td></tr>';

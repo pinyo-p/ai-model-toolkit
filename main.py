@@ -465,13 +465,25 @@ async def list_models(user: str = Depends(get_current_user)):
     if os.path.exists(models_path):
         for item in sorted(os.listdir(models_path)):
             item_path = os.path.join(models_path, item)
+            if item.startswith("."):
+                continue
             if os.path.isdir(item_path):
-                # Filter folder - show only if contains ckpt/safetensors
-                folder_files = os.listdir(item_path)
-                has_model = any(os.path.splitext(f)[1].lower() in allowed_ext for f in folder_files)
-                if has_model:
-                    subfiles = [f for f in folder_files if os.path.splitext(f)[1].lower() in allowed_ext][:10]
-                    result.append({"name": item, "type": "folder", "files": subfiles, "count": len(folder_files)})
+                folder_files = []
+                nested_dirs = []
+                for f in sorted(os.listdir(item_path)):
+                    f_path = os.path.join(item_path, f)
+                    if f.startswith("."):
+                        continue
+                    if os.path.isdir(f_path):
+                        nested_dirs.append(f)
+                    elif os.path.splitext(f)[1].lower() in allowed_ext:
+                        folder_files.append(f)
+                entry = {"name": item, "type": "folder"}
+                if folder_files:
+                    entry["files"] = folder_files[:10]
+                if nested_dirs:
+                    entry["subdirs"] = nested_dirs
+                result.append(entry)
             else:
                 ext = os.path.splitext(item)[1].lower()
                 if ext in allowed_ext:
