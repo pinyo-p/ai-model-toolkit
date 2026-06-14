@@ -9,3 +9,5 @@ settings.json
 *.ckpt
 *.pt
 *.pth
+*.png
+skill.md
