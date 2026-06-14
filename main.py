@@ -608,7 +608,7 @@ async def download_model(
     
     else:  # other - direct URL
         try:
-            import requests
+            import shutil
             extra_headers = {}
             if headers_json:
                 import json
@@ -617,22 +617,38 @@ async def download_model(
             filepath = os.path.join(models_path, model_name)
             os.makedirs(models_path, exist_ok=True)
             
-            r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
-            r.raise_for_status()
-            total = int(r.headers.get("content-length", 0))
-            tmp = filepath + ".partial"
-            with open(tmp, "wb") as f:
-                downloaded = 0
-                for chunk in r.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                f.flush()
-                os.fsync(f.fileno())
-            if total and downloaded < total:
-                os.remove(tmp)
-                raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
-            os.replace(tmp, filepath)
+            wget_available = shutil.which("wget") is not None
+            curl_available = shutil.which("curl") is not None
+            
+            if wget_available:
+                cmd = ["wget", "-O", filepath, url]
+                for k, v in extra_headers.items():
+                    cmd.extend(["--header", f"{k}: {v}"])
+                subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+            elif curl_available:
+                cmd = ["curl", "-L", "-o", filepath, url]
+                for k, v in extra_headers.items():
+                    cmd.extend(["-H", f"{k}: {v}"])
+                subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+            else:
+                import requests
+                r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
+                r.raise_for_status()
+                total = int(r.headers.get("content-length", 0))
+                tmp = filepath + ".partial"
+                with open(tmp, "wb") as f:
+                    downloaded = 0
+                    for chunk in r.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if total and downloaded < total:
+                    os.remove(tmp)
+                    raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
+                os.replace(tmp, filepath)
+            
             if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
                 raise HTTPException(status_code=500, detail="File missing or empty after save")
             result["message"] = f"Downloaded to {filepath}"
