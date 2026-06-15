@@ -805,8 +805,10 @@ async def download_model(
         import urllib.parse
         
         parsed = urllib.parse.urlparse(url)
-        download_host = "https://civitai.com"
+        domain = parsed.hostname or "civitai.com"
+        download_host = f"https://{domain}"
         search_api = "https://civitai.com/api/v1/models"
+        dl_headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         
         qs = urllib.parse.parse_qs(parsed.query)
         version_id = qs.get("modelVersionId", [None])[0]
@@ -835,8 +837,7 @@ async def download_model(
                 download_url += f"?token={civit_token}"
             model_name = model_name or f"model-{model_id_from_path}"
         else:
-            headers = {"Authorization": f"Bearer {civit_token}"} if civit_token else {}
-            resp = requests.get(f"{search_api}?search={url}", headers=headers, timeout=30)
+            resp = requests.get(f"{search_api}?search={url}", headers=dl_headers, timeout=30)
             if resp.status_code != 200:
                 raise HTTPException(status_code=500, detail="CivitAI API error")
             data = resp.json()
@@ -853,7 +854,7 @@ async def download_model(
         filepath = unique_path(os.path.join(models_path, base_name))
         
         try:
-            r = requests.get(download_url, timeout=7200, stream=True)
+            r = requests.get(download_url, headers=dl_headers, timeout=7200, stream=True)
             if r.status_code != 200:
                 raise HTTPException(status_code=500, detail=f"Download failed: {r.status_code}")
             with open(filepath, "wb") as f:
