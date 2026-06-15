@@ -804,19 +804,16 @@ async def download_model(
         import requests
         import urllib.parse
         
-        # Parse domain from URL (support custom domains like civitai.red)
         parsed = urllib.parse.urlparse(url)
         domain = parsed.hostname or "civitai.com"
         api_base = f"https://{domain}"
         search_api = "https://civitai.com/api/v1/models"
         
-        # Try to extract modelVersionId from query params
         qs = urllib.parse.parse_qs(parsed.query)
         version_id = qs.get("modelVersionId", [None])[0]
         model_name = None
         model_id_from_path = None
         
-        # Extract model name from URL path for display
         path_parts = parsed.path.strip("/").split("/")
         if len(path_parts) >= 2 and path_parts[0] == "models":
             raw_name = path_parts[-1].replace("-", " ").replace("_", " ").title()
@@ -834,12 +831,11 @@ async def download_model(
                 download_url += f"?token={civit_token}"
             model_name = model_name or f"model-{version_id}"
         elif model_id_from_path:
-            download_url = f"{api_base}/api/v1/models/{model_id_from_path}/download"
+            download_url = f"{api_base}/api/download/models/{model_id_from_path}"
             if civit_token:
                 download_url += f"?token={civit_token}"
             model_name = model_name or f"model-{model_id_from_path}"
         else:
-            # Fallback: search API using user's input
             headers = {"Authorization": f"Bearer {civit_token}"} if civit_token else {}
             resp = requests.get(f"{search_api}?search={url}", headers=headers, timeout=30)
             if resp.status_code != 200:
@@ -850,16 +846,15 @@ async def download_model(
             model_id = data["items"][0]["id"]
             version_id = data["items"][0]["modelVersions"][0]["id"]
             model_name = data["items"][0]["name"]
-            download_url = f"{api_base}/api/v1/models/{model_id}/download"
+            download_url = f"{api_base}/api/download/models/{version_id}"
             if civit_token:
                 download_url += f"?token={civit_token}"
         
         base_name = save_as if save_as else f"{model_name.replace(' ', '_')}.safetensors"
         filepath = unique_path(os.path.join(models_path, base_name))
         
-        headers = {"Authorization": f"Bearer {civit_token}"} if civit_token else {}
         try:
-            r = requests.get(download_url, headers=headers, timeout=7200, stream=True)
+            r = requests.get(download_url, timeout=7200, stream=True)
             if r.status_code != 200:
                 raise HTTPException(status_code=500, detail=f"Download failed: {r.status_code}")
             with open(filepath, "wb") as f:

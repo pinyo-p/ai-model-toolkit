@@ -34,15 +34,15 @@ def check_gpu() -> dict:
         result["cuda_available"] = True
         result["gpu_name"] = parts[0] if parts else "Unknown GPU"
 
-        if len(parts) > 1 and parts[1] and parts[1] not in ("N/A", "[Not Supported]", ""):
+        if len(parts) > 1:
             try:
                 result["vram_total_gb"] = round(float(parts[1]) / 1024, 2)
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
-        if len(parts) > 2 and parts[2] and parts[2] not in ("N/A", "[Not Supported]", ""):
+        if len(parts) > 2:
             try:
                 result["vram_free_gb"] = round(float(parts[2]) / 1024, 2)
-            except ValueError:
+            except (ValueError, TypeError):
                 pass
 
         ver_out = subprocess.run(["nvidia-smi"], capture_output=True, text=True, timeout=10)
