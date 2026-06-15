@@ -855,8 +855,11 @@ async def download_model(
         
         try:
             r = requests.get(download_url, headers=dl_headers, timeout=7200, stream=True)
-            if r.status_code != 200:
-                raise HTTPException(status_code=500, detail=f"Download failed: {r.status_code}")
+            ctype = r.headers.get("Content-Type", "")
+            if r.status_code == 404:
+                raise HTTPException(status_code=500, detail="Model not found on CivitAI")
+            if r.status_code != 200 or "text/html" in ctype:
+                raise HTTPException(status_code=500, detail=f"Download failed: server returned {r.status_code} (HTML page) — the model may require you to be logged in to CivitAI")
             with open(filepath, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
