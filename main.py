@@ -748,8 +748,6 @@ async def download_model(
                 filename = "/".join(repo_parts[2:])
         
         base = models_path
-        if subdirectory:
-            base = os.path.join(models_path, subdirectory)
         
         if filename:
             just_filename = filename.split("/")[-1] if "/" in filename else filename
@@ -818,13 +816,11 @@ async def download_model(
                     download_url = f"{api_url}/{model_id}/download?token={civit_token}" if civit_token else f"{api_url}/{model_id}/download"
                     
                     model_name = data["items"][0]["name"]
-                    dest = os.path.join(models_path, f"{model_name.replace(' ', '_')}")
-                    os.makedirs(dest, exist_ok=True)
+                    base_name = save_as if save_as else f"{model_name}.safetensors"
+                    filepath = unique_path(os.path.join(models_path, base_name))
                     
                     r = requests.get(download_url, headers=headers)
                     if r.status_code == 200:
-                        base_name = save_as if save_as else f"{model_name}.safetensors"
-                        filepath = unique_path(os.path.join(dest, base_name))
                         with open(filepath, "wb") as f:
                             f.write(r.content)
                         result["message"] = f"Downloaded to {filepath}"
