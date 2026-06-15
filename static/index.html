@@ -1533,7 +1533,7 @@ a bird on a tree</textarea>
             const output = document.getElementById('download-output');
             const url = document.getElementById('model-url').value;
             const source = document.getElementById('model-source').value;
-            const subdir = document.getElementById('download-subdir').value;
+            const subdir = currentBrowsePath;
             const btn = document.getElementById('download-btn');
             const progress = document.getElementById('download-progress');
             const progressText = document.getElementById('progress-text');
@@ -1582,7 +1582,6 @@ a bird on a tree</textarea>
         function showDownloadModal() {
             document.getElementById('download-output').innerHTML = '<span style="color:#555;">Ready</span>';
             document.getElementById('download-progress').style.display = 'none';
-            document.getElementById('download-subdir').value = currentBrowsePath;
             document.getElementById('download-modal').style.display = 'flex';
         }
 
@@ -1703,10 +1702,6 @@ a bird on a tree</textarea>
             <div class="form-group" id="headers-row" style="display:none;">
                 <label>Custom Headers (JSON)</label>
                 <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Save to Directory</label>
-                <input type="text" id="download-subdir" placeholder="e.g. checkpoints/sd1.5" style="width:100%;">
             </div>
             <div class="form-group">
                 <label>Save as (optional)</label>
