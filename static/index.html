@@ -85,6 +85,10 @@
         .sub-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
         .sub-tab { padding: 8px 16px; background: #0d1420; border: 1px solid #1a2a3a; border-radius: 8px; color: #5a7a9a; cursor: pointer; font-size: 13px; transition: all 0.2s; }
         .sub-tab.active { background: #1a2a3a; border-color: #00d4ff; color: #00d4ff; }
+        .modal-tabs { display:flex; gap:0; margin-bottom:15px; border-bottom:1px solid #1e2d3d; }
+        .modal-tab { padding:8px 16px; background:transparent; border:none; border-bottom:2px solid transparent; color:#5a7a9a; cursor:pointer; font-size:14px; font-weight:600; transition:all 0.2s; }
+        .modal-tab.active { color:#00d4ff; border-bottom-color:#00d4ff; }
+        .modal-tab:hover { color:#e0e0e0; }
         .sub-tab:hover:not(.active) { border-color: #2a4a6a; }
         .sub-panel { display: none; }
         .sub-panel.active { display: block; }
@@ -484,7 +488,7 @@ a bird on a tree</textarea>
             <div style="margin-top:16px;">
                 <div class="action-bar">
                     <span class="breadcrumb" id="breadcrumb" style="flex:1;margin:0;">📁 /</span>
-                    <button onclick="showDownloadModal()" class="btn-sm btn" style="background:linear-gradient(135deg,#00d4ff,#0088cc);color:#000;font-weight:600;">⬇ Download</button>
+                    <button onclick="showDownloadModal()" class="btn-sm btn" style="background:linear-gradient(135deg,#00d4ff,#0088cc);color:#000;font-weight:600;">📦 จัดการ</button>
                     <button onclick="showCreateDir()" class="btn-sm btn-ghost">+ Folder</button>
                     <button onclick="document.getElementById('upload-input').click()" class="btn-sm btn-ghost">📤 Upload</button>
                     <button onclick="browseFiles()" class="btn-sm btn-ghost">🔄</button>
@@ -1350,6 +1354,7 @@ a bird on a tree</textarea>
                     + '<td class="file-date">' + date + '</td>'
                     + '<td class="file-actions">'
                     + (item.type === 'file' ? '<button onclick="showFileDetail(\'' + delPath.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;" title="Details">ℹ️</button>' : '')
+                    + '<button onclick="showMoveModal(\'' + delPath.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;" title="Move">📂</button>'
                     + '<button onclick="showRename(\'' + delPath.replace(/'/g, "\\'") + '\',\'' + item.name.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;">✏️</button>'
                     + '<button onclick="deleteFile(\'' + delPath.replace(/'/g, "\\'") + '\')" class="btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;color:#ff6b6b;">🗑️</button>'
                     + '</td>'
@@ -1650,7 +1655,94 @@ a bird on a tree</textarea>
         function showDownloadModal() {
             document.getElementById('download-output').innerHTML = '<span style="color:#555;">Ready</span>';
             document.getElementById('download-progress').style.display = 'none';
+            document.getElementById('move-section').style.display = 'none';
+            document.getElementById('model-section').style.display = 'block';
+            switchModelTab('download');
             document.getElementById('download-modal').style.display = 'flex';
+        }
+
+        function switchModelTab(tab) {
+            document.querySelectorAll('.modal-tab').forEach(function(t) { t.classList.remove('active'); });
+            document.getElementById('dl-tab-' + tab).classList.add('active');
+            document.getElementById('model-section').style.display = tab === 'download' ? 'block' : 'none';
+            document.getElementById('move-section').style.display = tab === 'move' ? 'block' : 'none';
+            if (tab === 'move') document.getElementById('move-output').innerHTML = '';
+        }
+
+        function showMoveModal(path) {
+            document.getElementById('move-file-name').textContent = path;
+            document.getElementById('move-output').innerHTML = '';
+            document.getElementById('move-new-folder').value = '';
+            switchModelTab('move');
+            document.getElementById('download-modal').style.display = 'flex';
+            loadMoveDirs(path);
+        }
+
+        async function loadMoveDirs(path) {
+            var sel = document.getElementById('move-dest-folder');
+            sel.innerHTML = '<option value="">Loading folders...</option>';
+            sel.disabled = true;
+            try {
+                var parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
+                const res = await fetch('/api/models/browse?path=' + encodeURIComponent(parentPath), { headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) { sel.innerHTML = '<option value="">Failed to load</option>'; sel.disabled = false; return; }
+                var data = await res.json();
+                sel.innerHTML = '<option value="">-- Select folder --</option>';
+                if (data.current_path) {
+                    sel.innerHTML += '<option value="' + data.current_path + '">📁 ./ (current)</option>';
+                }
+                (data.items || []).forEach(function(item) {
+                    if (item.type === 'dir' && item.name !== (path.includes('/') ? path.split('/').pop() : path)) {
+                        var fullPath = (data.current_path ? data.current_path + '/' : '') + item.name;
+                        sel.innerHTML += '<option value="' + fullPath.replace(/'/g, "\\'") + '">📁 ' + item.name + '</option>';
+                    }
+                });
+                sel.disabled = false;
+            } catch(e) {
+                sel.innerHTML = '<option value="">Error: ' + e.message + '</option>';
+                sel.disabled = false;
+            }
+        }
+
+        async function confirmMove() {
+            var path = document.getElementById('move-file-name').textContent;
+            var dest = document.getElementById('move-dest-folder').value;
+            var newFolder = document.getElementById('move-new-folder').value.trim();
+            var output = document.getElementById('move-output');
+            var btn = document.getElementById('move-btn');
+
+            if (!dest && !newFolder) {
+                output.innerHTML = '<span class="error">Please select a destination folder or create a new one</span>';
+                return;
+            }
+
+            var relPath = path;
+            var targetDir = newFolder ? (dest ? dest + '/' + newFolder : newFolder) : dest;
+            var fileName = path.includes('/') ? path.split('/').pop() : path;
+            var newPath = (targetDir ? targetDir + '/' : '') + fileName;
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Moving...';
+            output.innerHTML = '<span style="color:#888;">Moving ' + relPath + ' → ' + newPath + '...</span>';
+
+            try {
+                var formData = new FormData();
+                formData.append('old_path', relPath);
+                formData.append('new_path', newPath);
+                const res = await fetch('/api/models/rename', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                var data = await res.json();
+                if (!res.ok) throw new Error(data.detail || 'Move failed');
+                output.innerHTML = '<span style="color:#4caf50;">✅ Moved successfully</span>';
+                setTimeout(function() {
+                    closeModal('download-modal');
+                    browseFiles();
+                }, 1000);
+            } catch(e) {
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📂 Move Here';
+            }
         }
 
         async function showFileDetail(path) {
@@ -1754,35 +1846,63 @@ a bird on a tree</textarea>
     <div class="modal-overlay" id="download-modal">
         <div class="modal-box">
             <button class="modal-close" onclick="closeModal('download-modal')">✕</button>
-            <h3>⬇ Download Model</h3>
-            <div class="form-group">
-                <label>Model URL</label>
-                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
+            <h3>📦 Model Manager</h3>
+
+            <div class="modal-tabs">
+                <button id="dl-tab-download" class="modal-tab active" onclick="switchModelTab('download')">⬇ Download</button>
+                <button id="dl-tab-move" class="modal-tab" onclick="switchModelTab('move')">📂 Move</button>
             </div>
-            <div class="form-group">
-                <label>Source</label>
-                <select id="model-source" onchange="onSourceChange()">
-                    <option value="huggingface">HuggingFace</option>
-                    <option value="civitai">CivitAI</option>
-                    <option value="other">Other (Direct URL)</option>
-                </select>
-            </div>
-            <div class="form-group" id="headers-row" style="display:none;">
-                <label>Custom Headers (JSON)</label>
-                <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Save as (optional)</label>
-                <input type="text" id="model-save-as" placeholder="Leave empty to use original filename" style="width:100%;">
-            </div>
-            <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
-            <div id="download-progress" style="display:none;margin-top:10px;">
-                <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;"></div>
+
+            <div id="model-section">
+                <div class="form-group">
+                    <label>Model URL</label>
+                    <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
                 </div>
-                <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
+                <div class="form-group">
+                    <label>Source</label>
+                    <select id="model-source" onchange="onSourceChange()">
+                        <option value="huggingface">HuggingFace</option>
+                        <option value="civitai">CivitAI</option>
+                        <option value="other">Other (Direct URL)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="headers-row" style="display:none;">
+                    <label>Custom Headers (JSON)</label>
+                    <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Save as (optional)</label>
+                    <input type="text" id="model-save-as" placeholder="Leave empty to use original filename" style="width:100%;">
+                </div>
+                <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
+                <div id="download-progress" style="display:none;margin-top:10px;">
+                    <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
+                        <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;"></div>
+                    </div>
+                    <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
+                </div>
+                <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
             </div>
-            <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
+
+            <div id="move-section" style="display:none;">
+                <p style="color:#e0e0e0;margin:0 0 10px 0;">Move file or folder to another directory</p>
+                <div class="form-group">
+                    <label>Moving</label>
+                    <div id="move-file-name" style="color:#00d4ff;font-weight:600;padding:6px 0;"></div>
+                </div>
+                <div class="form-group">
+                    <label>Destination Folder</label>
+                    <select id="move-dest-folder" style="width:100%;padding:10px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px;">
+                        <option value="">Loading folders...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Or create new subfolder</label>
+                    <input type="text" id="move-new-folder" placeholder="New folder name (optional)" style="width:100%;">
+                </div>
+                <button class="btn" id="move-btn" onclick="confirmMove()">📂 Move Here</button>
+                <div id="move-output" style="margin-top:10px;padding:10px;min-height:10px;"></div>
+            </div>
         </div>
     </div>
 
