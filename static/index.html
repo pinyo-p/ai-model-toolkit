@@ -175,11 +175,11 @@
 
         <div class="tabs">
             <button class="tab active" onclick="showTab('generate')">Generate</button>
-            <button class="tab" onclick="showTab('loadmodel')">Load Model</button>
             <button class="tab" onclick="showTab('batch')">Batch</button>
             <button class="tab" onclick="showTab('train')">Train LoRA</button>
             <button class="tab" onclick="showTab('merge')">Merge/Extract</button>
             <button class="tab" onclick="showTab('tools')">Tools</button>
+            <button class="tab" onclick="showTab('loadmodel')">📦 จัดการ</button>
             <button class="tab" onclick="showTab('settings')">Settings</button>
         </div>
 
@@ -482,7 +482,7 @@ a bird on a tree</textarea>
 
         <div id="loadmodel" class="panel">
             <div class="card">
-                <h2>📂 File Manager</h2>
+                <h2>📂 จัดการ</h2>
 
             <!-- File Browser -->
             <div style="margin-top:16px;">
@@ -1669,44 +1669,60 @@ a bird on a tree</textarea>
             if (tab === 'move') document.getElementById('move-output').innerHTML = '';
         }
 
+        var _moveDestPath = '';
+        var _moveOrigFile = '';
+
         function showMoveModal(path) {
+            _moveOrigFile = path;
+            _moveDestPath = '';
             document.getElementById('move-file-name').textContent = path;
+            document.getElementById('move-dest-path').textContent = '(select a folder below)';
             document.getElementById('move-output').innerHTML = '';
             document.getElementById('move-new-folder').value = '';
             switchModelTab('move');
             document.getElementById('download-modal').style.display = 'flex';
-            loadMoveDirs(path);
+            loadMoveTree('');
         }
 
-        async function loadMoveDirs(path) {
-            var sel = document.getElementById('move-dest-folder');
-            sel.innerHTML = '<option value="">Loading folders...</option>';
-            sel.disabled = true;
+        async function loadMoveTree(subpath) {
+            var container = document.getElementById('move-tree');
+            container.innerHTML = '<div style="color:#5a7a9a;padding:8px;">Loading...</div>';
             try {
-                var parentPath = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
-                const res = await fetch('/api/models/browse?path=' + encodeURIComponent(parentPath), { headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) { sel.innerHTML = '<option value="">Failed to load</option>'; sel.disabled = false; return; }
-                var data = await res.json();
-                sel.innerHTML = '<option value="">-- Select folder --</option>';
+                const res = await fetch('/api/models/browse?path=' + encodeURIComponent(subpath), { headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error('Failed to load');
+                const data = await res.json();
+                var html = '';
                 if (data.current_path) {
-                    sel.innerHTML += '<option value="' + data.current_path + '">📁 ./ (current)</option>';
+                    var parentPath = data.current_path.includes('/') ? data.current_path.substring(0, data.current_path.lastIndexOf('/')) : '';
+                    html += '<div style="padding:6px 8px;cursor:pointer;border-radius:4px;" onmouseover="this.style.background=\'#111822\'" onmouseout="this.style.background=\'transparent\'" onclick="loadMoveTree(\'' + parentPath.replace(/'/g, "\\'") + '\')">📂 ..</div>';
                 }
                 (data.items || []).forEach(function(item) {
-                    if (item.type === 'dir' && item.name !== (path.includes('/') ? path.split('/').pop() : path)) {
+                    if (item.type === 'dir') {
                         var fullPath = (data.current_path ? data.current_path + '/' : '') + item.name;
-                        sel.innerHTML += '<option value="' + fullPath.replace(/'/g, "\\'") + '">📁 ' + item.name + '</option>';
+                        var escapedPath = fullPath.replace(/'/g, "\\'");
+                        html += '<div style="padding:6px 8px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;"'
+                            + ' onmouseover="this.style.background=\'#111822\'" onmouseout="this.style.background=\'transparent\'">'
+                            + '<span onclick="loadMoveTree(\'' + escapedPath + '\')" style="flex:1;">📁 ' + item.name + '</span>'
+                            + '<button onclick="selectMoveDest(\'' + escapedPath + '\')" style="padding:2px 8px;background:transparent;border:1px solid #00d4ff;border-radius:4px;color:#00d4ff;cursor:pointer;font-size:11px;">เลือก</button>'
+                            + '</div>';
                     }
                 });
-                sel.disabled = false;
+                if (html === '') html = '<div style="color:#5a7a9a;padding:8px;">(no subfolders)</div>';
+                container.innerHTML = html;
             } catch(e) {
-                sel.innerHTML = '<option value="">Error: ' + e.message + '</option>';
-                sel.disabled = false;
+                container.innerHTML = '<div style="color:#ff6b6b;padding:8px;">Error: ' + e.message + '</div>';
             }
+        }
+
+        function selectMoveDest(path) {
+            _moveDestPath = path;
+            document.getElementById('move-dest-path').textContent = '📁 ' + (path || 'root');
+            document.getElementById('move-new-folder').value = '';
         }
 
         async function confirmMove() {
             var path = document.getElementById('move-file-name').textContent;
-            var dest = document.getElementById('move-dest-folder').value;
+            var dest = _moveDestPath;
             var newFolder = document.getElementById('move-new-folder').value.trim();
             var output = document.getElementById('move-output');
             var btn = document.getElementById('move-btn');
@@ -1891,10 +1907,14 @@ a bird on a tree</textarea>
                     <div id="move-file-name" style="color:#00d4ff;font-weight:600;padding:6px 0;"></div>
                 </div>
                 <div class="form-group">
-                    <label>Destination Folder</label>
-                    <select id="move-dest-folder" style="width:100%;padding:10px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px;">
-                        <option value="">Loading folders...</option>
-                    </select>
+                    <label>Destination</label>
+                    <div id="move-dest-path" style="color:#4caf50;font-weight:600;padding:6px 0;font-size:13px;">(select a folder below)</div>
+                </div>
+                <div class="form-group">
+                    <label>Browse folders</label>
+                    <div id="move-tree" style="max-height:300px;overflow-y:auto;background:#0a0f18;border:1px solid #1e2d3d;border-radius:8px;padding:8px;">
+                        <div style="color:#5a7a9a;padding:8px;">Loading...</div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Or create new subfolder</label>
