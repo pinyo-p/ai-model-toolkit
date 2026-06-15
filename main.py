@@ -853,20 +853,25 @@ async def download_model(
         base_name = save_as if save_as else f"{model_name.replace(' ', '_')}.safetensors"
         filepath = unique_path(os.path.join(models_path, base_name))
         
+        # Use subprocess curl (same behavior as user's command line)
+        cmd = ["curl", "-L", "-o", filepath, download_url]
         try:
-            r = requests.get(download_url, headers=dl_headers, timeout=7200, stream=True)
-            ctype = r.headers.get("Content-Type", "")
-            if r.status_code == 404:
-                raise HTTPException(status_code=500, detail="Model not found on CivitAI")
-            if r.status_code != 200 or "text/html" in ctype:
-                raise HTTPException(status_code=500, detail=f"Download failed: server returned {r.status_code} (HTML page) — the model may require you to be logged in to CivitAI")
-            with open(filepath, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-            result["message"] = f"Downloaded to {filepath}"
-        except requests.exceptions.RequestException as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+            if r.returncode != 0:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                detail = r.stderr.strip() or r.stdout.strip() or f"curl exited with code {r.returncode}"
+                raise HTTPException(status_code=500, detail=detail)
+            if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+                raise HTTPException(status_code=500, detail="Downloaded file is empty — the model may require you to be logged in to CivitAI")
+            with open(filepath, "rb") as f:
+                head = f.read(256)
+            if b"<!DOCTYPE html>" in head or b"<html" in head:
+                os.remove(filepath)
+                raise HTTPException(status_code=500, detail="Download returned HTML instead of model — the model may require you to be logged in to CivitAI")
+            result["message"] = f"Downloaded to {filepath} ({os.path.getsize(filepath)} bytes)"
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="Download timed out after 2 hours")
     
     else:  # other - direct URL
         try:
