@@ -805,8 +805,7 @@ async def download_model(
         import urllib.parse
         
         parsed = urllib.parse.urlparse(url)
-        domain = parsed.hostname or "civitai.com"
-        api_base = f"https://{domain}"
+        download_host = "https://civitai.com"
         search_api = "https://civitai.com/api/v1/models"
         
         qs = urllib.parse.parse_qs(parsed.query)
@@ -826,12 +825,12 @@ async def download_model(
                     model_id_from_path = None
         
         if version_id:
-            download_url = f"{api_base}/api/download/models/{version_id}"
+            download_url = f"{download_host}/api/download/models/{version_id}"
             if civit_token:
                 download_url += f"?token={civit_token}"
             model_name = model_name or f"model-{version_id}"
         elif model_id_from_path:
-            download_url = f"{api_base}/api/download/models/{model_id_from_path}"
+            download_url = f"{download_host}/api/download/models/{model_id_from_path}"
             if civit_token:
                 download_url += f"?token={civit_token}"
             model_name = model_name or f"model-{model_id_from_path}"
@@ -846,7 +845,7 @@ async def download_model(
             model_id = data["items"][0]["id"]
             version_id = data["items"][0]["modelVersions"][0]["id"]
             model_name = data["items"][0]["name"]
-            download_url = f"{api_base}/api/download/models/{version_id}"
+            download_url = f"{download_host}/api/download/models/{version_id}"
             if civit_token:
                 download_url += f"?token={civit_token}"
         
