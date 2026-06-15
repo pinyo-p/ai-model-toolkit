@@ -11,7 +11,7 @@ import hashlib
 import subprocess
 
 import torch
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException, Depends
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -19,8 +19,13 @@ from PIL import Image
 from contextlib import asynccontextmanager
 
 from core import gpu, caption, sdxl, lora, image as img_module, utils
+import threading
+import time
 
 security = HTTPBasic()
+
+_download_progress: dict = {}
+_dl_lock = threading.Lock()
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -721,13 +726,56 @@ async def download_model(
     save_as: str = Form(""),
     user: str = Depends(get_current_user)
 ):
+    download_id = str(uuid.uuid4())[:8]
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
     if subdirectory:
         models_path = os.path.join(models_path, subdirectory)
     os.makedirs(models_path, exist_ok=True)
     
-    result = {"status": "ok", "message": ""}
+    _download_progress[download_id] = {"total": 0, "received": 0, "status": "pending"}
     
+    args = (download_id, url, source, subdirectory, headers_json, save_as, dict(settings), models_path)
+    thread = threading.Thread(target=_run_download, args=args, daemon=True)
+    thread.start()
+    
+    return {"status": "started", "download_id": download_id}
+
+
+def _set_progress(download_id: str, **kw):
+    with _dl_lock:
+        _download_progress[download_id].update(kw)
+
+
+def _run_download(download_id: str, url: str, source: str, subdirectory: str, headers_json: str, save_as: str, settings: dict, models_path: str):
+    try:
+        _set_progress(download_id, status="downloading")
+        filepath = _do_download(download_id, url, source, subdirectory, headers_json, save_as, settings, models_path)
+        size = os.path.getsize(filepath) if os.path.isfile(filepath) else 0
+        _set_progress(download_id, status="done", message=f"Downloaded: {os.path.basename(filepath)} ({_friendly_size(size)})")
+    except Exception as e:
+        detail = str(e.detail) if hasattr(e, "detail") else str(e)
+        _set_progress(download_id, status="error", error=detail)
+
+
+def _friendly_size(bytes: int) -> str:
+    if bytes >= 1073741824:
+        return f"{bytes/1073741824:.2f} GB"
+    elif bytes >= 1048576:
+        return f"{bytes/1048576:.1f} MB"
+    elif bytes >= 1024:
+        return f"{bytes/1024:.0f} KB"
+    return f"{bytes} B"
+
+
+@app.get("/api/download_progress")
+async def download_progress(download_id: str = Query(...)):
+    prog = _download_progress.get(download_id)
+    if not prog:
+        raise HTTPException(status_code=404, detail="Download not found")
+    return prog
+
+
+def _do_download(download_id: str, url: str, source: str, subdirectory: str, headers_json: str, save_as: str, settings: dict, models_path: str) -> str:
     if source == "huggingface":
         hf_token = settings.get("hf_token", "")
         
@@ -774,7 +822,7 @@ async def download_model(
             if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
                 detail = r.stderr.strip() or r.stdout.strip() or "File not found after download"
                 raise HTTPException(status_code=500, detail=detail)
-            result["message"] = f"Downloaded to {filepath} ({os.path.getsize(filepath)} bytes)"
+            return filepath
         else:
             dest_name = save_as if save_as else repo_id.replace("/", "_")
             dest = os.path.join(base, dest_name)
@@ -796,7 +844,7 @@ async def download_model(
             if not os.path.isdir(dest) or not any(True for _ in os.scandir(dest)):
                 detail = r.stderr.strip() or r.stdout.strip() or "Download directory is empty"
                 raise HTTPException(status_code=500, detail=detail)
-            result["message"] = f"Downloaded to {dest}"
+            return dest
     
     elif source == "civitai":
         civit_token = settings.get("civitai_token", "")
@@ -854,28 +902,54 @@ async def download_model(
         filepath = unique_path(os.path.join(models_path, base_name))
         
         try:
+            _set_progress(download_id, total=0)
+            head = requests.head(download_url, headers=dl_headers, timeout=30)
+            total = int(head.headers.get("Content-Length", 0))
+            if total:
+                _set_progress(download_id, total=total)
+            
             r = requests.get(download_url, headers=dl_headers, timeout=7200, stream=True)
             ctype = r.headers.get("Content-Type", "")
             if r.status_code == 404:
                 raise HTTPException(status_code=500, detail="Model not found on CivitAI")
             if r.status_code != 200 or "text/html" in ctype:
                 raise HTTPException(status_code=500, detail=f"Download failed: server returned {r.status_code} (HTML page) — the model may require you to be logged in to CivitAI")
+            if not total:
+                total = int(r.headers.get("Content-Length", 0))
+            _set_progress(download_id, total=total)
+            received = 0
             with open(filepath, "wb") as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            result["message"] = f"Downloaded to {filepath}"
+                        received += len(chunk)
+                        if total:
+                            _set_progress(download_id, received=received)
+            if total and received < total:
+                raise HTTPException(status_code=500, detail=f"Download incomplete: {received}/{total} bytes")
+            _set_progress(download_id, received=received)
+            return filepath
         except requests.exceptions.RequestException as e:
             raise HTTPException(status_code=500, detail=str(e))
     
     else:  # other - direct URL
         try:
+            import requests
             extra_headers = {}
             if headers_json:
                 extra_headers = json.loads(headers_json)
             model_name = save_as if save_as else (url.split("/")[-1] or "model")
             filepath = unique_path(os.path.join(models_path, model_name))
             os.makedirs(models_path, exist_ok=True)
+            
+            _set_progress(download_id, total=0)
+            try:
+                head = requests.head(url, headers=extra_headers, timeout=30)
+                total = int(head.headers.get("Content-Length", 0))
+                if total:
+                    _set_progress(download_id, total=total)
+            except Exception:
+                total = 0
             
             wget_available = shutil.which("wget") is not None
             curl_available = shutil.which("curl") is not None
@@ -890,6 +964,8 @@ async def download_model(
                         os.remove(filepath)
                     detail = r.stderr.strip() or r.stdout.strip() or f"wget exited with code {r.returncode}"
                     raise HTTPException(status_code=500, detail=detail)
+                if os.path.exists(filepath):
+                    _set_progress(download_id, received=os.path.getsize(filepath))
             elif curl_available:
                 cmd = ["curl", "-L", "-o", filepath, url]
                 for k, v in extra_headers.items():
@@ -900,24 +976,28 @@ async def download_model(
                         os.remove(filepath)
                     detail = r.stderr.strip() or r.stdout.strip() or f"curl exited with code {r.returncode}"
                     raise HTTPException(status_code=500, detail=detail)
+                if os.path.exists(filepath):
+                    _set_progress(download_id, received=os.path.getsize(filepath))
             else:
-                import requests
                 r = requests.get(url, headers=extra_headers, stream=True, timeout=(30, 3600))
                 r.raise_for_status()
                 total = int(r.headers.get("content-length", 0))
+                if total:
+                    _set_progress(download_id, total=total)
                 tmp = filepath + ".partial"
+                received = 0
                 with open(tmp, "wb") as f:
-                    downloaded = 0
                     for chunk in r.iter_content(chunk_size=65536):
                         if chunk:
                             f.write(chunk)
-                            downloaded += len(chunk)
+                            received += len(chunk)
                     f.flush()
                     os.fsync(f.fileno())
-                if total and downloaded < total:
+                if total and received < total:
                     os.remove(tmp)
-                    raise HTTPException(status_code=500, detail=f"Download incomplete: {downloaded}/{total} bytes")
+                    raise HTTPException(status_code=500, detail=f"Download incomplete: {received}/{total} bytes")
                 os.replace(tmp, filepath)
+                _set_progress(download_id, received=received)
             
             if not os.path.exists(filepath):
                 raise HTTPException(status_code=500, detail="File not found after download")
@@ -925,7 +1005,7 @@ async def download_model(
             if size == 0:
                 os.remove(filepath)
                 raise HTTPException(status_code=500, detail="Downloaded file is empty (0 bytes)")
-            result["message"] = f"Downloaded to {filepath} ({size} bytes)"
+            return filepath
         except HTTPException:
             raise
         except subprocess.TimeoutExpired:
@@ -935,7 +1015,7 @@ async def download_model(
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    return result
+    raise HTTPException(status_code=500, detail="Unknown error")
 
 
 if __name__ == "__main__":

@@ -1544,6 +1544,14 @@ a bird on a tree</textarea>
             document.getElementById('headers-row').style.display = source === 'other' ? 'block' : 'none';
         }
 
+        function friendlySize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+            if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+            if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+            return bytes + ' B';
+        }
+
         async function downloadModel() {
             const output = document.getElementById('download-output');
             const url = document.getElementById('model-url').value;
@@ -1552,6 +1560,7 @@ a bird on a tree</textarea>
             const btn = document.getElementById('download-btn');
             const progress = document.getElementById('download-progress');
             const progressText = document.getElementById('progress-text');
+            const progressBar = document.getElementById('progress-bar');
             
             if (!url) {
                 output.innerHTML = '<span class="error">Please enter a URL</span>';
@@ -1562,7 +1571,9 @@ a bird on a tree</textarea>
             btn.disabled = true;
             btn.textContent = '⏳ Downloading...';
             progress.style.display = 'block';
-            progressText.textContent = 'Connecting...';
+            progressBar.style.width = '0%';
+            progressBar.style.animation = 'none';
+            progressText.textContent = 'Starting download...';
             
             const formData = new FormData();
             formData.append('url', url);
@@ -1579,18 +1590,55 @@ a bird on a tree</textarea>
                 const res = await fetch('/api/download_model', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();
-                progress.style.display = 'none';
-                output.innerHTML = '';
-                document.getElementById('model-url').value = '';
-                document.getElementById('model-save-as').value = '';
-                document.getElementById('model-headers').value = '';
-                closeModal('download-modal');
-                showToast(data.message || 'Download complete');
-                browseFiles();
+                var downloadId = data.download_id;
+                
+                var poll = setInterval(async function() {
+                    try {
+                        const pr = await fetch('/api/download_progress?download_id=' + encodeURIComponent(downloadId), { headers: { 'Authorization': 'Basic ' + auth } });
+                        if (!pr.ok) { clearInterval(poll); throw new Error('Progress check failed'); }
+                        const pg = await pr.json();
+                        
+                        if (pg.total > 0) {
+                            var pct = Math.min(100, (pg.received / pg.total) * 100);
+                            progressBar.style.width = pct + '%';
+                            progressBar.style.animation = 'none';
+                            progressText.textContent = friendlySize(pg.received) + ' / ' + friendlySize(pg.total) + ' (' + pct.toFixed(1) + '%)';
+                        } else {
+                            progressBar.style.width = '30%';
+                            progressBar.style.animation = 'progressPulse 2s ease-in-out infinite';
+                            progressText.textContent = 'Downloading... (' + friendlySize(pg.received) + ')';
+                        }
+                        
+                        if (pg.status === 'done') {
+                            clearInterval(poll);
+                            progress.style.display = 'none';
+                            output.innerHTML = '';
+                            document.getElementById('model-url').value = '';
+                            document.getElementById('model-save-as').value = '';
+                            document.getElementById('model-headers').value = '';
+                            closeModal('download-modal');
+                            showToast(pg.message || 'Download complete');
+                            browseFiles();
+                            btn.disabled = false;
+                            btn.textContent = 'Download';
+                        } else if (pg.status === 'error') {
+                            clearInterval(poll);
+                            progress.style.display = 'none';
+                            output.innerHTML = '<span class="error">Error: ' + (pg.error || pg.message || 'Unknown error') + '</span>';
+                            btn.disabled = false;
+                            btn.textContent = 'Download';
+                        }
+                    } catch(pollErr) {
+                        clearInterval(poll);
+                        progress.style.display = 'none';
+                        output.innerHTML = '<span class="error">Error: ' + pollErr.message + '</span>';
+                        btn.disabled = false;
+                        btn.textContent = 'Download';
+                    }
+                }, 500);
             } catch(e) {
                 progress.style.display = 'none';
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
-            } finally {
                 btn.disabled = false;
                 btn.textContent = 'Download';
             }
@@ -1730,7 +1778,7 @@ a bird on a tree</textarea>
             <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
             <div id="download-progress" style="display:none;margin-top:10px;">
                 <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;animation:progressPulse 2s ease-in-out infinite;"></div>
+                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;"></div>
                 </div>
                 <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
             </div>
