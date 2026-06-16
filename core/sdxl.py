@@ -2,15 +2,74 @@ import torch
 from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline, AutoencoderKL
 from PIL import Image
 import os
+import struct
+import json
 from .gpu import check_gpu
 
 
 _pipelines = {}
 
 
+def _read_safetensors_meta(path: str):
+    try:
+        with open(path, 'rb') as f:
+            header_len = struct.unpack('<Q', f.read(8))[0]
+            if header_len <= 0 or header_len > 50 * 1024 * 1024:
+                return None
+            raw = f.read(header_len)
+            if len(raw) != header_len:
+                return None
+            header = json.loads(raw)
+        return [k for k in header if k != "__metadata__"]
+    except Exception:
+        return None
+
+
 def _detect_model_type(model_path: str) -> str:
+    # Single safetensors file → read keys for detection
+    if model_path.endswith('.safetensors') and os.path.isfile(model_path):
+        keys = _read_safetensors_meta(model_path)
+        if keys:
+            joined = ' '.join(k.lower() for k in keys)
+            if 'single_stream_blocks' in joined and 'double_stream' not in joined:
+                return "zimage"
+            if 'mmdit.' in joined:
+                return "sd3"
+            if 'model.diffusion_model' in joined:
+                return "sdxl"  # XL or 1.5, try XL first
+            if 'double_stream' in joined:
+                return "flux"
+            if 'transformer_blocks' in joined and 'time_text_embed' in joined:
+                return "flux"
+
+    # Folder → check model_index.json
+    if os.path.isdir(model_path):
+        idx_path = os.path.join(model_path, "model_index.json")
+        if os.path.exists(idx_path):
+            try:
+                with open(idx_path) as f:
+                    idx = json.load(f)
+                cls_name = idx.get("_class_name", "")
+                mapping = {
+                    "StableDiffusionPipeline": "sd15",
+                    "StableDiffusionXLPipeline": "sdxl",
+                    "StableDiffusion3Pipeline": "sd3",
+                    "FluxPipeline": "flux",
+                    "Flux2Pipeline": "flux",
+                    "ZImagePipeline": "zimage",
+                    "HunyuanDiTPipeline": "hunyuan",
+                    "PixArtAlphaPipeline": "pixart",
+                    "KolorsPipeline": "kolors",
+                }
+                return mapping.get(cls_name, "sdxl")
+            except Exception:
+                pass
+
+    # Fallback: name heuristic
     model_lower = model_path.lower()
-    if any(x in model_lower for x in ["flux", "z-image", "z_image"]):
+    if any(x in model_lower for x in ["z-image", "z_image"]):
+        return "zimage"
+    if any(x in model_lower for x in ["flux"]):
         return "flux"
     if any(x in model_lower for x in ["xl", "sdxl", "pony", "sd_xl", "illustrious"]):
         return "sdxl"
@@ -30,14 +89,21 @@ def _get_pipeline(
         return _pipelines[cache_key]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16
     model_type = _detect_model_type(model_path)
+    dtype = torch.bfloat16 if model_type == "zimage" else torch.float16
 
     vae = None
     if vae_path and os.path.exists(vae_path):
         vae = AutoencoderKL.from_pretrained(vae_path, torch_dtype=dtype)
 
-    if model_type == "flux":
+    if model_type == "zimage":
+        from diffusers import ZImagePipeline
+        pipeline = ZImagePipeline.from_pretrained(
+            model_path,
+            torch_dtype=dtype,
+            low_cpu_mem_usage=False,
+        )
+    elif model_type == "flux":
         try:
             from diffusers import FluxPipeline
             pipeline = FluxPipeline.from_pretrained(
