@@ -1674,40 +1674,68 @@ a bird on a tree</textarea>
             handleUpload(e.dataTransfer.files);
         }
 
-        async function handleUpload(files) {
+        function handleUpload(files) {
             if (!files || files.length === 0) return;
             var fileNames = [];
             for (var i = 0; i < files.length; i++) fileNames.push(files[i].name);
             var dirLabel = currentBrowsePath || '(root)';
-            var confirmed = await showConfirm('Upload ' + files.length + ' file(s) to <strong>' + dirLabel + '</strong>?<br><br><small style="color:#888;">' + fileNames.join(', ') + '</small>');
-            if (!confirmed) {
-                document.getElementById('upload-input').value = '';
-                return;
-            }
-            var progress = document.getElementById('upload-progress');
-            var bar = document.getElementById('up-bar');
-            var text = document.getElementById('up-text');
-            progress.style.display = 'block';
-            text.textContent = 'Uploading ' + files.length + ' file(s)...';
-            bar.style.animation = 'none';
-            bar.style.width = '0%';
+            showConfirm('Upload ' + files.length + ' file(s) to <strong>' + dirLabel + '</strong>?<br><br><small style="color:#888;">' + fileNames.join(', ') + '</small>').then(function(confirmed) {
+                if (!confirmed) {
+                    document.getElementById('upload-input').value = '';
+                    return;
+                }
+                var progress = document.getElementById('upload-progress');
+                var bar = document.getElementById('up-bar');
+                var text = document.getElementById('up-text');
+                progress.style.display = 'block';
+                text.textContent = 'Uploading ' + files.length + ' file(s)...';
+                bar.style.animation = 'none';
+                bar.style.width = '0%';
 
-            var fd = new FormData();
-            fd.append('path', currentBrowsePath);
-            for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
+                var fd = new FormData();
+                fd.append('path', currentBrowsePath);
+                for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
 
-            try {
-                var res = await fetch('/api/models/upload', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                var data = await res.json();
-                bar.style.width = '100%';
-                text.textContent = '✅ ' + data.saved.length + ' file(s) uploaded';
-                setTimeout(function() { progress.style.display = 'none'; }, 2000);
-                browseFiles();
-            } catch(e) {
-                text.textContent = '❌ ' + e.message;
-                setTimeout(function() { progress.style.display = 'none'; }, 3000);
-            }
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/models/upload');
+                xhr.setRequestHeader('Authorization', 'Basic ' + auth);
+
+                xhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        var pct = Math.min(100, (e.loaded / e.total) * 100);
+                        bar.style.width = pct + '%';
+                        text.textContent = 'Uploading... ' + pct.toFixed(1) + '% (' + friendlySize(e.loaded) + ' / ' + friendlySize(e.total) + ')';
+                    } else {
+                        bar.style.width = '30%';
+                        text.textContent = 'Uploading ' + files.length + ' file(s)... (' + friendlySize(e.loaded) + ')';
+                    }
+                };
+
+                xhr.onload = function() {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            var data = JSON.parse(xhr.responseText);
+                            bar.style.width = '100%';
+                            text.textContent = '✅ ' + data.saved.length + ' file(s) uploaded';
+                            setTimeout(function() { progress.style.display = 'none'; }, 2000);
+                            browseFiles();
+                        } catch(e) {
+                            text.textContent = '❌ Invalid response';
+                            setTimeout(function() { progress.style.display = 'none'; }, 3000);
+                        }
+                    } else {
+                        text.textContent = '❌ ' + (xhr.statusText || 'Upload failed');
+                        setTimeout(function() { progress.style.display = 'none'; }, 3000);
+                    }
+                };
+
+                xhr.onerror = function() {
+                    text.textContent = '❌ Network error';
+                    setTimeout(function() { progress.style.display = 'none'; }, 3000);
+                };
+
+                xhr.send(fd);
+            });
         }
         // ---- End File Manager ----
 
@@ -2020,7 +2048,7 @@ a bird on a tree</textarea>
         function showConfirm(msg) {
             return new Promise(function(resolve) {
                 confirmResolver = resolve;
-                document.getElementById('confirm-msg').textContent = msg;
+                document.getElementById('confirm-msg').innerHTML = msg;
                 document.getElementById('confirm-modal').style.display = 'flex';
             });
         }
