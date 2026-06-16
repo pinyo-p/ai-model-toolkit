@@ -1,4 +1,5 @@
 import os
+import struct
 import secrets
 import datetime
 import shutil
@@ -520,6 +521,59 @@ async def delete_api_key(
     return {"status": "ok", "message": "Key deleted"}
 
 
+def _read_safetensors_meta(path: str):
+    try:
+        with open(path, 'rb') as f:
+            header_len = struct.unpack('<Q', f.read(8))[0]
+            if header_len <= 0 or header_len > 50 * 1024 * 1024:
+                return None, None
+            raw = f.read(header_len)
+            if len(raw) != header_len:
+                return None, None
+            header = json.loads(raw)
+        keys = [k for k in header if k != "__metadata__"]
+        meta = header.get("__metadata__", {})
+        return keys, meta
+    except Exception:
+        return None, None
+
+
+def _detect_role_from_keys(tensor_keys):
+    if not tensor_keys:
+        return "checkpoint"
+
+    keys_lower = [k.lower() for k in tensor_keys]
+    joined = ' '.join(keys_lower)
+
+    # LoRA: PEFT (lora_A/lora_B) or Kohya (lora_unet_/lora_te_) format
+    if any(k.startswith('lora_unet_') or k.startswith('lora_te_') for k in keys_lower):
+        return "lora"
+    if any('.lora_a.' in k or '.lora_b.' in k for k in keys_lower):
+        return "lora"
+
+    # Checkpoint / UNet (takes priority over VAE/TE since all-in-one exists)
+    if 'model.diffusion_model' in joined or 'input_blocks.' in joined:
+        return "checkpoint"
+    if 'output_blocks.' in joined or 'time_embed' in joined:
+        return "checkpoint"
+
+    # VAE
+    if all(x in joined for x in ['decoder.conv_in', 'encoder.conv_in']):
+        return "vae"
+    if ('decoder.mid_block' in joined and 'encoder.mid_block' in joined):
+        return "vae"
+    if 'quant_conv' in joined or 'post_quant_conv' in joined:
+        return "vae"
+
+    # Text Encoder (CLIP)
+    if 'text_model.encoder' in joined or 'text_model.final_layer_norm' in joined:
+        return "text_encoder"
+    if 'token_embedding' in joined or 'positional_embedding' in joined:
+        return "text_encoder"
+
+    return "checkpoint"
+
+
 def _detect_model_role(name: str, parent_dir: str = "") -> str:
     name_lower = name.lower()
     parent_lower = parent_dir.lower()
@@ -559,6 +613,10 @@ async def list_models(user: str = Depends(get_current_user)):
                         nested_dirs.append(f)
                     elif os.path.splitext(f)[1].lower() in allowed_ext:
                         file_role = _detect_model_role(f, parent_dir=item)
+                        if f.endswith('.safetensors'):
+                            keys, _ = _read_safetensors_meta(f_path)
+                            if keys:
+                                file_role = _detect_role_from_keys(keys)
                         folder_files.append({
                             "name": f,
                             "model_type": file_role,
@@ -573,6 +631,10 @@ async def list_models(user: str = Depends(get_current_user)):
                 ext = os.path.splitext(item)[1].lower()
                 if ext in allowed_ext:
                     role = _detect_model_role(item)
+                    if item.endswith('.safetensors'):
+                        keys, _ = _read_safetensors_meta(item_path)
+                        if keys:
+                            role = _detect_role_from_keys(keys)
                     result.append({"name": item, "type": "file", "ext": ext, "model_type": role})
     
     return {"models_path": models_path, "models": result}
