@@ -561,67 +561,68 @@ a bird on a tree</textarea>
         <div id="settings" class="panel">
             <div class="card">
                 <h2>⚙️ Settings</h2>
-            <div class="form-group">
-                <label>HuggingFace Token (hf_token)</label>
-                <input type="password" id="settings-hf-token" placeholder="Enter HuggingFace token...">
-            </div>
-            <div class="form-group">
-                <label>CivitAI Token (civitai_token)</label>
-                <input type="password" id="settings-civitai-token" placeholder="Enter CivitAI token...">
-            </div>
-            <div class="form-group">
-                <label>Models Path</label>
-                <input type="text" id="settings-models-path" placeholder="/path/to/models">
-            </div>
-            <div class="form-group">
-                <label>Base URL (shown in app)</label>
-                <input type="text" id="settings-base-url" placeholder="e.g. http://192.168.1.100:7800">
-            </div>
-            <button class="btn" onclick="saveSettings()">Save Settings</button>
-            <div class="output" id="settings-output">
-                <span class="placeholder">Settings will appear here</span>
-            </div>
-
-            <hr style="margin:30px 0;border-color:#333;">
-
-            <h3 style="color:#00d4ff;margin-bottom:15px;">🔑 API Keys</h3>
-            <p style="color:#888;font-size:13px;margin-bottom:10px;">API keys are required to download files via the secure download link.</p>
-            <div id="api-keys-list" style="margin-bottom:10px;"></div>
-            <div style="display:flex;gap:8px;margin-bottom:15px;">
-                <input type="text" id="new-api-key-name" placeholder="Key name (optional)" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#e0e0e0;">
-                <button class="btn" onclick="generateApiKey()">Generate Key</button>
-            </div>
-            <div id="new-api-key-result" style="display:none;padding:10px;background:#1a2a1a;border:1px solid #2a4a2a;border-radius:5px;margin-bottom:10px;word-break:break-all;">
-                <label style="color:#4caf50;font-size:12px;">New API Key (copy now — won't be shown again):</label>
-                <div style="display:flex;gap:8px;margin-top:4px;">
-                    <input type="text" id="new-api-key-value" readonly style="flex:1;padding:8px;background:#111;border:1px solid #2a4a2a;border-radius:5px;color:#4caf50;font-family:monospace;font-size:12px;">
-                    <button onclick="copyApiKey()" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>
+                <div class="form-group">
+                    <label>HuggingFace Token (hf_token)</label>
+                    <input type="password" id="settings-hf-token" placeholder="Enter HuggingFace token...">
+                </div>
+                <div class="form-group">
+                    <label>CivitAI Token (civitai_token)</label>
+                    <input type="password" id="settings-civitai-token" placeholder="Enter CivitAI token...">
+                </div>
+                <div class="form-group">
+                    <label>Models Path</label>
+                    <input type="text" id="settings-models-path" placeholder="/path/to/models">
+                </div>
+                <div class="form-group">
+                    <label>Base URL (shown in app)</label>
+                    <input type="text" id="settings-base-url" placeholder="e.g. http://192.168.1.100:7800">
+                </div>
+                <button class="btn" onclick="saveSettings()">Save Settings</button>
+                <div class="output" id="settings-output">
+                    <span class="placeholder">Settings will appear here</span>
                 </div>
             </div>
 
-            <hr style="margin:30px 0;border-color:#333;">
-
-            <h3 style="color:#ff6b6b;margin-bottom:15px;">Change Username & Password</h3>
-            <div class="form-group">
-                <label>New Username</label>
-                <input type="text" id="change-username" placeholder="New username">
+            <div class="card">
+                <h3>🔑 API Keys</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:10px;">API keys are required to download files via the secure download link.</p>
+                <div id="api-keys-list" style="margin-bottom:10px;"></div>
+                <div style="display:flex;gap:8px;margin-bottom:15px;">
+                    <input type="text" id="new-api-key-name" placeholder="Key name (optional)" style="flex:1;padding:8px;background:#1a1a1a;border:1px solid #333;border-radius:5px;color:#e0e0e0;">
+                    <button class="btn" onclick="generateApiKey()">Generate Key</button>
+                </div>
+                <div id="new-api-key-result" style="display:none;padding:10px;background:#1a2a1a;border:1px solid #2a4a2a;border-radius:5px;margin-bottom:10px;word-break:break-all;">
+                    <label style="color:#4caf50;font-size:12px;">New API Key (copy now — won't be shown again):</label>
+                    <div style="display:flex;gap:8px;margin-top:4px;">
+                        <input type="text" id="new-api-key-value" readonly style="flex:1;padding:8px;background:#111;border:1px solid #2a4a2a;border-radius:5px;color:#4caf50;font-family:monospace;font-size:12px;">
+                        <button onclick="copyApiKey()" style="padding:8px 12px;background:#333;border:none;border-radius:5px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Copy</button>
+                    </div>
+                </div>
             </div>
-            <div class="form-group">
-                <label>New Password</label>
-                <input type="password" id="change-password" placeholder="New password">
-            </div>
-            <button class="btn" style="background:linear-gradient(135deg,#ff6b6b,#cc5555);" onclick="changeCredentials()">Change Credentials</button>
-            <div class="output" id="change-output">
-                <span class="placeholder">Credential change result</span>
+
+            <div class="card">
+                <h3>🔒 Change Username & Password</h3>
+                <div class="form-group">
+                    <label>New Username</label>
+                    <input type="text" id="change-username" placeholder="New username">
+                </div>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" id="change-password" placeholder="New password">
+                </div>
+                <button class="btn" style="background:linear-gradient(135deg,#ff6b6b,#cc5555);" onclick="changeCredentials()">Change Credentials</button>
+                <div class="output" id="change-output">
+                    <span class="placeholder">Credential change result</span>
+                </div>
             </div>
 
-            <hr style="margin:30px 0;border-color:#333;">
-
-            <h3 style="color:#4caf50;margin-bottom:15px;">🔄 Update</h3>
-            <div style="margin-bottom:10px;font-size:13px;color:#888;" id="update-env"></div>
-            <button class="btn" style="background:linear-gradient(135deg,#4caf50,#2e7d32);" onclick="updateApp()">git pull & restart</button>
-            <div class="output" id="update-output">
-                <span class="placeholder">Click to update the app</span>
+            <div class="card">
+                <h3>🔄 Update</h3>
+                <div style="margin-bottom:10px;font-size:13px;color:#888;" id="update-env"></div>
+                <button class="btn" style="background:linear-gradient(135deg,#4caf50,#2e7d32);" onclick="updateApp()">git pull & restart</button>
+                <div class="output" id="update-output">
+                    <span class="placeholder">Click to update the app</span>
+                </div>
             </div>
         </div>
     </div>
