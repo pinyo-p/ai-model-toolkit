@@ -38,7 +38,10 @@ def _detect_model_type(model_path: str) -> str:
             if 'model.diffusion_model' in joined:
                 if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
                     return "sdxl"
-                return "pixart"
+                # DiT wrapped under model.diffusion_model (PixArt-style)
+                if 'x_embedder' in joined and 'model.diffusion_model.layers.' in joined:
+                    return "pixart"
+                return "sdxl"
             if 'double_stream' in joined:
                 return "flux"
             if 'transformer_blocks' in joined and 'time_text_embed' in joined:
