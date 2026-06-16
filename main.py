@@ -590,6 +590,80 @@ def _detect_role_from_keys(tensor_keys):
     return "checkpoint"
 
 
+def _detect_model_family_from_keys(tensor_keys):
+    if not tensor_keys:
+        return "unknown"
+
+    joined = ' '.join(k.lower() for k in tensor_keys)
+
+    # Z-Image: S3-DiT single stream blocks only (no double stream)
+    if 'single_stream_blocks' in joined and 'double_stream' not in joined:
+        return "zimage"
+
+    # SD3: MMDiT joint blocks
+    if 'mmdit.' in joined:
+        return "sd3"
+
+    # SD UNet family (SD1.5 / SDXL)
+    if 'model.diffusion_model' in joined:
+        return "sd_unet"
+
+    # Flux.2: double_stream with img_attn or txt_attn
+    if 'double_stream' in joined and ('img_attn' in joined or 'txt_attn' in joined):
+        return "flux2"
+
+    # Flux.1: transformer_blocks + time_text_embed
+    if 'transformer_blocks' in joined and 'time_text_embed' in joined:
+        return "flux1"
+
+    # Hunyuan
+    if 'hunyuan' in joined:
+        return "hunyuan"
+
+    # PixArt (no time_text_embed, just transformer_blocks)
+    if 'transformer_blocks' in joined and ('attn1' in joined or 'attn2' in joined):
+        return "pixart"
+
+    return "unknown"
+
+
+def _detect_family(path: str) -> str:
+    path = os.path.abspath(path)
+
+    # Diffusers format folder → read model_index.json
+    if os.path.isdir(path):
+        idx_path = os.path.join(path, "model_index.json")
+        if os.path.exists(idx_path):
+            try:
+                with open(idx_path) as f:
+                    idx = json.load(f)
+                cls_name = idx.get("_class_name", "")
+                mapping = {
+                    "StableDiffusionPipeline": "sd15",
+                    "StableDiffusionXLPipeline": "sdxl",
+                    "StableDiffusion3Pipeline": "sd3",
+                    "FluxPipeline": "flux1",
+                    "Flux2Pipeline": "flux2",
+                    "ZImagePipeline": "zimage",
+                    "HunyuanDiTPipeline": "hunyuan",
+                    "PixArtAlphaPipeline": "pixart",
+                    "KolorsPipeline": "kolors",
+                    "LatentConsistencyModelPipeline": "sd15",  # LCM based on SD1.5
+                }
+                return mapping.get(cls_name, "unknown")
+            except Exception:
+                return "unknown"
+        return "unknown"
+
+    # Single file
+    if path.endswith(".safetensors"):
+        keys, _ = _read_safetensors_meta(path)
+        if keys:
+            return _detect_model_family_from_keys(keys)
+
+    return "unknown"
+
+
 def _detect_model_role(name: str, parent_dir: str = "") -> str:
     name_lower = name.lower()
     parent_lower = parent_dir.lower()
@@ -633,11 +707,15 @@ async def list_models(user: str = Depends(get_current_user)):
                             keys, _ = _read_safetensors_meta(f_path)
                             if keys:
                                 file_role = _detect_role_from_keys(keys)
-                        folder_files.append({
-                            "name": f,
-                            "model_type": file_role,
-                        })
+                        fe = {"name": f, "model_type": file_role}
+                        if file_role == "checkpoint":
+                            fe["model_family"] = _detect_family(f_path)
+                        folder_files.append(fe)
                 entry = {"name": item, "type": "folder", "model_type": folder_role}
+                if folder_role == "checkpoint":
+                    family = _detect_family(item_path)
+                    if family != "unknown":
+                        entry["model_family"] = family
                 if folder_files:
                     entry["files"] = folder_files[:10]
                 if nested_dirs:
@@ -651,7 +729,10 @@ async def list_models(user: str = Depends(get_current_user)):
                         keys, _ = _read_safetensors_meta(item_path)
                         if keys:
                             role = _detect_role_from_keys(keys)
-                    result.append({"name": item, "type": "file", "ext": ext, "model_type": role})
+                    fe = {"name": item, "type": "file", "ext": ext, "model_type": role}
+                    if role == "checkpoint":
+                        fe["model_family"] = _detect_family(item_path)
+                    result.append(fe)
     
     return {"models_path": models_path, "models": result}
 

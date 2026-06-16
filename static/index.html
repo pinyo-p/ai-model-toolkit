@@ -193,6 +193,7 @@
                     <option value="">-- Select local model --</option>
                     <option value="__custom__">Custom (type manually)...</option>
                 </select>
+                <span id="gen-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
                 <input type="text" id="gen-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
             </div>
             <div class="row">
@@ -685,10 +686,12 @@ a bird on a tree</textarea>
             var customInput = document.getElementById('gen-model-custom');
             var textEncoderRow = document.getElementById('gen-text-encoder');
             var textEncoderCustom = document.getElementById('gen-text-encoder-custom');
+            var familyBadge = document.getElementById('gen-model-family');
 
             if (select.value === '__custom__') {
                 customInput.style.display = 'block';
                 customInput.focus();
+                familyBadge.style.display = 'none';
             } else {
                 customInput.style.display = 'none';
             }
@@ -702,12 +705,36 @@ a bird on a tree</textarea>
                 textEncoderRow.value = '';
                 textEncoderCustom.style.display = 'none';
             }
+
+            // Show model family badge
+            var selectedOpt = select.options[select.selectedIndex];
+            var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
+            if (family) {
+                var label = FAMILY_LABELS[family] || family;
+                familyBadge.textContent = label;
+                familyBadge.style.display = 'inline';
+            } else {
+                familyBadge.style.display = 'none';
+            }
         }
 
         function _getFileType(f, m) {
             if (typeof f === 'object' && f.model_type) return f.model_type;
             return m.model_type || 'checkpoint';
         }
+
+        function _getFileFamily(f, m) {
+            if (typeof f === 'object' && f.model_family) return f.model_family;
+            if (m.model_family) return m.model_family;
+            return '';
+        }
+
+        var FAMILY_LABELS = {
+            'sd_unet': 'SD UNet', 'sdxl': 'SDXL', 'sd15': 'SD1.5',
+            'sd3': 'SD3', 'flux1': 'Flux.1', 'flux2': 'Flux.2',
+            'zimage': 'Z-Image', 'hunyuan': 'Hunyuan', 'pixart': 'PixArt',
+            'kolors': 'Kolors'
+        };
 
         function _populateSelect(select, entries, modelsPath, filterType) {
             if (!select) return;
@@ -724,6 +751,8 @@ a bird on a tree</textarea>
                         var el = document.createElement('option');
                         el.textContent = relPath;
                         el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                        var ff = _getFileFamily(f, m);
+                        if (ff) el.setAttribute('data-family', ff);
                         select.appendChild(el);
                     });
                 } else if (m.type === 'file') {
@@ -732,6 +761,8 @@ a bird on a tree</textarea>
                     var el = document.createElement('option');
                     el.textContent = m.name;
                     el.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                    var ff = m.model_family || '';
+                    if (ff) el.setAttribute('data-family', ff);
                     select.appendChild(el);
                 }
             });
