@@ -195,84 +195,94 @@
                 </select>
                 <span id="gen-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
                 <input type="text" id="gen-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
-            </div>
-            <div class="row">
-                <div class="col">
-                    <div class="form-group">
-                        <label>VAE (optional)</label>
-                        <select id="gen-vae" class="base-model" onchange="onModelSelect(this, 'gen-vae-custom')">
-                            <option value="">-- Default VAE --</option>
-                            <option value="__custom__">Custom...</option>
-                        </select>
-                        <input type="text" id="gen-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
+
+                <div class="row" style="margin-top:16px;">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>VAE (optional)</label>
+                            <select id="gen-vae" class="base-model" onchange="onModelSelect(this, 'gen-vae-custom')">
+                                <option value="">-- Default VAE --</option>
+                                <option value="__custom__">Custom...</option>
+                            </select>
+                            <input type="text" id="gen-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
+                        </div>
                     </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>Text Encoder (optional)</label>
-                        <select id="gen-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'gen-text-encoder-custom')">
-                            <option value="">-- Default --</option>
-                            <option value="__custom__">Custom...</option>
-                        </select>
-                        <input type="text" id="gen-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
-                    </div>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Prompt</label>
-                <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
-            </div>
-            <div class="form-group">
-                <label>Negative Prompt</label>
-                <textarea id="gen-negative" placeholder="What to avoid..."></textarea>
-            </div>
-            <div class="row">
-                <div class="col">
-                    <div class="form-group">
-                        <label>Steps</label>
-                        <input type="number" id="gen-steps" value="20" min="1" max="100">
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>CFG</label>
-                        <input type="number" id="gen-cfg" value="7.0" min="0" max="30" step="0.5">
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>Seed</label>
-                        <input type="number" id="gen-seed" value="42">
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>Width</label>
-                        <input type="number" id="gen-width" value="1024" step="8">
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>Height</label>
-                        <input type="number" id="gen-height" value="1024" step="8">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Text Encoder (optional)</label>
+                            <select id="gen-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'gen-text-encoder-custom')">
+                                <option value="">-- Default --</option>
+                                <option value="__custom__">Custom...</option>
+                            </select>
+                            <input type="text" id="gen-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label>LoRAs</label>
-                <div id="lora-container">
-                    <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                        <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
-                        <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                        <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+
+            <div class="card">
+                <div class="form-group">
+                    <label>Prompt</label>
+                    <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Negative Prompt</label>
+                    <textarea id="gen-negative" placeholder="What to avoid..."></textarea>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="row">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Steps</label>
+                            <input type="number" id="gen-steps" value="20" min="1" max="100">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>CFG</label>
+                            <input type="number" id="gen-cfg" value="7.0" min="0" max="30" step="0.5">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Seed</label>
+                            <input type="number" id="gen-seed" value="42">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Width</label>
+                            <input type="number" id="gen-width" value="1024" step="8">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Height</label>
+                            <input type="number" id="gen-height" value="1024" step="8">
+                        </div>
                     </div>
                 </div>
-                <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
             </div>
+
+            <div class="card">
+                <div class="form-group">
+                    <label>LoRAs</label>
+                    <div id="lora-container">
+                        <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                            <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                            <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                            <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                        </div>
+                    </div>
+                    <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
+                </div>
+            </div>
+
             <button class="btn" onclick="generate()">Generate Image</button>
             <div class="output" id="gen-output">
                 <span class="placeholder">Image will appear here</span>
-            </div>
             </div>
         </div>
 
@@ -459,8 +469,8 @@ a bird on a tree</textarea>
         </div>
 
         <div id="tools" class="panel">
-            <div class="gpu-info" id="gpu-info">Loading GPU info...</div>
             <div class="card">
+                <div class="gpu-info" id="gpu-info" style="margin-bottom:16px;">Loading GPU info...</div>
 
             <div class="sub-tabs">
                 <button class="sub-tab active" onclick="showSubTab('tool-caption')">Caption</button>
