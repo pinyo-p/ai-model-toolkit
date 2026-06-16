@@ -36,11 +36,17 @@ def _detect_model_type(model_path: str) -> str:
             if 'mmdit.' in joined:
                 return "sd3"
             if 'model.diffusion_model' in joined:
-                return "sdxl"  # XL or 1.5, try XL first
+                if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
+                    return "sdxl"
+                return "pixart"
             if 'double_stream' in joined:
                 return "flux"
             if 'transformer_blocks' in joined and 'time_text_embed' in joined:
                 return "flux"
+            if 'transformer_blocks' in joined and ('attn1' in joined or 'attn2' in joined):
+                return "pixart"
+            if 'x_embedder' in joined and 'layers.' in joined:
+                return "pixart"
 
     # Folder → check model_index.json
     if os.path.isdir(model_path):
@@ -102,6 +108,12 @@ def _get_pipeline(
             model_path,
             torch_dtype=dtype,
             low_cpu_mem_usage=False,
+        )
+    elif model_type == "pixart":
+        from diffusers import PixArtAlphaPipeline
+        pipeline = PixArtAlphaPipeline.from_pretrained(
+            model_path,
+            torch_dtype=dtype,
         )
     elif model_type == "flux":
         try:

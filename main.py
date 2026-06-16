@@ -607,10 +607,6 @@ def _detect_model_family_from_keys(tensor_keys):
     if 'mmdit.' in joined:
         return "sd3"
 
-    # SD UNet family (SD1.5 / SDXL)
-    if 'model.diffusion_model' in joined:
-        return "sd_unet"
-
     # Flux.2: double_stream with img_attn or txt_attn
     if 'double_stream' in joined and ('img_attn' in joined or 'txt_attn' in joined):
         return "flux2"
@@ -623,8 +619,24 @@ def _detect_model_family_from_keys(tensor_keys):
     if 'hunyuan' in joined:
         return "hunyuan"
 
-    # PixArt (no time_text_embed, just transformer_blocks)
+    # PixArt (native format): transformer_blocks + attn1/attn2, no time_text_embed
     if 'transformer_blocks' in joined and ('attn1' in joined or 'attn2' in joined):
+        return "pixart"
+
+    # DiT-based wrapped under model.diffusion_model (e.g. PixArt with diffusers wrapping)
+    # Has x_embedder + layers.N instead of input_blocks/mid_block/output_blocks
+    if 'model.diffusion_model' in joined:
+        # Has UNet-specific blocks → SD UNet
+        if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
+            return "sd_unet"
+        # Has DiT-specific components (x_embedder + layers) → PixArt variant
+        if 'x_embedder' in joined and 'model.diffusion_model.layers.' in joined:
+            return "pixart"
+        # Fallback: still sd_unet
+        return "sd_unet"
+
+    # Unwrapped DiT (original PixArt / DiT format): x_embedder without model prefix
+    if 'x_embedder' in joined and 'layers.' in joined:
         return "pixart"
 
     return "unknown"
