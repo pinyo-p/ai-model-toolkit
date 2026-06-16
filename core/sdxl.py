@@ -1,5 +1,6 @@
 import torch
 from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline, AutoencoderKL
+from fastapi import HTTPException
 from PIL import Image
 import os
 import struct
@@ -94,7 +95,13 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
     if vae is not None:
         kwargs['vae'] = vae
     if is_file:
-        return pipeline_cls.from_single_file(model_path, **kwargs)
+        try:
+            return pipeline_cls.from_single_file(model_path, **kwargs)
+        except AttributeError:
+            cls_name = getattr(pipeline_cls, '__name__', str(pipeline_cls))
+            raise HTTPException(status_code=400,
+                detail=f"{cls_name}.from_single_file() not available in this diffusers version. "
+                       f"Upgrade: pip install -U diffusers")
     return pipeline_cls.from_pretrained(model_path, **kwargs)
 
 
