@@ -84,6 +84,17 @@ def _detect_model_type(model_path: str) -> str:
     return "sdxl"
 
 
+def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **extra):
+    """Load a pipeline, using from_single_file for single files and from_pretrained for directories/HF IDs."""
+    is_file = os.path.isfile(model_path) and not os.path.isdir(model_path)
+    kwargs = dict(torch_dtype=dtype, **extra)
+    if vae is not None:
+        kwargs['vae'] = vae
+    if is_file:
+        return pipeline_cls.from_single_file(model_path, **kwargs)
+    return pipeline_cls.from_pretrained(model_path, **kwargs)
+
+
 def _get_pipeline(
     model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
     vae_path: str = None,
@@ -104,43 +115,21 @@ def _get_pipeline(
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
-        pipeline = ZImagePipeline.from_pretrained(
-            model_path,
-            torch_dtype=dtype,
-            low_cpu_mem_usage=False,
-        )
+        pipeline = _load_pipeline(ZImagePipeline, model_path, dtype=dtype, low_cpu_mem_usage=False)
     elif model_type == "pixart":
         from diffusers import PixArtAlphaPipeline
-        pipeline = PixArtAlphaPipeline.from_pretrained(
-            model_path,
-            torch_dtype=dtype,
-        )
+        pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
     elif model_type == "flux":
         try:
             from diffusers import FluxPipeline
-            pipeline = FluxPipeline.from_pretrained(
-                model_path,
-                torch_dtype=dtype,
-            )
+            pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception:
             from diffusers import StableDiffusionXLPipeline
-            pipeline = StableDiffusionXLPipeline.from_pretrained(
-                model_path,
-                vae=vae,
-                torch_dtype=dtype,
-            )
+            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
     elif model_type == "sd15":
-        pipeline = StableDiffusionPipeline.from_pretrained(
-            model_path,
-            vae=vae,
-            torch_dtype=dtype,
-        )
+        pipeline = _load_pipeline(StableDiffusionPipeline, model_path, vae=vae, dtype=dtype)
     else:
-        pipeline = StableDiffusionXLPipeline.from_pretrained(
-            model_path,
-            vae=vae,
-            torch_dtype=dtype,
-        )
+        pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
 
     if text_encoder_path and os.path.exists(text_encoder_path):
         try:
