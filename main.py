@@ -1256,6 +1256,82 @@ def _do_download(download_id: str, url: str, source: str, subdirectory: str, hea
     raise HTTPException(status_code=500, detail="Unknown error")
 
 
+@app.get("/api/update")
+async def update_env(user: str = Depends(get_current_user)):
+    runtime = "bare"
+    if os.path.exists("/.dockerenv") or os.environ.get("container", ""):
+        runtime = "docker"
+    elif os.environ.get("PM2_HOME") or os.environ.get("PM2_PROCESS_WATCH"):
+        runtime = "pm2"
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    git_hash = ""
+    try:
+        result = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=app_dir, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            git_hash = result.stdout.strip()
+    except Exception:
+        pass
+    return {
+        "runtime": runtime,
+        "git_hash": git_hash,
+        "app_dir": app_dir,
+        "pm2_restart": runtime == "pm2",  # PM2 watches file changes, auto-restarts
+    }
+
+
+@app.post("/api/update")
+async def update_app(user: str = Depends(get_current_user)):
+    import subprocess
+    import shutil
+
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Detect runtime
+    runtime = "bare"
+    if os.path.exists("/.dockerenv") or os.environ.get("container", ""):
+        runtime = "docker"
+    elif os.environ.get("PM2_HOME") or os.environ.get("PM2_PROCESS_WATCH"):
+        runtime = "pm2"
+
+    if not shutil.which("git"):
+        raise HTTPException(status_code=400, detail="git not found on this server")
+
+    try:
+        result = subprocess.run(
+            ["git", "pull"],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="git pull timed out")
+
+    output = result.stdout + result.stderr
+
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=output or "git pull failed")
+
+    # Restart depending on runtime
+    restart_msg = ""
+    if runtime == "docker":
+        restart_msg = "Running inside Docker. Please restart the container manually."
+    elif runtime == "pm2":
+        try:
+            subprocess.run(["pm2", "restart", "all"], capture_output=True, text=True, timeout=15, cwd=app_dir)
+            restart_msg = "PM2 restart triggered."
+        except Exception:
+            restart_msg = "PM2 detected but restart failed. Please restart PM2 manually."
+    else:
+        restart_msg = "Bare process — please restart the server manually."
+
+    return {
+        "output": output,
+        "runtime": runtime,
+        "restart": restart_msg,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7800, timeout_keep_alive=600, timeout_graceful_shutdown=600)

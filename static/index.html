@@ -614,11 +614,26 @@ a bird on a tree</textarea>
             <div class="output" id="change-output">
                 <span class="placeholder">Credential change result</span>
             </div>
+
+            <hr style="margin:30px 0;border-color:#333;">
+
+            <h3 style="color:#4caf50;margin-bottom:15px;">🔄 Update</h3>
+            <div style="margin-bottom:10px;font-size:13px;color:#888;" id="update-env"></div>
+            <button class="btn" style="background:linear-gradient(135deg,#4caf50,#2e7d32);" onclick="updateApp()">git pull & restart</button>
+            <div class="output" id="update-output">
+                <span class="placeholder">Click to update the app</span>
+            </div>
         </div>
     </div>
 
     <script>
         const auth = btoa(localStorage.getItem('username') + ':' + localStorage.getItem('password'));
+
+        function escapeHtml(s) {
+            var div = document.createElement('div');
+            div.appendChild(document.createTextNode(s || ''));
+            return div.innerHTML;
+        }
 
         async function checkLogin() {
             try {
@@ -1213,10 +1228,22 @@ a bird on a tree</textarea>
                 }
                 window._baseUrl = data.base_url || '';
                 loadApiKeys();
+                loadUpdateInfo();
             } catch(e) {
                 console.error('Failed to load settings:', e);
             }
         }
+
+        async function loadUpdateInfo() {
+            try {
+                const res = await fetch('/api/update', { headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) return;
+                const data = await res.json();
+                var env = document.getElementById('update-env');
+                var text = 'Git: ' + (data.git_hash || '?') + ' | Runtime: ' + data.runtime;
+                if (data.pm2_restart) text += ' (PM2 auto-restarts on file change)';
+                env.textContent = text;
+            } catch(e) {}
 
         async function loadApiKeys() {
             try {
@@ -1395,6 +1422,36 @@ a bird on a tree</textarea>
                 setTimeout(() => window.location.reload(), 1500);
             } catch(e) {
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            }
+        }
+
+        async function updateApp() {
+            const btn = document.querySelector('#settings button:last-of-type');
+            const output = document.getElementById('update-output');
+            btn.disabled = true;
+            btn.textContent = 'Updating...';
+            output.innerHTML = '<span class="loading">Running git pull...</span>';
+
+            try {
+                const res = await fetch('/api/update', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    var msg = '<pre style="color:#4caf50;font-size:12px;max-height:200px;overflow:auto;white-space:pre-wrap;">' + escapeHtml(data.output || '') + '</pre>';
+                    msg += '<br><span style="color:#00ff00;">Update done. Restarting...</span>';
+                    output.innerHTML = msg;
+                    setTimeout(() => { btn.disabled = false; btn.textContent = 'git pull & restart'; }, 5000);
+                } else {
+                    output.innerHTML = '<span class="error">' + escapeHtml(data.detail || 'Update failed') + '</span>';
+                    btn.disabled = false;
+                    btn.textContent = 'git pull & restart';
+                }
+            } catch(e) {
+                output.innerHTML = '<span class="error">Error: ' + escapeHtml(e.message) + '</span>';
+                btn.disabled = false;
+                btn.textContent = 'git pull & restart';
             }
         }
 
