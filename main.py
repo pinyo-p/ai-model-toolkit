@@ -261,6 +261,7 @@ async def api_generate(
     vae_path: str = Form(""),
     text_encoder_path: str = Form(""),
     steps: int = Form(20),
+    cfg: float = Form(7.0),
     seed: int = Form(42),
     width: int = Form(1024),
     height: int = Form(1024),
@@ -289,6 +290,7 @@ async def api_generate(
             vae_path=vae_path or None,
             text_encoder_path=text_encoder_path or None,
             steps=steps,
+            cfg=cfg,
             seed=seed,
             width=width,
             height=height
@@ -307,8 +309,8 @@ async def api_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def sdxl_generate(prompt, negative, lora_paths=None, lora_weights=None, model_path="stabilityai/stable-diffusion-xl-base-1.0", vae_path=None, text_encoder_path=None, steps=20, seed=42, width=1024, height=1024):
-    return sdxl.sdxl_generate(prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, seed, width, height)
+def sdxl_generate(prompt, negative, lora_paths=None, lora_weights=None, model_path="stabilityai/stable-diffusion-xl-base-1.0", vae_path=None, text_encoder_path=None, steps=20, cfg=7.0, seed=42, width=1024, height=1024):
+    return sdxl.sdxl_generate(prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height)
 
 
 @app.post("/api/batch_generate")
@@ -322,6 +324,7 @@ async def api_batch_generate(
     vae_path: str = Form(""),
     text_encoder_path: str = Form(""),
     steps: int = Form(20),
+    cfg: float = Form(7.0),
     seed: int = Form(42),
 ):
     try:
@@ -346,7 +349,7 @@ async def api_batch_generate(
             model_path=model_path,
             vae_path=vae_path or None,
             text_encoder_path=text_encoder_path or None,
-            steps=steps, seed=seed
+            steps=steps, cfg=cfg, seed=seed
         )
 
         for p in lora_paths:

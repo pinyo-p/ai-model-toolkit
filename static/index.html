@@ -235,6 +235,12 @@
                 </div>
                 <div class="col">
                     <div class="form-group">
+                        <label>CFG</label>
+                        <input type="number" id="gen-cfg" value="7.0" min="0" max="30" step="0.5">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
                         <label>Seed</label>
                         <input type="number" id="gen-seed" value="42">
                     </div>
@@ -283,6 +289,12 @@ a bird on a tree</textarea>
                     <div class="form-group">
                         <label>Steps</label>
                         <input type="number" id="batch-steps" value="20" min="1" max="100">
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="form-group">
+                        <label>CFG</label>
+                        <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
                     </div>
                 </div>
                 <div class="col">
@@ -706,13 +718,18 @@ a bird on a tree</textarea>
                 textEncoderCustom.style.display = 'none';
             }
 
-            // Show model family badge
+            // Show model family badge + auto-set defaults
             var selectedOpt = select.options[select.selectedIndex];
             var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
             if (family) {
                 var label = FAMILY_LABELS[family] || family;
                 familyBadge.textContent = label;
                 familyBadge.style.display = 'inline';
+                var cfg = FAMILY_CFG[family];
+                if (cfg !== undefined) {
+                    document.getElementById('gen-cfg').value = cfg;
+                    document.getElementById('batch-cfg').value = cfg;
+                }
             } else {
                 familyBadge.style.display = 'none';
             }
@@ -734,6 +751,13 @@ a bird on a tree</textarea>
             'sd3': 'SD3', 'flux1': 'Flux.1', 'flux2': 'Flux.2',
             'zimage': 'Z-Image', 'hunyuan': 'Hunyuan', 'pixart': 'PixArt',
             'kolors': 'Kolors'
+        };
+
+        var FAMILY_CFG = {
+            'sd_unet': 7.0, 'sdxl': 7.0, 'sd15': 7.0,
+            'sd3': 5.0, 'flux1': 3.5, 'flux2': 4.0,
+            'zimage': 3.5, 'hunyuan': 5.0, 'pixart': 5.0,
+            'kolors': 5.0
         };
 
         function _populateSelect(select, entries, modelsPath, filterType) {
@@ -843,6 +867,7 @@ a bird on a tree</textarea>
             formData.append('prompt', document.getElementById('gen-prompt').value);
             formData.append('negative', document.getElementById('gen-negative').value);
             formData.append('steps', document.getElementById('gen-steps').value);
+            formData.append('cfg', document.getElementById('gen-cfg').value);
             formData.append('seed', document.getElementById('gen-seed').value);
             formData.append('width', document.getElementById('gen-width').value);
             formData.append('height', document.getElementById('gen-height').value);
@@ -886,6 +911,7 @@ a bird on a tree</textarea>
             formData.append('prompts', document.getElementById('batch-prompts').value);
             formData.append('negative', document.getElementById('batch-negative').value);
             formData.append('steps', document.getElementById('batch-steps').value);
+            formData.append('cfg', document.getElementById('batch-cfg').value);
             formData.append('seed', document.getElementById('batch-seed').value);
 
             var batchModelSelect = document.getElementById('gen-model');

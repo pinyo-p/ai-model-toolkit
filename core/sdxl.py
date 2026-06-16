@@ -102,6 +102,7 @@ def sdxl_generate(
     vae_path: str = None,
     text_encoder_path: str = None,
     steps: int = 20,
+    cfg: float = 7.0,
     seed: int = 42,
     width: int = 1024,
     height: int = 1024
@@ -130,7 +131,7 @@ def sdxl_generate(
         generator=generator,
         width=width,
         height=height,
-        guidance_scale=7.0,
+        guidance_scale=cfg,
     ).images[0]
 
     return image
@@ -145,6 +146,7 @@ def batch_generate(
     vae_path: str = None,
     text_encoder_path: str = None,
     steps: int = 20,
+    cfg: float = 7.0,
     seed: int = 42
 ) -> list[Image.Image]:
     images = []
@@ -158,6 +160,7 @@ def batch_generate(
             vae_path=vae_path,
             text_encoder_path=text_encoder_path,
             steps=steps,
+            cfg=cfg,
             seed=seed + i,
             width=1024,
             height=1024
