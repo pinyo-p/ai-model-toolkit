@@ -1,4 +1,5 @@
 import os
+import sys
 import struct
 import secrets
 import datetime
@@ -1318,8 +1319,11 @@ async def update_app(user: str = Depends(get_current_user)):
         restart_msg = "Running inside Docker. Please restart the container manually."
     elif runtime == "pm2":
         try:
-            subprocess.run(["pm2", "restart", "all"], capture_output=True, text=True, timeout=15, cwd=app_dir)
-            restart_msg = "PM2 restart triggered."
+            pm2_name = os.environ.get("name", "")
+            if not pm2_name:
+                pm2_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+            subprocess.run(["pm2", "restart", pm2_name], capture_output=True, text=True, timeout=15, cwd=app_dir)
+            restart_msg = f"PM2 process '{pm2_name}' restarted."
         except Exception:
             restart_msg = "PM2 detected but restart failed. Please restart PM2 manually."
     else:
