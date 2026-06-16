@@ -10,6 +10,7 @@ import io
 import sqlite3
 import hashlib
 import subprocess
+from typing import List
 
 import torch
 from fastapi import FastAPI, UploadFile, File, Form, Query, HTTPException, Depends
@@ -254,7 +255,8 @@ async def api_generate(
     user: str = Depends(get_current_user),
     prompt: str = Form(...),
     negative: str = Form(""),
-    lora_file: UploadFile = File(None),
+    lora_file: List[UploadFile] = File(None),
+    lora_weights: str = Form("[]"),
     model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
     vae_path: str = Form(""),
     text_encoder_path: str = Form(""),
@@ -264,19 +266,25 @@ async def api_generate(
     height: int = Form(1024),
 ):
     try:
-        lora_path = None
+        lora_paths = []
+        weight_list = json.loads(lora_weights) if lora_weights else []
         if lora_file:
-            lora_data = await lora_file.read()
-            lora_path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
-            with open(lora_path, "wb") as f:
-                f.write(lora_data)
+            for i, f in enumerate(lora_file):
+                data = await f.read()
+                path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                lora_paths.append(path)
+        if len(weight_list) < len(lora_paths):
+            weight_list.extend([1.0] * (len(lora_paths) - len(weight_list)))
 
         utils.set_seed(seed)
 
         img = sdxl_generate(
             prompt=prompt,
             negative=negative,
-            lora_path=lora_path,
+            lora_paths=lora_paths or None,
+            lora_weights=weight_list or None,
             model_path=model_path,
             vae_path=vae_path or None,
             text_encoder_path=text_encoder_path or None,
@@ -286,8 +294,9 @@ async def api_generate(
             height=height
         )
 
-        if lora_path and os.path.exists(lora_path):
-            os.remove(lora_path)
+        for p in lora_paths:
+            if os.path.exists(p):
+                os.remove(p)
 
         img_bytes = io.BytesIO()
         img.save(img_bytes, format='PNG')
@@ -298,8 +307,8 @@ async def api_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def sdxl_generate(prompt, negative, lora_path, model_path, vae_path, text_encoder_path, steps, seed, width, height):
-    return sdxl.sdxl_generate(prompt, negative, lora_path, model_path, vae_path, text_encoder_path, steps, seed, width, height)
+def sdxl_generate(prompt, negative, lora_paths=None, lora_weights=None, model_path="stabilityai/stable-diffusion-xl-base-1.0", vae_path=None, text_encoder_path=None, steps=20, seed=42, width=1024, height=1024):
+    return sdxl.sdxl_generate(prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, seed, width, height)
 
 
 @app.post("/api/batch_generate")
@@ -307,7 +316,8 @@ async def api_batch_generate(
     user: str = Depends(get_current_user),
     prompts: str = Form(...),
     negative: str = Form(""),
-    lora_file: UploadFile = File(None),
+    lora_file: List[UploadFile] = File(None),
+    lora_weights: str = Form("[]"),
     model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
     vae_path: str = Form(""),
     text_encoder_path: str = Form(""),
@@ -317,25 +327,31 @@ async def api_batch_generate(
     try:
         prompt_list = [p.strip() for p in prompts.split("\n") if p.strip()]
 
-        lora_path = None
+        lora_paths = []
+        weight_list = json.loads(lora_weights) if lora_weights else []
         if lora_file:
-            lora_data = await lora_file.read()
-            lora_path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
-            with open(lora_path, "wb") as f:
-                f.write(lora_data)
+            for i, f in enumerate(lora_file):
+                data = await f.read()
+                path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                lora_paths.append(path)
+        if len(weight_list) < len(lora_paths):
+            weight_list.extend([1.0] * (len(lora_paths) - len(weight_list)))
 
         utils.set_seed(seed)
 
         images = sdxl.batch_generate(
-            prompt_list, negative, lora_path,
+            prompt_list, negative, lora_paths or None, weight_list or None,
             model_path=model_path,
             vae_path=vae_path or None,
             text_encoder_path=text_encoder_path or None,
             steps=steps, seed=seed
         )
 
-        if lora_path and os.path.exists(lora_path):
-            os.remove(lora_path)
+        for p in lora_paths:
+            if os.path.exists(p):
+                os.remove(p)
 
         filenames = [f"image_{i+1}.png" for i in range(len(images))]
         zip_data = utils.create_zip_from_images(images, filenames)

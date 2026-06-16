@@ -252,8 +252,15 @@
                 </div>
             </div>
             <div class="form-group">
-                <label>LoRA (optional)</label>
-                <input type="file" id="gen-lora" accept=".safetensors,.pt">
+                <label>LoRAs</label>
+                <div id="lora-container">
+                    <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                        <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                        <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                        <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                    </div>
+                </div>
+                <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
             </div>
             <button class="btn" onclick="generate()">Generate Image</button>
             <div class="output" id="gen-output">
@@ -289,8 +296,15 @@ a bird on a tree</textarea>
                 <input type="text" id="batch-negative" placeholder="What to avoid...">
             </div>
             <div class="form-group">
-                <label>LoRA (optional)</label>
-                <input type="file" id="batch-lora" accept=".safetensors,.pt">
+                <label>LoRAs</label>
+                <div id="batch-lora-container">
+                    <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                        <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                        <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                        <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                    </div>
+                </div>
+                <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
             </div>
             <button class="btn" onclick="batchGenerate()">Generate Batch (ZIP)</button>
             <div class="output" id="batch-output">
@@ -695,63 +709,32 @@ a bird on a tree</textarea>
             return m.model_type || 'checkpoint';
         }
 
-        function _typeBadge(t) {
-            if (t === 'vae') return '[VAE] ';
-            if (t === 'lora') return '[LoRA] ';
-            if (t === 'text_encoder') return '[TE] ';
-            return '';
-        }
-
         function _populateSelect(select, entries, modelsPath, filterType) {
             if (!select) return;
             while (select.options.length > 2) select.remove(2);
-            var filtered = [];
-            var others = [];
             entries.forEach(function(m) {
                 if (m.type === 'folder' && m.files && m.files.length > 0) {
                     (m.files).forEach(function(f) {
                         var fname = typeof f === 'string' ? f : f.name;
                         var relPath = m.name + '/' + fname;
                         var ft = _getFileType(f, m);
-                        var opt = {
-                            text: relPath,
-                            value: modelsPath ? modelsPath + '/' + relPath : relPath,
-                            type: ft
-                        };
-                        if (ft === filterType) filtered.push(opt);
-                        else others.push(opt);
+                        // text_encoder: show everything (checkpoints work as TE)
+                        // other types: show only matching type
+                        if (filterType !== 'text_encoder' && ft !== filterType) return;
+                        var el = document.createElement('option');
+                        el.textContent = relPath;
+                        el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                        select.appendChild(el);
                     });
                 } else if (m.type === 'file') {
                     var ft = m.model_type || 'checkpoint';
-                    var opt = {
-                        text: m.name,
-                        value: modelsPath ? modelsPath + '/' + m.name : m.name,
-                        type: ft
-                    };
-                    if (ft === filterType) filtered.push(opt);
-                    else others.push(opt);
+                    if (filterType !== 'text_encoder' && ft !== filterType) return;
+                    var el = document.createElement('option');
+                    el.textContent = m.name;
+                    el.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                    select.appendChild(el);
                 }
             });
-            filtered.forEach(function(o) {
-                var el = document.createElement('option');
-                el.textContent = '\u25CF ' + o.text;
-                el.value = o.value;
-                select.appendChild(el);
-            });
-            if (others.length > 0) {
-                var sep = document.createElement('option');
-                sep.textContent = '\u2500\u2500 Others \u2500\u2500';
-                sep.disabled = true;
-                sep.style.fontWeight = 'bold';
-                sep.style.color = '#888';
-                select.appendChild(sep);
-                others.forEach(function(o) {
-                    var el = document.createElement('option');
-                    el.textContent = _typeBadge(o.type) + o.text;
-                    el.value = o.value;
-                    select.appendChild(el);
-                });
-            }
         }
 
         async function loadGenModels() {
@@ -794,6 +777,33 @@ a bird on a tree</textarea>
             else el.style.color = '';
         }
 
+        function addLoraRow(containerId) {
+            var container = document.getElementById(containerId);
+            var row = document.createElement('div');
+            row.className = 'lora-row';
+            row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center;';
+            row.innerHTML = '<input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">' +
+                '<input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">' +
+                '<button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">\u2715</button>';
+            container.appendChild(row);
+        }
+
+        function _appendLoras(formData, containerId) {
+            var rows = document.getElementById(containerId).querySelectorAll('.lora-row');
+            var weights = [];
+            rows.forEach(function(row) {
+                var file = row.querySelector('.lora-file').files[0];
+                var weight = row.querySelector('.lora-weight').value;
+                if (file) {
+                    formData.append('lora_file', file);
+                    weights.push(parseFloat(weight) || 1.0);
+                }
+            });
+            if (weights.length > 0) {
+                formData.append('lora_weights', JSON.stringify(weights));
+            }
+        }
+
         async function generate() {
             const output = document.getElementById('gen-output');
             output.innerHTML = '<span class="loading">Generating...</span>';
@@ -824,8 +834,7 @@ a bird on a tree</textarea>
                 : genTeSelect.value;
             formData.append('text_encoder_path', genTe || '');
 
-            const loraFile = document.getElementById('gen-lora').files[0];
-            if (loraFile) formData.append('lora_file', loraFile);
+            _appendLoras(formData, 'lora-container');
 
             try {
                 const res = await fetch('/api/generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
@@ -866,8 +875,7 @@ a bird on a tree</textarea>
                 : batchTeSelect.value;
             formData.append('text_encoder_path', batchTe || '');
 
-            const loraFile = document.getElementById('batch-lora').files[0];
-            if (loraFile) formData.append('lora_file', loraFile);
+            _appendLoras(formData, 'batch-lora-container');
 
             try {
                 const res = await fetch('/api/batch_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });

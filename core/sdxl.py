@@ -96,7 +96,8 @@ def _get_pipeline(
 def sdxl_generate(
     prompt: str,
     negative: str = "",
-    lora_path: str = None,
+    lora_paths: list = None,
+    lora_weights: list = None,
     model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
     vae_path: str = None,
     text_encoder_path: str = None,
@@ -110,8 +111,17 @@ def sdxl_generate(
 
     generator = torch.Generator(device=device).manual_seed(seed)
 
-    if lora_path and os.path.exists(lora_path):
-        pipeline.load_lora_weights(os.path.dirname(lora_path) or ".")
+    if lora_paths:
+        for i, (lp, lw) in enumerate(zip(lora_paths, lora_weights or [])):
+            if lp and os.path.exists(lp):
+                pipeline.load_lora_weights(
+                    os.path.dirname(lp) or ".",
+                    weight_name=os.path.basename(lp),
+                    adapter_name=f"lora_{i}",
+                )
+        adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
+        adapter_weights = lora_weights or [1.0] * len(lora_paths)
+        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
 
     image = pipeline(
         prompt=prompt,
@@ -129,7 +139,8 @@ def sdxl_generate(
 def batch_generate(
     prompts: list[str],
     negative: str = "",
-    lora_path: str = None,
+    lora_paths: list = None,
+    lora_weights: list = None,
     model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
     vae_path: str = None,
     text_encoder_path: str = None,
@@ -141,7 +152,8 @@ def batch_generate(
         img = sdxl_generate(
             prompt=prompt,
             negative=negative,
-            lora_path=lora_path,
+            lora_paths=lora_paths,
+            lora_weights=lora_weights,
             model_path=model_path,
             vae_path=vae_path,
             text_encoder_path=text_encoder_path,
