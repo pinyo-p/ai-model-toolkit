@@ -630,6 +630,29 @@ def _detect_model_family_from_keys(tensor_keys):
     return "unknown"
 
 
+def _detect_family_from_name(name: str) -> str:
+    name_lower = name.lower()
+    if any(x in name_lower for x in ["z-image", "z_image", "zimage"]):
+        return "zimage"
+    if any(x in name_lower for x in ["flux2", "flux.2", "flux-2", "flux_dev2"]):
+        return "flux2"
+    if any(x in name_lower for x in ["flux", "flux.1", "flux-1"]):
+        return "flux1"
+    if "sd3" in name_lower or "stable-diffusion-3" in name_lower:
+        return "sd3"
+    if any(x in name_lower for x in ["hunyuan", "hunyuan"]):
+        return "hunyuan"
+    if any(x in name_lower for x in ["pixart", "pix-art"]):
+        return "pixart"
+    if any(x in name_lower for x in ["kolors"]):
+        return "kolors"
+    if any(x in name_lower for x in ["xl", "sdxl", "pony", "sd_xl", "illustrious"]):
+        return "sdxl"
+    if any(x in name_lower for x in ["v1-5", "v1.5", "sd15", "sd-1", "runwayml"]):
+        return "sd15"
+    return ""
+
+
 def _detect_family(path: str) -> str:
     path = os.path.abspath(path)
 
@@ -651,18 +674,37 @@ def _detect_family(path: str) -> str:
                     "HunyuanDiTPipeline": "hunyuan",
                     "PixArtAlphaPipeline": "pixart",
                     "KolorsPipeline": "kolors",
-                    "LatentConsistencyModelPipeline": "sd15",  # LCM based on SD1.5
+                    "LatentConsistencyModelPipeline": "sd15",
                 }
                 return mapping.get(cls_name, "unknown")
             except Exception:
-                return "unknown"
+                pass
+        # No model_index.json → check for nested safetensors
+        name_fallback = _detect_family_from_name(os.path.basename(path))
+        if name_fallback:
+            return name_fallback
+        for fname in sorted(os.listdir(path)):
+            if fname.endswith(".safetensors"):
+                keys, _ = _read_safetensors_meta(os.path.join(path, fname))
+                if keys:
+                    f_result = _detect_model_family_from_keys(keys)
+                    if f_result != "unknown":
+                        return f_result
+                break
         return "unknown"
 
     # Single file
     if path.endswith(".safetensors"):
         keys, _ = _read_safetensors_meta(path)
         if keys:
-            return _detect_model_family_from_keys(keys)
+            result = _detect_model_family_from_keys(keys)
+            if result != "unknown":
+                return result
+
+    # Fallback: detect from filename (works for .ckpt, .pt, .pth, and unmatched .safetensors)
+    name_result = _detect_family_from_name(os.path.basename(path))
+    if name_result:
+        return name_result
 
     return "unknown"
 
