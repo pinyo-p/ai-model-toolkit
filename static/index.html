@@ -690,6 +690,70 @@ a bird on a tree</textarea>
             }
         }
 
+        function _getFileType(f, m) {
+            if (typeof f === 'object' && f.model_type) return f.model_type;
+            return m.model_type || 'checkpoint';
+        }
+
+        function _typeBadge(t) {
+            if (t === 'vae') return '[VAE] ';
+            if (t === 'lora') return '[LoRA] ';
+            if (t === 'text_encoder') return '[TE] ';
+            return '';
+        }
+
+        function _populateSelect(select, entries, modelsPath, filterType) {
+            if (!select) return;
+            while (select.options.length > 2) select.remove(2);
+            var filtered = [];
+            var others = [];
+            entries.forEach(function(m) {
+                if (m.type === 'folder' && m.files && m.files.length > 0) {
+                    (m.files).forEach(function(f) {
+                        var fname = typeof f === 'string' ? f : f.name;
+                        var relPath = m.name + '/' + fname;
+                        var ft = _getFileType(f, m);
+                        var opt = {
+                            text: relPath,
+                            value: modelsPath ? modelsPath + '/' + relPath : relPath,
+                            type: ft
+                        };
+                        if (ft === filterType) filtered.push(opt);
+                        else others.push(opt);
+                    });
+                } else if (m.type === 'file') {
+                    var ft = m.model_type || 'checkpoint';
+                    var opt = {
+                        text: m.name,
+                        value: modelsPath ? modelsPath + '/' + m.name : m.name,
+                        type: ft
+                    };
+                    if (ft === filterType) filtered.push(opt);
+                    else others.push(opt);
+                }
+            });
+            filtered.forEach(function(o) {
+                var el = document.createElement('option');
+                el.textContent = '\u25CF ' + o.text;
+                el.value = o.value;
+                select.appendChild(el);
+            });
+            if (others.length > 0) {
+                var sep = document.createElement('option');
+                sep.textContent = '\u2500\u2500 Others \u2500\u2500';
+                sep.disabled = true;
+                sep.style.fontWeight = 'bold';
+                sep.style.color = '#888';
+                select.appendChild(sep);
+                others.forEach(function(o) {
+                    var el = document.createElement('option');
+                    el.textContent = _typeBadge(o.type) + o.text;
+                    el.value = o.value;
+                    select.appendChild(el);
+                });
+            }
+        }
+
         async function loadGenModels() {
             try {
                 var auth2 = btoa(localStorage.getItem('username') + ':' + localStorage.getItem('password'));
@@ -697,28 +761,9 @@ a bird on a tree</textarea>
                 var data = await res.json();
                 var modelsPath = data.models_path || '';
                 var localModels = data.models || [];
-                var selectIds = ['gen-model', 'gen-vae', 'gen-text-encoder'];
-                selectIds.forEach(function(id) {
-                    var select = document.getElementById(id);
-                    if (!select) return;
-                    while (select.options.length > 2) select.remove(2);
-                    localModels.forEach(function(m) {
-                        if (m.type === 'folder' && m.files && m.files.length > 0) {
-                            (m.files).forEach(function(f) {
-                                var relPath = m.name + '/' + f;
-                                var opt = document.createElement('option');
-                                opt.textContent = relPath;
-                                opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
-                                select.appendChild(opt);
-                            });
-                        } else if (m.type === 'file') {
-                            var opt = document.createElement('option');
-                            opt.textContent = m.name;
-                            opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
-                            select.appendChild(opt);
-                        }
-                    });
-                });
+                _populateSelect(document.getElementById('gen-model'), localModels, modelsPath, 'checkpoint');
+                _populateSelect(document.getElementById('gen-vae'), localModels, modelsPath, 'vae');
+                _populateSelect(document.getElementById('gen-text-encoder'), localModels, modelsPath, 'text_encoder');
             } catch(e) {
                 console.error('Failed to load gen models:', e);
             }
@@ -1209,13 +1254,14 @@ a bird on a tree</textarea>
                     document.getElementById('train-full-model'),
                     document.getElementById('train-img-model')
                 ];
+                function _getFname(f) { return typeof f === 'string' ? f : f.name; }
                 selects.forEach(function(select) {
                     if (!select) return;
                     while (select.options.length > 2) select.remove(2);
                     localModels.forEach(function(m) {
                         if (m.type === 'folder' && m.files && m.files.length > 0) {
                             (m.files).forEach(function(f) {
-                                const relPath = m.name + '/' + f;
+                                const relPath = m.name + '/' + _getFname(f);
                                 const opt = document.createElement('option');
                                 opt.textContent = relPath;
                                 opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;

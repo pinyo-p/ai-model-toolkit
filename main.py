@@ -520,6 +520,22 @@ async def delete_api_key(
     return {"status": "ok", "message": "Key deleted"}
 
 
+def _detect_model_role(name: str, parent_dir: str = "") -> str:
+    name_lower = name.lower()
+    parent_lower = parent_dir.lower()
+
+    if "vae" in name_lower or "vae" in parent_lower:
+        return "vae"
+    if any(x in name_lower for x in ["text_encoder", "text-encoder", "/te", "te_"]):
+        return "text_encoder"
+    if any(x in parent_lower for x in ["text_encoder", "text-encoder"]):
+        return "text_encoder"
+    if "lora" in name_lower or "lora" in parent_lower:
+        return "lora"
+
+    return "checkpoint"
+
+
 @app.get("/api/models")
 async def list_models(user: str = Depends(get_current_user)):
     models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
@@ -532,6 +548,7 @@ async def list_models(user: str = Depends(get_current_user)):
             if item.startswith("."):
                 continue
             if os.path.isdir(item_path):
+                folder_role = _detect_model_role(item)
                 folder_files = []
                 nested_dirs = []
                 for f in sorted(os.listdir(item_path)):
@@ -541,8 +558,12 @@ async def list_models(user: str = Depends(get_current_user)):
                     if os.path.isdir(f_path):
                         nested_dirs.append(f)
                     elif os.path.splitext(f)[1].lower() in allowed_ext:
-                        folder_files.append(f)
-                entry = {"name": item, "type": "folder"}
+                        file_role = _detect_model_role(f, parent_dir=item)
+                        folder_files.append({
+                            "name": f,
+                            "model_type": file_role,
+                        })
+                entry = {"name": item, "type": "folder", "model_type": folder_role}
                 if folder_files:
                     entry["files"] = folder_files[:10]
                 if nested_dirs:
@@ -551,7 +572,8 @@ async def list_models(user: str = Depends(get_current_user)):
             else:
                 ext = os.path.splitext(item)[1].lower()
                 if ext in allowed_ext:
-                    result.append({"name": item, "type": "file", "ext": ext})
+                    role = _detect_model_role(item)
+                    result.append({"name": item, "type": "file", "ext": ext, "model_type": role})
     
     return {"models_path": models_path, "models": result}
 
