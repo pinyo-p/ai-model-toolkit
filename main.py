@@ -709,6 +709,12 @@ def _detect_family(path: str) -> str:
 
     # Single file
     if path.endswith(".safetensors"):
+        # First check filename for explicit model type
+        name_result = _detect_family_from_name(os.path.basename(path))
+        if name_result:
+            return name_result
+        
+        # If filename doesn't indicate a specific type, use tensor key detection
         keys, _ = _read_safetensors_meta(path)
         if keys:
             result = _detect_model_family_from_keys(keys)
