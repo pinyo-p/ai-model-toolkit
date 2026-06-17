@@ -134,60 +134,64 @@ def _get_pipeline(
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
-        # Z-Image uses Phi-2 text encoder + SDXL VAE - load them separately
-        # Load VAE (use provided or try default SDXL VAE)
-        if vae is None:
-            vae_paths = [
-                os.path.join(os.path.dirname(model_path), "vae"),
-                os.path.join(os.path.dirname(model_path), "vae_fp16"),
-            ]
-            for vp in vae_paths:
-                if os.path.exists(vp):
-                    try:
-                        vae = AutoencoderKL.from_pretrained(vp, torch_dtype=dtype)
-                        break
-                    except Exception:
-                        pass
+        hf_token = os.environ.get("HF_TOKEN")
+        zimage_repo = "Tongyi-MAI/Z-Image-Turbo"
+
+        # HF repo ID → use from_pretrained directly (repo has everything)
+        if not os.path.isfile(model_path) and not os.path.isdir(model_path):
+            pipeline = ZImagePipeline.from_pretrained(
+                model_path, torch_dtype=dtype, low_cpu_mem_usage=False, token=hf_token
+            )
+        else:
+            # Local file → load VAE + text encoder from HF repo, then from_single_file
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
+            # Load VAE from repo
             if vae is None:
                 try:
-                    vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae", torch_dtype=dtype, token=os.environ.get("HF_TOKEN"))
+                    vae = AutoencoderKL.from_pretrained(
+                        zimage_repo, subfolder="vae", torch_dtype=dtype, token=hf_token
+                    )
                 except Exception:
                     pass
 
-        # Load Phi-2 text encoder
-        text_encoder = None
-        tokenizer = None
-        qwen_paths = [
-            text_encoder_path,
-            os.path.join(os.path.dirname(model_path), "text_encoder"),
-            os.path.join(os.path.dirname(model_path), "qwen"),
-            os.path.join(os.path.dirname(model_path), "phi"),
-        ]
-        qwen_model_id = "microsoft/phi-2"
-        for qp in qwen_paths:
-            if qp and os.path.exists(qp):
+            # Load text encoder + tokenizer from repo
+            text_encoder = None
+            tokenizer = None
+            # Try local paths first
+            local_te_paths = [
+                text_encoder_path,
+                os.path.join(os.path.dirname(model_path), "text_encoder"),
+                os.path.join(os.path.dirname(model_path), "phi"),
+            ]
+            for tp in local_te_paths:
+                if tp and os.path.exists(tp):
+                    try:
+                        text_encoder = AutoModelForCausalLM.from_pretrained(tp, torch_dtype=dtype)
+                        tokenizer = AutoTokenizer.from_pretrained(tp, trust_remote_code=True)
+                        break
+                    except Exception:
+                        pass
+            # Fallback: download from HF repo
+            if text_encoder is None:
                 try:
-                    from transformers import AutoModelForCausalLM, AutoTokenizer
-                    text_encoder = AutoModelForCausalLM.from_pretrained(qp, torch_dtype=dtype)
-                    tokenizer = AutoTokenizer.from_pretrained(qp, trust_remote_code=True)
-                    break
+                    text_encoder = AutoModelForCausalLM.from_pretrained(
+                        zimage_repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token
+                    )
+                    tokenizer = AutoTokenizer.from_pretrained(
+                        zimage_repo, subfolder="text_encoder", trust_remote_code=True, token=hf_token
+                    )
                 except Exception:
                     pass
-        if text_encoder is None:
-            try:
-                from transformers import AutoModelForCausalLM, AutoTokenizer
-                text_encoder = AutoModelForCausalLM.from_pretrained(qwen_model_id, torch_dtype=dtype, token=os.environ.get("HF_TOKEN"))
-                tokenizer = AutoTokenizer.from_pretrained(qwen_model_id, trust_remote_code=True, token=os.environ.get("HF_TOKEN"))
-            except Exception:
-                pass
-        kwargs = dict(dtype=dtype, low_cpu_mem_usage=False)
-        if vae is not None:
-            kwargs['vae'] = vae
-        if text_encoder is not None:
-            kwargs['text_encoder'] = text_encoder
-        if tokenizer is not None:
-            kwargs['tokenizer'] = tokenizer
-        pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
+
+            kwargs = dict(dtype=dtype, low_cpu_mem_usage=False)
+            if vae is not None:
+                kwargs['vae'] = vae
+            if text_encoder is not None:
+                kwargs['text_encoder'] = text_encoder
+            if tokenizer is not None:
+                kwargs['tokenizer'] = tokenizer
+            pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
     elif model_type == "pixart":
         try:
             from diffusers import PixArtAlphaPipeline

@@ -271,26 +271,30 @@ async def api_check_model(
             missing.append({"component": "model", "path": model_path, "message": f"Model file not found: {model_path}"})
 
     if model_type == "zimage":
-        # Z-Image needs Qwen3 text encoder
-        qwen_found = False
-        qwen_paths = [
+        zimage_repo = "Tongyi-MAI/Z-Image-Turbo"
+
+        # Check if model is HF repo ID (no local file needed)
+        is_hf_repo = not os.path.isfile(model_path) and not os.path.isdir(model_path)
+
+        # Check text encoder (from repo)
+        te_found = False
+        local_te_paths = [
             text_encoder_path,
             os.path.join(os.path.dirname(model_path), "text_encoder"),
-            os.path.join(os.path.dirname(model_path), "qwen"),
             os.path.join(os.path.dirname(model_path), "phi"),
         ]
-        for qp in qwen_paths:
-            if qp and os.path.exists(qp):
-                qwen_found = True
+        for tp in local_te_paths:
+            if tp and os.path.exists(tp):
+                te_found = True
                 break
-        if not qwen_found:
+        if not te_found and not is_hf_repo:
             warnings.append({
                 "component": "text_encoder",
-                "message": "Phi-2 text encoder not found locally. Will try to download from HuggingFace (microsoft/phi-2 ~5GB).",
-                "download": "microsoft/phi-2"
+                "message": f"Text encoder not found locally. Will download from HuggingFace ({zimage_repo}/text_encoder).",
+                "download": f"{zimage_repo}/text_encoder"
             })
 
-        # Z-Image needs SDXL VAE
+        # Check VAE (from repo)
         vae_found = vae_path and os.path.exists(vae_path)
         if not vae_found:
             vae_dirs = [
@@ -301,11 +305,11 @@ async def api_check_model(
                 if os.path.exists(vp):
                     vae_found = True
                     break
-        if not vae_found:
+        if not vae_found and not is_hf_repo:
             warnings.append({
                 "component": "vae",
-                "message": "VAE not found locally. Will try to download from HuggingFace (stabilityai/sdxl-vae).",
-                "download": "stabilityai/sdxl-vae"
+                "message": f"VAE not found locally. Will download from HuggingFace ({zimage_repo}/vae).",
+                "download": f"{zimage_repo}/vae"
             })
 
     return {
