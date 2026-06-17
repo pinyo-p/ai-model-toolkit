@@ -264,7 +264,8 @@ def sdxl_generate(
     cfg: float = 7.0,
     seed: int = 42,
     width: int = 1024,
-    height: int = 1024
+    height: int = 1024,
+    progress_cb=None,
 ) -> Image.Image:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
@@ -283,6 +284,14 @@ def sdxl_generate(
         adapter_weights = lora_weights or [1.0] * len(lora_paths)
         pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
 
+    def _step_cb(pipeline, step_index, timestep, callback_kwargs):
+        if progress_cb:
+            try:
+                progress_cb(step_index, steps)
+            except Exception:
+                pass
+        return callback_kwargs
+
     image = pipeline(
         prompt=prompt,
         negative_prompt=negative if negative else None,
@@ -291,6 +300,7 @@ def sdxl_generate(
         width=width,
         height=height,
         guidance_scale=cfg,
+        callback_on_step_end=_step_cb,
     ).images[0]
 
     return image

@@ -30,6 +30,9 @@ security = HTTPBasic()
 _download_progress: dict = {}
 _dl_lock = threading.Lock()
 
+_generate_progress: dict = {}
+_gen_lock = threading.Lock()
+
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
 def init_db():
@@ -373,6 +376,88 @@ async def api_generate(
 
 def sdxl_generate(prompt, negative, lora_paths=None, lora_weights=None, model_path="stabilityai/stable-diffusion-xl-base-1.0", vae_path=None, text_encoder_path=None, steps=20, cfg=7.0, seed=42, width=1024, height=1024):
     return sdxl.sdxl_generate(prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height)
+
+
+def _set_gen_progress(gen_id, **kwargs):
+    with _gen_lock:
+        if gen_id not in _generate_progress:
+            _generate_progress[gen_id] = {"status": "loading", "message": "Starting...", "step": 0, "total_steps": 0}
+        _generate_progress[gen_id].update(kwargs)
+
+
+def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height):
+    try:
+        _set_gen_progress(gen_id, status="loading", message="Loading model...")
+        img = sdxl.sdxl_generate(
+            prompt=prompt, negative=negative,
+            lora_paths=lora_paths, lora_weights=lora_weights,
+            model_path=model_path, vae_path=vae_path,
+            text_encoder_path=text_encoder_path,
+            steps=steps, cfg=cfg, seed=seed, width=width, height=height,
+            progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total}")
+        )
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        _set_gen_progress(gen_id, status="done", message="Done", image_data=img_bytes.getvalue())
+    except Exception as e:
+        _set_gen_progress(gen_id, status="error", message=str(e))
+
+
+@app.get("/api/generate_progress")
+async def api_generate_progress(gen_id: str = Query(...), user: str = Depends(get_current_user)):
+    with _gen_lock:
+        data = _generate_progress.get(gen_id, {"status": "unknown", "message": "Not found"})
+    result = {k: v for k, v in data.items() if k != "image_data"}
+    return result
+
+
+@app.get("/api/generate_result")
+async def api_generate_result(gen_id: str = Query(...), user: str = Depends(get_current_user)):
+    with _gen_lock:
+        data = _generate_progress.get(gen_id, {})
+    if data.get("status") != "done" or "image_data" not in data:
+        raise HTTPException(status_code=404, detail="Not ready")
+    img_data = data.pop("image_data")
+    with _gen_lock:
+        _generate_progress.pop(gen_id, None)
+    return StreamingResponse(io.BytesIO(img_data), media_type="image/png")
+
+
+@app.post("/api/generate_async")
+async def api_generate_async(
+    user: str = Depends(get_current_user),
+    prompt: str = Form(...),
+    negative: str = Form(""),
+    lora_file: List[UploadFile] = File(None),
+    lora_weights: str = Form("[]"),
+    model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
+    vae_path: str = Form(""),
+    text_encoder_path: str = Form(""),
+    steps: int = Form(20),
+    cfg: float = Form(7.0),
+    seed: int = Form(42),
+    width: int = Form(1024),
+    height: int = Form(1024),
+):
+    gen_id = str(uuid.uuid4())
+    lora_paths = []
+    weight_list = json.loads(lora_weights) if lora_weights else []
+    if lora_file:
+        for i, f in enumerate(lora_file):
+            data = await f.read()
+            path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
+            with open(path, "wb") as fh:
+                fh.write(data)
+            lora_paths.append(path)
+    if len(weight_list) < len(lora_paths):
+        weight_list.extend([1.0] * (len(lora_paths) - len(weight_list)))
+
+    utils.set_seed(seed)
+
+    t = threading.Thread(target=_run_gen, args=(gen_id, prompt, negative, lora_paths, weight_list or None, model_path, vae_path or None, text_encoder_path or None, steps, cfg, seed, width, height), daemon=True)
+    t.start()
+    return {"gen_id": gen_id, "status": "started"}
 
 
 @app.post("/api/batch_generate")

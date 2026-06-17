@@ -926,27 +926,25 @@ a bird on a tree</textarea>
                 checkFd.append('text_encoder_path', genTe || '');
                 var checkRes = await fetch('/api/check_model', { method: 'POST', body: checkFd, headers: { 'Authorization': 'Basic ' + auth } });
                 var checkData = await checkRes.json();
-                if (checkData.missing && checkData.missing.length > 0) {
-                    var msgs = checkData.missing.map(function(m) { return m.message; }).join('<br>');
-                    output.innerHTML = '<span class="error">' + msgs + '</span>';
-                    return;
+                var hasIssues = (checkData.missing && checkData.missing.length > 0) || (checkData.warnings && checkData.warnings.length > 0);
+                if (hasIssues) {
+                    var choice = await showMissingComponents(checkData);
+                    if (choice === 'cancel') return;
+                    if (choice === 'manual') {
+                        document.getElementById('missing-manual-cmd').style.display = 'block';
+                        document.getElementById('missing-modal').style.display = 'flex';
+                        return;
+                    }
                 }
-                if (checkData.warnings && checkData.warnings.length > 0) {
-                    var wMsgs = checkData.warnings.map(function(w) { return w.message; }).join('<br>');
-                    warningsEl.innerHTML = '⚠ ' + wMsgs;
-                    warningsEl.style.display = 'block';
-                }
-            } catch(e) {
-                // Ignore check errors, proceed with generate
-            }
+            } catch(e) {}
 
             // Show progress
             genBtn.disabled = true;
             genBtn.textContent = 'Generating...';
             progress.style.display = 'block';
             progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
-            progressBar.style.width = '30%';
-            progressText.textContent = 'Loading model & generating...';
+            progressBar.style.width = '10%';
+            progressText.textContent = 'Starting...';
             output.innerHTML = '<span class="loading">Generating...</span>';
 
             const formData = new FormData();
@@ -960,27 +958,53 @@ a bird on a tree</textarea>
             formData.append('model_path', modelPath);
             formData.append('vae_path', genVae || '');
             formData.append('text_encoder_path', genTe || '');
-
             _appendLoras(formData, 'lora-container');
 
             try {
                 var t0 = Date.now();
-                const res = await fetch('/api/generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                const blob = await res.blob();
-                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                progressBar.style.animation = 'none';
-                progressBar.style.width = '100%';
-                progressText.textContent = '✅ Done in ' + elapsed + 's';
-                setTimeout(function() { progress.style.display = 'none'; }, 3000);
-                const url = URL.createObjectURL(blob);
-                output.innerHTML = '<img src="' + url + '" alt="Generated">';
+                var startRes = await fetch('/api/generate_async', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!startRes.ok) throw new Error(await startRes.text());
+                var startData = await startRes.json();
+                var genId = startData.gen_id;
+
+                var poll = setInterval(async function() {
+                    try {
+                        var pr = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
+                        var pg = await pr.json();
+                        if (pg.status === 'loading') {
+                            progressBar.style.width = '15%';
+                            progressText.textContent = pg.message || 'Loading model...';
+                        } else if (pg.status === 'generating' && pg.total_steps > 0) {
+                            var pct = Math.min(90, 15 + (pg.step / pg.total_steps) * 75);
+                            progressBar.style.animation = 'none';
+                            progressBar.style.width = pct + '%';
+                            progressText.textContent = 'Step ' + pg.step + '/' + pg.total_steps;
+                        }
+                        if (pg.status === 'done' || pg.status === 'error') {
+                            clearInterval(poll);
+                            if (pg.status === 'done') {
+                                var imgRes = await fetch('/api/generate_result?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
+                                var blob = await imgRes.blob();
+                                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                                progressBar.style.animation = 'none';
+                                progressBar.style.width = '100%';
+                                progressText.textContent = '✅ Done in ' + elapsed + 's';
+                                setTimeout(function() { progress.style.display = 'none'; }, 3000);
+                                output.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt="Generated">';
+                            } else {
+                                progress.style.display = 'none';
+                                output.innerHTML = '<span class="error">Error: ' + pg.message + '</span>';
+                            }
+                            genBtn.disabled = false;
+                            genBtn.textContent = 'Generate Image';
+                        }
+                    } catch(e) {}
+                }, 500);
             } catch(e) {
                 progressBar.style.animation = 'none';
                 progressBar.style.width = '0%';
                 progress.style.display = 'none';
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
-            } finally {
                 genBtn.disabled = false;
                 genBtn.textContent = 'Generate Image';
             }
@@ -2118,6 +2142,55 @@ a bird on a tree</textarea>
             }
         }
 
+        var missingResolver = null;
+        var missingData = null;
+
+        function showMissingComponents(data) {
+            return new Promise(function(resolve) {
+                missingResolver = resolve;
+                missingData = data;
+                var list = document.getElementById('missing-list');
+                var html = '';
+                if (data.missing && data.missing.length > 0) {
+                    html += '<div style="color:#ff6666;margin-bottom:8px;">❌ Missing:</div>';
+                    data.missing.forEach(function(m) {
+                        html += '<div style="padding:4px 0;color:#e0e0e0;">• ' + m.message + '</div>';
+                    });
+                }
+                if (data.warnings && data.warnings.length > 0) {
+                    html += '<div style="color:#ffaa00;margin-top:10px;margin-bottom:8px;">⚠ Not found locally:</div>';
+                    data.warnings.forEach(function(w) {
+                        html += '<div style="padding:4px 0;color:#e0e0e0;">• ' + w.message + '</div>';
+                    });
+                }
+                list.innerHTML = html;
+
+                var manualCmd = document.getElementById('missing-manual-cmd');
+                manualCmd.style.display = 'none';
+                var cmdLines = [];
+                if (data.warnings) {
+                    data.warnings.forEach(function(w) {
+                        if (w.download) {
+                            cmdLines.push('huggingface-cli download ' + w.download + ' --local-dir <path>');
+                        }
+                    });
+                }
+                if (cmdLines.length > 0) {
+                    manualCmd.textContent = '# Run these commands:\n' + cmdLines.join('\n');
+                }
+
+                document.getElementById('missing-modal').style.display = 'flex';
+            });
+        }
+
+        function missingAnswer(choice) {
+            document.getElementById('missing-modal').style.display = 'none';
+            if (missingResolver) {
+                missingResolver(choice);
+                missingResolver = null;
+            }
+        }
+
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
         }
@@ -2212,6 +2285,27 @@ a bird on a tree</textarea>
                 <button class="btn-secondary" onclick="confirmAnswer(false)">Cancel</button>
                 <button class="btn-primary" onclick="confirmAnswer(true)">Confirm</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Missing Components Modal -->
+    <div class="modal-overlay" id="missing-modal">
+        <div class="modal-box" style="min-width:420px;">
+            <button class="modal-close" onclick="closeModal('missing-modal')">✕</button>
+            <h3>📦 Missing Components</h3>
+            <div id="missing-list" style="margin:15px 0;font-size:14px;"></div>
+            <div class="modal-actions" style="flex-direction:column;gap:10px;">
+                <button class="btn-primary" id="missing-auto-btn" onclick="missingAnswer('auto')" style="width:100%;text-align:center;">
+                    ⬇ Auto Download (Recommended)
+                </button>
+                <button class="btn-secondary" id="missing-manual-btn" onclick="missingAnswer('manual')" style="width:100%;text-align:center;">
+                    📋 Show Download Commands
+                </button>
+                <button class="btn-secondary" onclick="missingAnswer('cancel')" style="width:100%;text-align:center;background:#332222;color:#ff6666;">
+                    ✕ Cancel
+                </button>
+            </div>
+            <div id="missing-manual-cmd" style="display:none;margin-top:15px;padding:12px;background:#0d1420;border:1px solid #1a2a3a;border-radius:8px;font-family:monospace;font-size:12px;color:#7aa2c0;white-space:pre-wrap;word-break:break-all;"></div>
         </div>
     </div>
 
