@@ -280,7 +280,14 @@
                 </div>
             </div>
 
-            <button class="btn" onclick="generate()">Generate Image</button>
+            <button class="btn" id="gen-btn" onclick="generate()">Generate Image</button>
+            <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
+                <div id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</div>
+                <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                    <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                </div>
+            </div>
+            <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
             <div class="output" id="gen-output">
                 <span class="placeholder">Image will appear here</span>
             </div>
@@ -887,6 +894,59 @@ a bird on a tree</textarea>
 
         async function generate() {
             const output = document.getElementById('gen-output');
+            const progress = document.getElementById('gen-progress');
+            const progressBar = document.getElementById('gen-progress-bar');
+            const progressText = document.getElementById('gen-progress-text');
+            const warningsEl = document.getElementById('gen-warnings');
+            const genBtn = document.getElementById('gen-btn');
+
+            var genModelSelect = document.getElementById('gen-model');
+            var genModel = genModelSelect.value === '__custom__'
+                ? document.getElementById('gen-model-custom').value
+                : genModelSelect.value;
+            var modelPath = genModel || 'stabilityai/stable-diffusion-xl-base-1.0';
+
+            var genVaeSelect = document.getElementById('gen-vae');
+            var genVae = genVaeSelect.value === '__custom__'
+                ? document.getElementById('gen-vae-custom').value
+                : genVaeSelect.value;
+
+            var genTeSelect = document.getElementById('gen-text-encoder');
+            var genTe = genTeSelect.value === '__custom__'
+                ? document.getElementById('gen-text-encoder-custom').value
+                : genTeSelect.value;
+
+            // Check model first
+            warningsEl.style.display = 'none';
+            warningsEl.innerHTML = '';
+            try {
+                var checkFd = new FormData();
+                checkFd.append('model_path', modelPath);
+                checkFd.append('vae_path', genVae || '');
+                checkFd.append('text_encoder_path', genTe || '');
+                var checkRes = await fetch('/api/check_model', { method: 'POST', body: checkFd, headers: { 'Authorization': 'Basic ' + auth } });
+                var checkData = await checkRes.json();
+                if (checkData.missing && checkData.missing.length > 0) {
+                    var msgs = checkData.missing.map(function(m) { return m.message; }).join('<br>');
+                    output.innerHTML = '<span class="error">' + msgs + '</span>';
+                    return;
+                }
+                if (checkData.warnings && checkData.warnings.length > 0) {
+                    var wMsgs = checkData.warnings.map(function(w) { return w.message; }).join('<br>');
+                    warningsEl.innerHTML = '⚠ ' + wMsgs;
+                    warningsEl.style.display = 'block';
+                }
+            } catch(e) {
+                // Ignore check errors, proceed with generate
+            }
+
+            // Show progress
+            genBtn.disabled = true;
+            genBtn.textContent = 'Generating...';
+            progress.style.display = 'block';
+            progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
+            progressBar.style.width = '30%';
+            progressText.textContent = 'Loading model & generating...';
             output.innerHTML = '<span class="loading">Generating...</span>';
 
             const formData = new FormData();
@@ -897,35 +957,32 @@ a bird on a tree</textarea>
             formData.append('seed', document.getElementById('gen-seed').value);
             formData.append('width', document.getElementById('gen-width').value);
             formData.append('height', document.getElementById('gen-height').value);
-
-            var genModelSelect = document.getElementById('gen-model');
-            var genModel = genModelSelect.value === '__custom__'
-                ? document.getElementById('gen-model-custom').value
-                : genModelSelect.value;
-            formData.append('model_path', genModel || 'stabilityai/stable-diffusion-xl-base-1.0');
-
-            var genVaeSelect = document.getElementById('gen-vae');
-            var genVae = genVaeSelect.value === '__custom__'
-                ? document.getElementById('gen-vae-custom').value
-                : genVaeSelect.value;
+            formData.append('model_path', modelPath);
             formData.append('vae_path', genVae || '');
-
-            var genTeSelect = document.getElementById('gen-text-encoder');
-            var genTe = genTeSelect.value === '__custom__'
-                ? document.getElementById('gen-text-encoder-custom').value
-                : genTeSelect.value;
             formData.append('text_encoder_path', genTe || '');
 
             _appendLoras(formData, 'lora-container');
 
             try {
+                var t0 = Date.now();
                 const res = await fetch('/api/generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
                 const blob = await res.blob();
+                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '100%';
+                progressText.textContent = '✅ Done in ' + elapsed + 's';
+                setTimeout(function() { progress.style.display = 'none'; }, 3000);
                 const url = URL.createObjectURL(blob);
-                output.innerHTML = `<img src="${url}" alt="Generated">`;
+                output.innerHTML = '<img src="' + url + '" alt="Generated">';
             } catch(e) {
-                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '0%';
+                progress.style.display = 'none';
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+            } finally {
+                genBtn.disabled = false;
+                genBtn.textContent = 'Generate Image';
             }
         }
 

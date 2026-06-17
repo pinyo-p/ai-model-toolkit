@@ -134,7 +134,27 @@ def _get_pipeline(
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
-        # Z-Image uses Qwen3 text encoder - try to find it
+        # Z-Image uses Qwen3 text encoder + SDXL VAE - load them separately
+        # Load VAE (use provided or try default SDXL VAE)
+        if vae is None:
+            vae_paths = [
+                os.path.join(os.path.dirname(model_path), "vae"),
+                os.path.join(os.path.dirname(model_path), "vae_fp16"),
+            ]
+            for vp in vae_paths:
+                if os.path.exists(vp):
+                    try:
+                        vae = AutoencoderKL.from_pretrained(vp, torch_dtype=dtype)
+                        break
+                    except Exception:
+                        pass
+            if vae is None:
+                try:
+                    vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae", torch_dtype=dtype, token=os.environ.get("HF_TOKEN"))
+                except Exception:
+                    pass
+
+        # Load Qwen3 text encoder
         text_encoder = None
         tokenizer = None
         qwen_paths = [
@@ -160,6 +180,8 @@ def _get_pipeline(
             except Exception:
                 pass
         kwargs = dict(dtype=dtype, low_cpu_mem_usage=False)
+        if vae is not None:
+            kwargs['vae'] = vae
         if text_encoder is not None:
             kwargs['text_encoder'] = text_encoder
         if tokenizer is not None:

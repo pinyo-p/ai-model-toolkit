@@ -251,6 +251,67 @@ async def api_merge_lora(user: str = Depends(get_current_user),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/check_model")
+async def api_check_model(
+    user: str = Depends(get_current_user),
+    model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
+    vae_path: str = Form(""),
+    text_encoder_path: str = Form(""),
+):
+    missing = []
+    warnings = []
+    model_type = sdxl._detect_model_type(model_path)
+
+    # Check model file exists
+    if model_path.startswith("/") or model_path.startswith("C:"):
+        if not os.path.exists(model_path):
+            missing.append({"component": "model", "path": model_path, "message": f"Model file not found: {model_path}"})
+
+    if model_type == "zimage":
+        # Z-Image needs Qwen3 text encoder
+        qwen_found = False
+        qwen_paths = [
+            text_encoder_path,
+            os.path.join(os.path.dirname(model_path), "text_encoder"),
+            os.path.join(os.path.dirname(model_path), "qwen"),
+        ]
+        for qp in qwen_paths:
+            if qp and os.path.exists(qp):
+                qwen_found = True
+                break
+        if not qwen_found:
+            warnings.append({
+                "component": "text_encoder",
+                "message": "Qwen3 text encoder not found locally. Will try to download from HuggingFace (Qwen/Qwen2.5-7B ~14GB).",
+                "download": "Qwen/Qwen2.5-7B"
+            })
+
+        # Z-Image needs SDXL VAE
+        vae_found = vae_path and os.path.exists(vae_path)
+        if not vae_found:
+            vae_dirs = [
+                os.path.join(os.path.dirname(model_path), "vae"),
+                os.path.join(os.path.dirname(model_path), "vae_fp16"),
+            ]
+            for vp in vae_dirs:
+                if os.path.exists(vp):
+                    vae_found = True
+                    break
+        if not vae_found:
+            warnings.append({
+                "component": "vae",
+                "message": "VAE not found locally. Will try to download from HuggingFace (stabilityai/sdxl-vae).",
+                "download": "stabilityai/sdxl-vae"
+            })
+
+    return {
+        "status": "ok" if not missing else "missing",
+        "model_type": model_type,
+        "missing": missing,
+        "warnings": warnings,
+    }
+
+
 @app.post("/api/generate")
 async def api_generate(
     user: str = Depends(get_current_user),
