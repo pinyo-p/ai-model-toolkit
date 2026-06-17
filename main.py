@@ -294,6 +294,24 @@ async def api_check_model(
                 "download": f"{zimage_repo}/text_encoder"
             })
 
+        # Check tokenizer (separate tokenizer/ folder, not text_encoder/)
+        tok_found = False
+        model_dir = os.path.dirname(model_path) if os.path.isfile(model_path) else ""
+        local_tok_paths = [
+            os.path.join(model_dir, "tokenizer"),
+            os.path.join(model_dir, "text_encoder"),
+        ]
+        for tp in local_tok_paths:
+            if tp and os.path.exists(tp):
+                tok_found = True
+                break
+        if not tok_found and not is_hf_repo:
+            warnings.append({
+                "component": "tokenizer",
+                "message": f"Tokenizer not found locally. Will download from HuggingFace ({zimage_repo}/tokenizer).",
+                "download": f"{zimage_repo}/tokenizer"
+            })
+
         # Check VAE (from repo)
         vae_found = vae_path and os.path.exists(vae_path)
         if not vae_found:
