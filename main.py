@@ -604,6 +604,10 @@ def _detect_model_family_from_keys(tensor_keys):
     if 'single_stream_blocks' in joined and 'double_stream' not in joined:
         return "zimage"
 
+    # Z-Image variants: noise_refiner / cap_embedder / context_refiner are unique to Z-Image
+    if 'noise_refiner' in joined or 'cap_embedder' in joined or 'context_refiner' in joined:
+        return "zimage"
+
     # SD3: MMDiT joint blocks
     if 'mmdit.' in joined:
         return "sd3"

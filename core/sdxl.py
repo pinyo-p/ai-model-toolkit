@@ -27,12 +27,26 @@ def _read_safetensors_meta(path: str):
 
 
 def _detect_model_type(model_path: str) -> str:
+    # Fallback: name heuristic (check FIRST to avoid misclassification)
+    model_lower = model_path.lower()
+    if any(x in model_lower for x in ["z-image", "z_image", "zimage"]):
+        return "zimage"
+    if any(x in model_lower for x in ["flux"]):
+        return "flux"
+    if any(x in model_lower for x in ["xl", "sdxl", "pony", "sd_xl", "illustrious"]):
+        return "sdxl"
+    if any(x in model_lower for x in ["v1-5", "v1.5", "sd15", "sd-1", "runwayml"]):
+        return "sd15"
+
     # Single safetensors file → read keys for detection
     if model_path.endswith('.safetensors') and os.path.isfile(model_path):
         keys = _read_safetensors_meta(model_path)
         if keys:
             joined = ' '.join(k.lower() for k in keys)
             if 'single_stream_blocks' in joined and 'double_stream' not in joined:
+                return "zimage"
+            # Z-Image variants: noise_refiner / cap_embedder / context_refiner are unique to Z-Image
+            if 'noise_refiner' in joined or 'cap_embedder' in joined or 'context_refiner' in joined:
                 return "zimage"
             if 'mmdit.' in joined:
                 return "sd3"
@@ -75,16 +89,6 @@ def _detect_model_type(model_path: str) -> str:
             except Exception:
                 pass
 
-    # Fallback: name heuristic
-    model_lower = model_path.lower()
-    if any(x in model_lower for x in ["z-image", "z_image"]):
-        return "zimage"
-    if any(x in model_lower for x in ["flux"]):
-        return "flux"
-    if any(x in model_lower for x in ["xl", "sdxl", "pony", "sd_xl", "illustrious"]):
-        return "sdxl"
-    if any(x in model_lower for x in ["v1-5", "v1.5", "sd15", "sd-1", "runwayml"]):
-        return "sd15"
     return "sdxl"
 
 
