@@ -277,6 +277,7 @@ async def api_check_model(
             text_encoder_path,
             os.path.join(os.path.dirname(model_path), "text_encoder"),
             os.path.join(os.path.dirname(model_path), "qwen"),
+            os.path.join(os.path.dirname(model_path), "phi"),
         ]
         for qp in qwen_paths:
             if qp and os.path.exists(qp):
@@ -285,8 +286,8 @@ async def api_check_model(
         if not qwen_found:
             warnings.append({
                 "component": "text_encoder",
-                "message": "Qwen3 text encoder not found locally. Will try to download from HuggingFace (Qwen/Qwen2.5-7B ~14GB).",
-                "download": "Qwen/Qwen2.5-7B"
+                "message": "Phi-2 text encoder not found locally. Will try to download from HuggingFace (microsoft/phi-2 ~5GB).",
+                "download": "microsoft/phi-2"
             })
 
         # Z-Image needs SDXL VAE

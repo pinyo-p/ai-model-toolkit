@@ -134,7 +134,7 @@ def _get_pipeline(
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
-        # Z-Image uses Qwen3 text encoder + SDXL VAE - load them separately
+        # Z-Image uses Phi-2 text encoder + SDXL VAE - load them separately
         # Load VAE (use provided or try default SDXL VAE)
         if vae is None:
             vae_paths = [
@@ -154,15 +154,16 @@ def _get_pipeline(
                 except Exception:
                     pass
 
-        # Load Qwen3 text encoder
+        # Load Phi-2 text encoder
         text_encoder = None
         tokenizer = None
         qwen_paths = [
             text_encoder_path,
             os.path.join(os.path.dirname(model_path), "text_encoder"),
             os.path.join(os.path.dirname(model_path), "qwen"),
+            os.path.join(os.path.dirname(model_path), "phi"),
         ]
-        qwen_model_id = "Qwen/Qwen2.5-7B"
+        qwen_model_id = "microsoft/phi-2"
         for qp in qwen_paths:
             if qp and os.path.exists(qp):
                 try:
