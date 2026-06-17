@@ -101,11 +101,16 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
     if is_file:
         try:
             return pipeline_cls.from_single_file(model_path, **kwargs)
-        except AttributeError:
+        except AttributeError as e:
             cls_name = getattr(pipeline_cls, '__name__', str(pipeline_cls))
-            raise HTTPException(status_code=400,
-                detail=f"{cls_name}.from_single_file() not available in this diffusers version. "
-                       f"Upgrade: pip install -U diffusers")
+            if 'from_single_file' in str(e):
+                raise HTTPException(status_code=400,
+                    detail=f"{cls_name}.from_single_file() not available in this diffusers version. "
+                           f"Upgrade: pip install -U diffusers")
+            raise
+        except Exception as e:
+            # Re-raise with helpful message for text_encoder issues
+            raise
     return pipeline_cls.from_pretrained(model_path, **kwargs)
 
 
@@ -129,7 +134,37 @@ def _get_pipeline(
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
-        pipeline = _load_pipeline(ZImagePipeline, model_path, dtype=dtype, low_cpu_mem_usage=False)
+        # Z-Image uses Qwen3 text encoder - try to find it
+        text_encoder = None
+        tokenizer = None
+        qwen_paths = [
+            text_encoder_path,
+            os.path.join(os.path.dirname(model_path), "text_encoder"),
+            os.path.join(os.path.dirname(model_path), "qwen"),
+        ]
+        qwen_model_id = "Qwen/Qwen2.5-7B"
+        for qp in qwen_paths:
+            if qp and os.path.exists(qp):
+                try:
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                    text_encoder = AutoModelForCausalLM.from_pretrained(qp, torch_dtype=dtype)
+                    tokenizer = AutoTokenizer.from_pretrained(qp, trust_remote_code=True)
+                    break
+                except Exception:
+                    pass
+        if text_encoder is None:
+            try:
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+                text_encoder = AutoModelForCausalLM.from_pretrained(qwen_model_id, torch_dtype=dtype, token=os.environ.get("HF_TOKEN"))
+                tokenizer = AutoTokenizer.from_pretrained(qwen_model_id, trust_remote_code=True, token=os.environ.get("HF_TOKEN"))
+            except Exception:
+                pass
+        kwargs = dict(dtype=dtype, low_cpu_mem_usage=False)
+        if text_encoder is not None:
+            kwargs['text_encoder'] = text_encoder
+        if tokenizer is not None:
+            kwargs['tokenizer'] = tokenizer
+        pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
     elif model_type == "pixart":
         try:
             from diffusers import PixArtAlphaPipeline
