@@ -127,8 +127,12 @@ def _get_pipeline(
         from diffusers import ZImagePipeline
         pipeline = _load_pipeline(ZImagePipeline, model_path, dtype=dtype, low_cpu_mem_usage=False)
     elif model_type == "pixart":
-        from diffusers import PixArtAlphaPipeline
-        pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
+        try:
+            from diffusers import PixArtAlphaPipeline
+            pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
+        except Exception:
+            from diffusers import StableDiffusionXLPipeline
+            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
     elif model_type == "flux":
         try:
             from diffusers import FluxPipeline
