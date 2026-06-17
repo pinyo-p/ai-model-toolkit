@@ -156,30 +156,52 @@ def _get_pipeline(
                     pass
 
             # Load text encoder + tokenizer from repo
+            # NOTE: tokenizer is in a SEPARATE tokenizer/ folder, not text_encoder/
             text_encoder = None
             tokenizer = None
+            model_dir = os.path.dirname(model_path) if os.path.isfile(model_path) else ""
+
             # Try local paths first
             local_te_paths = [
                 text_encoder_path,
-                os.path.join(os.path.dirname(model_path), "text_encoder"),
-                os.path.join(os.path.dirname(model_path), "phi"),
+                os.path.join(model_dir, "text_encoder"),
+                os.path.join(model_dir, "phi"),
             ]
             for tp in local_te_paths:
                 if tp and os.path.exists(tp):
                     try:
                         text_encoder = AutoModelForCausalLM.from_pretrained(tp, torch_dtype=dtype)
-                        tokenizer = AutoTokenizer.from_pretrained(tp, trust_remote_code=True)
                         break
                     except Exception:
                         pass
-            # Fallback: download from HF repo
+
+            # Tokenizer: try local tokenizer/ dir first
+            local_tok_paths = [
+                os.path.join(model_dir, "tokenizer"),
+                text_encoder_path,
+                os.path.join(model_dir, "text_encoder"),
+            ]
+            for tok_p in local_tok_paths:
+                if tok_p and os.path.exists(tok_p):
+                    try:
+                        tokenizer = AutoTokenizer.from_pretrained(tok_p, trust_remote_code=True)
+                        if getattr(tokenizer, 'chat_template', None):
+                            break
+                    except Exception:
+                        pass
+
+            # Fallback: download from HF repo (text_encoder + tokenizer are separate subfolders)
             if text_encoder is None:
                 try:
                     text_encoder = AutoModelForCausalLM.from_pretrained(
                         zimage_repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token
                     )
+                except Exception:
+                    pass
+            if tokenizer is None or not getattr(tokenizer, 'chat_template', None):
+                try:
                     tokenizer = AutoTokenizer.from_pretrained(
-                        zimage_repo, subfolder="text_encoder", trust_remote_code=True, token=hf_token
+                        zimage_repo, subfolder="tokenizer", trust_remote_code=True, token=hf_token
                     )
                 except Exception:
                     pass
