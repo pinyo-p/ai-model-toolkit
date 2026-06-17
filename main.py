@@ -620,10 +620,6 @@ def _detect_model_family_from_keys(tensor_keys):
     if 'hunyuan' in joined:
         return "hunyuan"
 
-    # PixArt (native format): transformer_blocks + attn1/attn2, no time_text_embed
-    if 'transformer_blocks' in joined and ('attn1' in joined or 'attn2' in joined):
-        return "pixart"
-
     # DiT-based wrapped under model.diffusion_model (e.g. PixArt with diffusers wrapping)
     # Has x_embedder + layers.N instead of input_blocks/mid_block/output_blocks
     if 'model.diffusion_model' in joined:
@@ -638,6 +634,11 @@ def _detect_model_family_from_keys(tensor_keys):
 
     # Unwrapped DiT (original PixArt / DiT format): x_embedder without model prefix
     if 'x_embedder' in joined and 'layers.' in joined:
+        return "pixart"
+
+    # PixArt (native format): transformer_blocks + attn1/attn2, no time_text_embed
+    # This check comes AFTER wrapped/unwrapped DiT to avoid misclassifying Z-Image as PixArt
+    if 'transformer_blocks' in joined and ('attn1' in joined or 'attn2' in joined):
         return "pixart"
 
     return "unknown"
