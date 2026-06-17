@@ -132,28 +132,45 @@ def _get_pipeline(
             pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
         except Exception:
             from diffusers import StableDiffusionXLPipeline
-            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
+            kwargs = dict(vae=vae, dtype=dtype)
+            if text_encoder_path and os.path.exists(text_encoder_path):
+                from transformers import CLIPTextModel, CLIPTokenizer
+                text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+                kwargs['text_encoder'] = text_encoder
+            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux":
         try:
             from diffusers import FluxPipeline
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception:
             from diffusers import StableDiffusionXLPipeline
-            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
+            kwargs = dict(vae=vae, dtype=dtype)
+            if text_encoder_path and os.path.exists(text_encoder_path):
+                from transformers import CLIPTextModel, CLIPTokenizer
+                text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+                kwargs['text_encoder'] = text_encoder
+            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "sd15":
-        pipeline = _load_pipeline(StableDiffusionPipeline, model_path, vae=vae, dtype=dtype)
-    else:
-        pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, vae=vae, dtype=dtype)
-
-    if text_encoder_path and os.path.exists(text_encoder_path):
-        try:
+        kwargs = dict(vae=vae, dtype=dtype)
+        if text_encoder_path and os.path.exists(text_encoder_path):
             from transformers import CLIPTextModel, CLIPTokenizer
-            if hasattr(pipeline, "text_encoder"):
-                pipeline.text_encoder = CLIPTextModel.from_pretrained(
-                    text_encoder_path, torch_dtype=dtype
-                )
-        except Exception:
-            pass
+            text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+            kwargs['text_encoder'] = text_encoder
+        pipeline = _load_pipeline(StableDiffusionPipeline, model_path, **kwargs)
+    else:
+        kwargs = dict(vae=vae, dtype=dtype)
+        if text_encoder_path and os.path.exists(text_encoder_path):
+            from transformers import CLIPTextModel, CLIPTokenizer
+            text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+            kwargs['text_encoder'] = text_encoder
+        pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
+
+    gpu_info = check_gpu()
+    if gpu_info["vram_total_gb"] < 20:
+        if hasattr(pipeline, "enable_vae_slicing"):
+            pipeline.enable_vae_slicing()
+        if hasattr(pipeline, "enable_vae_tiling"):
+            pipeline.enable_vae_tiling()
 
     gpu_info = check_gpu()
     if gpu_info["vram_total_gb"] < 20:
