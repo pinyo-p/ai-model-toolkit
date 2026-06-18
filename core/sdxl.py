@@ -214,6 +214,12 @@ def _get_pipeline(
             if tokenizer is not None:
                 kwargs['tokenizer'] = tokenizer
             pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
+            # Optional optimizations for Z-Image-Turbo
+            if hasattr(pipeline, 'transformer'):
+                try:
+                    pipeline.transformer.compile()
+                except Exception:
+                    pass
     elif model_type == "pixart":
         try:
             from diffusers import PixArtAlphaPipeline

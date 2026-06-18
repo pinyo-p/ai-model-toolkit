@@ -781,6 +781,11 @@ a bird on a tree</textarea>
                     document.getElementById('gen-cfg').value = cfg;
                     document.getElementById('batch-cfg').value = cfg;
                 }
+                var steps = FAMILY_STEPS[family];
+                if (steps !== undefined) {
+                    document.getElementById('gen-steps').value = steps;
+                    document.getElementById('batch-steps').value = steps;
+                }
             } else {
                 familyBadge.style.display = 'none';
             }
@@ -807,8 +812,11 @@ a bird on a tree</textarea>
         var FAMILY_CFG = {
             'sd_unet': 7.0, 'sdxl': 7.0, 'sd15': 7.0,
             'sd3': 5.0, 'flux1': 3.5, 'flux2': 4.0,
-            'zimage': 3.5, 'hunyuan': 5.0, 'pixart': 5.0,
+            'zimage': 0.0, 'hunyuan': 5.0, 'pixart': 5.0,
             'kolors': 5.0
+        };
+        var FAMILY_STEPS = {
+            'zimage': 9
         };
 
         function _populateSelect(select, entries, modelsPath, filterType) {
