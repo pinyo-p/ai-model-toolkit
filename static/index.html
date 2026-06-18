@@ -811,6 +811,7 @@ a bird on a tree</textarea>
         function _populateSelect(select, entries, modelsPath, filterType) {
             if (!select) return;
             while (select.options.length > 2) select.remove(2);
+            var count = 0;
             entries.forEach(function(m) {
                 if (m.type === 'folder' && m.files && m.files.length > 0) {
                     (m.files).forEach(function(f) {
@@ -826,6 +827,7 @@ a bird on a tree</textarea>
                         var ff = _getFileFamily(f, m);
                         if (ff) el.setAttribute('data-family', ff);
                         select.appendChild(el);
+                        count++;
                     });
                 } else if (m.type === 'file') {
                     var ft = m.model_type || 'checkpoint';
@@ -836,8 +838,18 @@ a bird on a tree</textarea>
                     var ff = m.model_family || '';
                     if (ff) el.setAttribute('data-family', ff);
                     select.appendChild(el);
+                    count++;
                 }
             });
+            // Show hint for empty text_encoder dropdown
+            if (filterType === 'text_encoder' && count === 0) {
+                var hint = document.createElement('option');
+                hint.value = '';
+                hint.textContent = '(no text encoder found - will auto-download)';
+                hint.disabled = true;
+                hint.style.color = '#888';
+                select.appendChild(hint);
+            }
         }
 
         async function loadGenModels() {
@@ -2280,6 +2292,8 @@ a bird on a tree</textarea>
                 }
 
                 autoBtn.textContent = '✅ Done! Resuming...';
+                // Refresh model list so newly downloaded folders appear in dropdowns
+                loadGenModels();
                 setTimeout(function() {
                     document.getElementById('missing-modal').style.display = 'none';
                     if (missingResolver) { missingResolver('auto'); missingResolver = null; }
