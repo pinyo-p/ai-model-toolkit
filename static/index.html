@@ -2200,15 +2200,102 @@ a bird on a tree</textarea>
                     manualCmd.textContent = '# Run these commands:\n' + cmdLines.join('\n');
                 }
 
+                // Reset auto button
+                var autoBtn = document.getElementById('missing-auto-btn');
+                autoBtn.disabled = false;
+                autoBtn.textContent = '⬇ Auto Download (Recommended)';
+
                 document.getElementById('missing-modal').style.display = 'flex';
             });
         }
 
-        function missingAnswer(choice) {
-            document.getElementById('missing-modal').style.display = 'none';
-            if (missingResolver) {
-                missingResolver(choice);
-                missingResolver = null;
+        async function missingAnswer(choice) {
+            if (choice === 'cancel') {
+                document.getElementById('missing-modal').style.display = 'none';
+                if (missingResolver) { missingResolver('cancel'); missingResolver = null; }
+                return;
+            }
+            if (choice === 'manual') {
+                document.getElementById('missing-manual-cmd').style.display = 'block';
+                return;
+            }
+            if (choice === 'auto' && missingData && missingData.warnings) {
+                var autoBtn = document.getElementById('missing-auto-btn');
+                var list = document.getElementById('missing-list');
+                autoBtn.disabled = true;
+                autoBtn.textContent = '⏳ Downloading...';
+
+                var downloads = missingData.warnings.filter(function(w) { return w.download; });
+                for (var i = 0; i < downloads.length; i++) {
+                    var w = downloads[i];
+                    var parts = w.download.split('/');
+                    var repoId = parts[0] + '/' + parts[1];
+                    var subfolder = parts.slice(2).join('/');
+                    var targetDir = await _getModelPath(subfolder);
+
+                    list.innerHTML += '<div id="dl-status-' + i + '" style="padding:4px 0;color:#00d4ff;font-size:13px;">⬇ Downloading ' + subfolder + '...</div>';
+
+                    try {
+                        var fd = new FormData();
+                        fd.append('repo_id', repoId);
+                        fd.append('subfolder', subfolder);
+                        fd.append('target_dir', targetDir);
+                        var res = await fetch('/api/download_hf_subfolder', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                        var data = await res.json();
+                        var dlId = data.download_id;
+
+                        // Poll progress
+                        await new Promise(function(resolve) {
+                            var poll = setInterval(async function() {
+                                try {
+                                    var pr = await fetch('/api/download_progress?download_id=' + dlId, { headers: { 'Authorization': 'Basic ' + auth } });
+                                    var pg = await pr.json();
+                                    var el = document.getElementById('dl-status-' + i);
+                                    if (pg.status === 'downloading' && pg.files_total > 0) {
+                                        el.textContent = '⬇ ' + subfolder + ': ' + pg.files_done + '/' + pg.files_total + ' files';
+                                    } else if (pg.status === 'listing') {
+                                        el.textContent = '⬇ ' + subfolder + ': Listing files...';
+                                    }
+                                    if (pg.status === 'done') {
+                                        clearInterval(poll);
+                                        el.textContent = '✅ ' + subfolder + ' downloaded';
+                                        el.style.color = '#66ff66';
+                                        resolve();
+                                    } else if (pg.status === 'error') {
+                                        clearInterval(poll);
+                                        el.textContent = '❌ ' + subfolder + ' failed: ' + (pg.error || 'Unknown error');
+                                        el.style.color = '#ff6666';
+                                        resolve();
+                                    }
+                                } catch(e) {
+                                    clearInterval(poll);
+                                    resolve();
+                                }
+                            }, 500);
+                        });
+                    } catch(e) {
+                        var el = document.getElementById('dl-status-' + i);
+                        if (el) { el.textContent = '❌ ' + subfolder + ' failed: ' + e.message; el.style.color = '#ff6666'; }
+                    }
+                }
+
+                autoBtn.textContent = '✅ Done! Resuming...';
+                setTimeout(function() {
+                    document.getElementById('missing-modal').style.display = 'none';
+                    if (missingResolver) { missingResolver('auto'); missingResolver = null; }
+                }, 800);
+            }
+        }
+
+        async function _getModelPath(subfolder) {
+            try {
+                var fd = new FormData();
+                fd.append('path', '/');
+                var res = await fetch('/api/browse', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                var data = await res.json();
+                return data.path + '/' + subfolder;
+            } catch(e) {
+                return subfolder;
             }
         }
 

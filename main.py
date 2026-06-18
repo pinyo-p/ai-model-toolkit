@@ -1194,6 +1194,74 @@ async def download_progress(download_id: str = Query(...)):
     return prog
 
 
+@app.post("/api/download_hf_subfolder")
+async def download_hf_subfolder(
+    repo_id: str = Form(...),
+    subfolder: str = Form(...),
+    target_dir: str = Form(""),
+    user: str = Depends(get_current_user),
+):
+    """Download a subfolder from a HuggingFace repo (e.g. text_encoder, tokenizer, vae)."""
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    if not target_dir:
+        target_dir = os.path.join(models_path, subfolder)
+    os.makedirs(target_dir, exist_ok=True)
+
+    download_id = str(uuid.uuid4())[:8]
+    _download_progress[download_id] = {"total": 0, "received": 0, "status": "pending", "files_done": 0, "files_total": 0}
+
+    args = (download_id, repo_id, subfolder, target_dir, dict(settings))
+    thread = threading.Thread(target=_run_download_hf_subfolder, args=args, daemon=True)
+    thread.start()
+
+    return {"status": "started", "download_id": download_id, "target_dir": target_dir}
+
+
+def _run_download_hf_subfolder(download_id: str, repo_id: str, subfolder: str, target_dir: str, settings: dict):
+    try:
+        hf_token = settings.get("hf_token", "") or None
+        from huggingface_hub import list_repo_tree, hf_hub_download
+
+        _set_progress(download_id, status="listing")
+
+        # List all files in subfolder
+        all_items = list(list_repo_tree(repo_id, path_in_repo=subfolder, recursive=True))
+        files = [item for item in all_items if hasattr(item, 'size') and item.size is not None]
+
+        _set_progress(download_id, files_total=len(files), files_done=0, total=0, received=0, status="downloading")
+
+        for i, file_obj in enumerate(files):
+            rel_path = file_obj.path
+            filename = os.path.basename(rel_path)
+            dest = os.path.join(target_dir, filename)
+
+            _set_progress(download_id, current_file=filename, files_done=i)
+
+            # Skip if already exists and correct size
+            if os.path.isfile(dest) and os.path.getsize(dest) == file_obj.size:
+                continue
+
+            try:
+                cached = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=rel_path,
+                    token=hf_token,
+                    local_dir=os.path.dirname(target_dir),
+                )
+                # Move to target if different location
+                if os.path.abspath(cached) != os.path.abspath(dest):
+                    import shutil
+                    shutil.move(cached, dest)
+            except Exception as e:
+                print(f"[download_hf_subfolder] Warning: failed to download {rel_path}: {e}")
+
+        _set_progress(download_id, files_done=len(files), status="done", message=f"Downloaded {subfolder}")
+
+    except Exception as e:
+        detail = str(e.detail) if hasattr(e, "detail") else str(e)
+        _set_progress(download_id, status="error", error=detail)
+
+
 def _do_download(download_id: str, url: str, source: str, subdirectory: str, headers_json: str, save_as: str, settings: dict, models_path: str) -> str:
     if source == "huggingface":
         hf_token = settings.get("hf_token", "")
