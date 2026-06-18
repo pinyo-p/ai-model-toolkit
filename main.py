@@ -283,11 +283,13 @@ async def api_check_model(
 
         # Check text encoder (from repo)
         te_found = False
+        models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
         local_te_paths = [
             text_encoder_path,
-            os.path.join(os.path.dirname(model_path), "text_encoder"),
-            os.path.join(os.path.dirname(model_path), "phi"),
+            os.path.join(models_path, "text_encoder"),
         ]
+        if os.path.isfile(model_path):
+            local_te_paths.insert(1, os.path.join(os.path.dirname(model_path), "text_encoder"))
         for tp in local_te_paths:
             if tp and os.path.exists(tp):
                 te_found = True
@@ -301,11 +303,13 @@ async def api_check_model(
 
         # Check tokenizer (separate tokenizer/ folder, not text_encoder/)
         tok_found = False
-        model_dir = os.path.dirname(model_path) if os.path.isfile(model_path) else ""
+        models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
         local_tok_paths = [
-            os.path.join(model_dir, "tokenizer"),
-            os.path.join(model_dir, "text_encoder"),
+            os.path.join(models_path, "tokenizer"),
+            os.path.join(models_path, "text_encoder"),
         ]
+        if os.path.isfile(model_path):
+            local_tok_paths.insert(0, os.path.join(os.path.dirname(model_path), "tokenizer"))
         for tp in local_tok_paths:
             if tp and os.path.exists(tp):
                 tok_found = True
@@ -321,9 +325,11 @@ async def api_check_model(
         vae_found = vae_path and os.path.exists(vae_path)
         if not vae_found:
             vae_dirs = [
-                os.path.join(os.path.dirname(model_path), "vae"),
-                os.path.join(os.path.dirname(model_path), "vae_fp16"),
+                os.path.join(models_path, "vae"),
+                os.path.join(models_path, "vae_fp16"),
             ]
+            if os.path.isfile(model_path):
+                vae_dirs.insert(0, os.path.join(os.path.dirname(model_path), "vae"))
             for vp in vae_dirs:
                 if os.path.exists(vp):
                     vae_found = True
