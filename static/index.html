@@ -1073,6 +1073,12 @@ a bird on a tree</textarea>
                 if (!startRes.ok) throw new Error(await startRes.text());
                 var startData = await startRes.json();
                 var genId = startData.gen_id;
+                var shownCount = 0;
+                var totalCount = parseInt(document.getElementById('gen-count').value) || 1;
+
+                // Init grid
+                output.innerHTML = '<div class="gen-grid" id="gen-grid"></div>';
+                var grid = document.getElementById('gen-grid');
 
                 var poll = setInterval(async function() {
                     try {
@@ -1085,31 +1091,34 @@ a bird on a tree</textarea>
                             var pct = Math.min(90, 15 + (pg.step / pg.total_steps) * 75);
                             progressBar.style.animation = 'none';
                             progressBar.style.width = pct + '%';
-                            progressText.textContent = 'Step ' + pg.step + '/' + pg.total_steps;
+                            var imgNum = pg.current_image || 1;
+                            progressText.textContent = 'Image ' + imgNum + '/' + totalCount + ': Step ' + pg.step + '/' + pg.total_steps;
                         }
+
+                        // Show new images as they complete (queue mode)
+                        var imagesCount = pg.images_count || 0;
+                        while (shownCount < imagesCount) {
+                            var idx = shownCount;
+                            var imgUrl = '/api/generate_result?gen_id=' + encodeURIComponent(genId) + '&index=' + idx;
+                            var wrap = document.createElement('div');
+                            wrap.className = 'gen-img-wrap';
+                            wrap.innerHTML = '<img src="' + imgUrl + '" alt="Generated ' + (idx+1) + '" onclick="openLightbox(this.src)">'
+                                + '<div class="gen-img-actions">'
+                                + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
+                                + '<a href="' + imgUrl + '" download="image_' + (idx+1) + '.png" class="btn-small">Download</a>'
+                                + '</div>';
+                            grid.appendChild(wrap);
+                            shownCount++;
+                        }
+
                         if (pg.status === 'done' || pg.status === 'error') {
                             clearInterval(poll);
                             if (pg.status === 'done') {
-                                var totalImages = pg.total_images || 1;
                                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
-                                progressText.textContent = '✅ Done ' + totalImages + ' image' + (totalImages > 1 ? 's' : '') + ' in ' + elapsed + 's';
+                                progressText.textContent = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
                                 setTimeout(function() { progress.style.display = 'none'; }, 3000);
-
-                                // Fetch all images
-                                var html = '<div class="gen-grid">';
-                                for (var idx = 0; idx < totalImages; idx++) {
-                                    var imgUrl = '/api/generate_result?gen_id=' + encodeURIComponent(genId) + '&index=' + idx;
-                                    html += '<div class="gen-img-wrap">'
-                                        + '<img src="' + imgUrl + '" alt="Generated ' + (idx+1) + '" onclick="openLightbox(this.src)">'
-                                        + '<div class="gen-img-actions">'
-                                        + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
-                                        + '<a href="' + imgUrl + '" download="image_' + (idx+1) + '.png" class="btn-small">Download</a>'
-                                        + '</div></div>';
-                                }
-                                html += '</div>';
-                                output.innerHTML = html;
                             } else {
                                 progress.style.display = 'none';
                                 output.innerHTML = '<span class="error">Error: ' + pg.message + '</span>';
