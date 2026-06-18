@@ -2081,18 +2081,7 @@ a bird on a tree</textarea>
         function showDownloadModal() {
             document.getElementById('download-output').innerHTML = '<span style="color:#555;">Ready</span>';
             document.getElementById('download-progress').style.display = 'none';
-            document.getElementById('move-section').style.display = 'none';
-            document.getElementById('model-section').style.display = 'block';
-            switchModelTab('download');
             document.getElementById('download-modal').style.display = 'flex';
-        }
-
-        function switchModelTab(tab) {
-            document.querySelectorAll('.modal-tab').forEach(function(t) { t.classList.remove('active'); });
-            document.getElementById('dl-tab-' + tab).classList.add('active');
-            document.getElementById('model-section').style.display = tab === 'download' ? 'block' : 'none';
-            document.getElementById('move-section').style.display = tab === 'move' ? 'block' : 'none';
-            if (tab === 'move') document.getElementById('move-output').innerHTML = '';
         }
 
         var _moveDestPath = '';
@@ -2105,8 +2094,7 @@ a bird on a tree</textarea>
             document.getElementById('move-dest-path').textContent = '(select a folder below)';
             document.getElementById('move-output').innerHTML = '';
             document.getElementById('move-new-folder').value = '';
-            switchModelTab('move');
-            document.getElementById('download-modal').style.display = 'flex';
+            document.getElementById('move-modal').style.display = 'flex';
             loadMoveTree('');
         }
 
@@ -2545,70 +2533,70 @@ a bird on a tree</textarea>
     </div>
 
     <!-- Download Modal -->
+    <!-- Download Modal -->
     <div class="modal-overlay" id="download-modal">
         <div class="modal-box">
             <button class="modal-close" onclick="closeModal('download-modal')">✕</button>
             <h3>⬇ Download Model</h3>
 
-            <div class="modal-tabs">
-                <button id="dl-tab-download" class="modal-tab active" onclick="switchModelTab('download')">⬇ Download</button>
-                <button id="dl-tab-move" class="modal-tab" onclick="switchModelTab('move')">📂 Move</button>
+            <div class="form-group">
+                <label>Model URL</label>
+                <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
             </div>
+            <div class="form-group">
+                <label>Source</label>
+                <select id="model-source" onchange="onSourceChange()">
+                    <option value="huggingface">HuggingFace</option>
+                    <option value="civitai">CivitAI</option>
+                    <option value="other">Other (Direct URL)</option>
+                </select>
+            </div>
+            <div class="form-group" id="headers-row" style="display:none;">
+                <label>Custom Headers (JSON)</label>
+                <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Save as (optional)</label>
+                <input type="text" id="model-save-as" placeholder="Leave empty to use original filename" style="width:100%;">
+            </div>
+            <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
+            <div id="download-progress" style="display:none;margin-top:10px;">
+                <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
+                    <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;"></div>
+                </div>
+                <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
+            </div>
+            <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
+        </div>
+    </div>
 
-            <div id="model-section">
-                <div class="form-group">
-                    <label>Model URL</label>
-                    <input type="text" id="model-url" placeholder="https://huggingface.co/... or https://civitai.com/..." oninput="detectSource()">
-                </div>
-                <div class="form-group">
-                    <label>Source</label>
-                    <select id="model-source" onchange="onSourceChange()">
-                        <option value="huggingface">HuggingFace</option>
-                        <option value="civitai">CivitAI</option>
-                        <option value="other">Other (Direct URL)</option>
-                    </select>
-                </div>
-                <div class="form-group" id="headers-row" style="display:none;">
-                    <label>Custom Headers (JSON)</label>
-                    <textarea id="model-headers" placeholder='{"Authorization":"Bearer your-token"}' style="width:100%;padding:12px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-family:monospace;min-height:60px;resize:vertical;"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Save as (optional)</label>
-                    <input type="text" id="model-save-as" placeholder="Leave empty to use original filename" style="width:100%;">
-                </div>
-                <button class="btn" id="download-btn" onclick="downloadModel()">Download</button>
-                <div id="download-progress" style="display:none;margin-top:10px;">
-                    <div style="height:4px;background:#333;border-radius:2px;overflow:hidden;">
-                        <div id="progress-bar" style="height:100%;width:0%;background:linear-gradient(90deg,#00d4ff,#0088cc);border-radius:2px;"></div>
-                    </div>
-                    <div id="progress-text" style="font-size:12px;color:#888;margin-top:4px;">Starting download...</div>
-                </div>
-                <div id="download-output" style="margin-top:10px;padding:10px;min-height:20px;"><span style="color:#555;">Ready</span></div>
-            </div>
+    <!-- Move Modal -->
+    <div class="modal-overlay" id="move-modal">
+        <div class="modal-box">
+            <button class="modal-close" onclick="closeModal('move-modal')">✕</button>
+            <h3>📂 Move File</h3>
 
-            <div id="move-section" style="display:none;">
-                <p style="color:#e0e0e0;margin:0 0 10px 0;">Move file or folder to another directory</p>
-                <div class="form-group">
-                    <label>Moving</label>
-                    <div id="move-file-name" style="color:#00d4ff;font-weight:600;padding:6px 0;"></div>
-                </div>
-                <div class="form-group">
-                    <label>Destination</label>
-                    <div id="move-dest-path" style="color:#4caf50;font-weight:600;padding:6px 0;font-size:13px;">(select a folder below)</div>
-                </div>
-                <div class="form-group">
-                    <label>Browse folders</label>
-                    <div id="move-tree" style="max-height:300px;overflow-y:auto;background:#0a0f18;border:1px solid #1e2d3d;border-radius:8px;padding:8px;">
-                        <div style="color:#5a7a9a;padding:8px;">Loading...</div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Or create new subfolder</label>
-                    <input type="text" id="move-new-folder" placeholder="New folder name (optional)" style="width:100%;">
-                </div>
-                <button class="btn" id="move-btn" onclick="confirmMove()">📂 Move Here</button>
-                <div id="move-output" style="margin-top:10px;padding:10px;min-height:10px;"></div>
+            <p style="color:#e0e0e0;margin:0 0 10px 0;">Move file or folder to another directory</p>
+            <div class="form-group">
+                <label>Moving</label>
+                <div id="move-file-name" style="color:#00d4ff;font-weight:600;padding:6px 0;"></div>
             </div>
+            <div class="form-group">
+                <label>Destination</label>
+                <div id="move-dest-path" style="color:#4caf50;font-weight:600;padding:6px 0;font-size:13px;">(select a folder below)</div>
+            </div>
+            <div class="form-group">
+                <label>Browse folders</label>
+                <div id="move-tree" style="max-height:300px;overflow-y:auto;background:#0a0f18;border:1px solid #1e2d3d;border-radius:8px;padding:8px;">
+                    <div style="color:#5a7a9a;padding:8px;">Loading...</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Or create new subfolder</label>
+                <input type="text" id="move-new-folder" placeholder="New folder name (optional)" style="width:100%;">
+            </div>
+            <button class="btn" id="move-btn" onclick="confirmMove()">📂 Move Here</button>
+            <div id="move-output" style="margin-top:10px;padding:10px;min-height:10px;"></div>
         </div>
     </div>
 
