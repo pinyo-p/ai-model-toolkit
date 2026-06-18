@@ -101,6 +101,11 @@ app = FastAPI(lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Output directory for generated images (served without auth)
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
+
 
 @app.get("/")
 async def root():
@@ -412,8 +417,13 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     try:
         _set_gen_progress(gen_id, status="loading", message="Loading model...", images_count=0, total_images=count)
 
+        def _save_image(img, idx):
+            fname = f"{gen_id}_{idx}.png"
+            fpath = os.path.join(OUTPUT_DIR, fname)
+            img.save(fpath, format='PNG')
+            return f"/output/{fname}"
+
         if mode == "parallel" and count > 1:
-            # Parallel: send all prompts at once to the pipeline
             seeds = [seed + i for i in range(count)]
             _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Generating {count} images in parallel...")
             imgs = sdxl.sdxl_generate_parallel(
@@ -425,19 +435,17 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                 steps=steps, cfg=cfg, seeds=seeds, width=width, height=height,
                 progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total} ({count} images)")
             )
-            images_data = []
-            for img in imgs:
-                img_bytes = io.BytesIO()
-                img.save(img_bytes, format='PNG')
-                images_data.append(img_bytes.getvalue())
+            image_urls = []
+            for i, img in enumerate(imgs):
+                image_urls.append(_save_image(img, i))
             with _gen_lock:
-                _generate_progress[gen_id]["images_data"] = images_data
-                _generate_progress[gen_id]["images_count"] = len(images_data)
+                _generate_progress[gen_id]["image_urls"] = image_urls
+                _generate_progress[gen_id]["images_count"] = len(image_urls)
             _set_gen_progress(gen_id, status="done", message="Done")
         else:
             # Queue: one by one, show each image as it completes
             with _gen_lock:
-                _generate_progress[gen_id]["images_data"] = []
+                _generate_progress[gen_id]["image_urls"] = []
             for i in range(count):
                 _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Image {i+1}/{count}: Loading...", current_image=i+1)
                 cur_seed = seed + i
@@ -449,10 +457,9 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                     steps=steps, cfg=cfg, seed=cur_seed, width=width, height=height,
                     progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1)
                 )
-                img_bytes = io.BytesIO()
-                img.save(img_bytes, format='PNG')
+                url = _save_image(img, i)
                 with _gen_lock:
-                    _generate_progress[gen_id]["images_data"].append(img_bytes.getvalue())
+                    _generate_progress[gen_id]["image_urls"].append(url)
                     _generate_progress[gen_id]["images_count"] = i + 1
             _set_gen_progress(gen_id, status="done", message="Done")
     except Exception as e:
@@ -471,11 +478,21 @@ async def api_generate_progress(gen_id: str = Query(...), user: str = Depends(ge
 async def api_generate_result(gen_id: str = Query(...), index: int = Query(0), user: str = Depends(get_current_user)):
     with _gen_lock:
         data = _generate_progress.get(gen_id, {})
-    images_data = data.get("images_data", [])
-    if not images_data or index >= len(images_data):
+    image_urls = data.get("image_urls", [])
+    if not image_urls or index >= len(image_urls):
         raise HTTPException(status_code=404, detail="Not ready")
-    img_data = images_data[index]
-    return StreamingResponse(io.BytesIO(img_data), media_type="image/png")
+    return {"url": image_urls[index]}
+
+
+@app.delete("/api/generate_image")
+async def api_delete_generate_image(url: str = Query(...), user: str = Depends(get_current_user)):
+    """Delete a generated image file."""
+    if url.startswith("/output/"):
+        fpath = os.path.join(OUTPUT_DIR, os.path.basename(url))
+        if os.path.exists(fpath):
+            os.remove(fpath)
+            return {"status": "deleted"}
+    raise HTTPException(status_code=404, detail="File not found")
 
 
 @app.post("/api/generate_async")

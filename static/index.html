@@ -69,7 +69,8 @@
         .breadcrumb { color: #5a7a9a; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #0d1420; border-radius: 8px; border: 1px solid #1a2a3a; }
 
         /* Generated images grid */
-        .gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .gen-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+        .gen-img-wrap { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid #1e2d3d; flex: 0 0 auto; width: 200px; }
         .gen-img-wrap { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid #1e2d3d; }
         .gen-img-wrap img { width: 100%; display: block; cursor: pointer; transition: transform 0.2s; }
         .gen-img-wrap img:hover { transform: scale(1.02); }
@@ -1096,16 +1097,18 @@ a bird on a tree</textarea>
                         }
 
                         // Show new images as they complete (queue mode)
-                        var imagesCount = pg.images_count || 0;
-                        while (shownCount < imagesCount) {
+                        var imageUrls = pg.image_urls || [];
+                        while (shownCount < imageUrls.length) {
                             var idx = shownCount;
-                            var imgUrl = '/api/generate_result?gen_id=' + encodeURIComponent(genId) + '&index=' + idx;
+                            var imgUrl = imageUrls[idx];
                             var wrap = document.createElement('div');
                             wrap.className = 'gen-img-wrap';
+                            wrap.setAttribute('data-url', imgUrl);
                             wrap.innerHTML = '<img src="' + imgUrl + '" alt="Generated ' + (idx+1) + '" onclick="openLightbox(this.src)">'
                                 + '<div class="gen-img-actions">'
                                 + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
                                 + '<a href="' + imgUrl + '" download="image_' + (idx+1) + '.png" class="btn-small">Download</a>'
+                                + '<button class="btn-small" style="background:#d32f2f;" onclick="deleteGenImage(this)">Delete</button>'
                                 + '</div>';
                             grid.appendChild(wrap);
                             shownCount++;
@@ -2399,6 +2402,20 @@ a bird on a tree</textarea>
 
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
+        }
+
+        // Delete generated image
+        async function deleteGenImage(btn) {
+            var wrap = btn.closest('.gen-img-wrap');
+            var url = wrap.getAttribute('data-url');
+            if (!url) return;
+            try {
+                await fetch('/api/generate_image?url=' + encodeURIComponent(url), {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                wrap.remove();
+            } catch(e) {}
         }
 
         // Lightbox
