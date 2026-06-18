@@ -173,7 +173,10 @@ def _get_pipeline(
             for tp in local_te_paths:
                 if tp and os.path.exists(tp):
                     try:
-                        text_encoder = AutoModelForCausalLM.from_pretrained(tp, torch_dtype=dtype)
+                        if os.path.isfile(tp) and tp.endswith('.safetensors'):
+                            text_encoder = AutoModelForCausalLM.from_single_file(tp, torch_dtype=dtype)
+                        else:
+                            text_encoder = AutoModelForCausalLM.from_pretrained(tp, torch_dtype=dtype)
                         break
                     except Exception:
                         pass
