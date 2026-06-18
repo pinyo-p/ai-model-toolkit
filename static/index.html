@@ -851,12 +851,12 @@ a bird on a tree</textarea>
             var count = 0;
             entries.forEach(function(m) {
                 if (m.type === 'folder' && m.files && m.files.length > 0) {
+                    // For text_encoder: only show files from 'text_encoder' folder
+                    if (filterType === 'text_encoder' && m.name !== 'text_encoder') return;
                     (m.files).forEach(function(f) {
                         var fname = typeof f === 'string' ? f : f.name;
                         var relPath = m.name + '/' + fname;
                         var ft = _getFileType(f, m);
-                        // text_encoder: show everything (checkpoints work as TE)
-                        // other types: show only matching type
                         if (filterType !== 'text_encoder' && ft !== filterType) return;
                         var el = document.createElement('option');
                         el.textContent = relPath;

@@ -1598,4 +1598,7 @@ async def update_app(user: str = Depends(get_current_user)):
 
 if __name__ == "__main__":
     import uvicorn
+    # Ensure text_encoder folder exists in models directory
+    _models_dir = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    os.makedirs(os.path.join(_models_dir, "text_encoder"), exist_ok=True)
     uvicorn.run(app, host="0.0.0.0", port=7800, timeout_keep_alive=600, timeout_graceful_shutdown=600)
