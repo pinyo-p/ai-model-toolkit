@@ -339,6 +339,65 @@ def sdxl_generate(
     return image
 
 
+def sdxl_generate_parallel(
+    prompts: list[str],
+    negative: str = "",
+    lora_paths: list = None,
+    lora_weights: list = None,
+    model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
+    vae_path: str = None,
+    text_encoder_path: str = None,
+    steps: int = 20,
+    cfg: float = 7.0,
+    seeds: list[int] = None,
+    width: int = 1024,
+    height: int = 1024,
+    progress_cb=None,
+) -> list[Image.Image]:
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
+
+    if seeds is None:
+        seeds = list(range(len(prompts)))
+
+    generators = [torch.Generator(device=device).manual_seed(s) for s in seeds]
+
+    if lora_paths:
+        for i, (lp, lw) in enumerate(zip(lora_paths, lora_weights or [])):
+            if lp and os.path.exists(lp):
+                pipeline.load_lora_weights(
+                    os.path.dirname(lp) or ".",
+                    weight_name=os.path.basename(lp),
+                    adapter_name=f"lora_{i}",
+                )
+        adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
+        adapter_weights = lora_weights or [1.0] * len(lora_paths)
+        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+
+    def _step_cb(pipeline, step_index, timestep, callback_kwargs):
+        if progress_cb:
+            try:
+                progress_cb(step_index, steps)
+            except Exception:
+                pass
+        return callback_kwargs
+
+    negative_prompts = [negative if negative else None] * len(prompts)
+
+    result = pipeline(
+        prompt=prompts,
+        negative_prompt=negative_prompts,
+        num_inference_steps=steps,
+        generator=generators,
+        width=width,
+        height=height,
+        guidance_scale=cfg,
+        callback_on_step_end=_step_cb,
+    )
+
+    return result.images
+
+
 def batch_generate(
     prompts: list[str],
     negative: str = "",

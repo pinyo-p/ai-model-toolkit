@@ -408,24 +408,45 @@ def _set_gen_progress(gen_id, **kwargs):
         _generate_progress[gen_id].update(kwargs)
 
 
-def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height, count=1):
+def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height, count=1, mode="queue"):
     try:
         _set_gen_progress(gen_id, status="loading", message="Loading model...")
         images_data = []
-        for i in range(count):
-            _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Image {i+1}/{count}: Loading...", current_image=i+1, total_images=count)
-            cur_seed = seed + i
-            img = sdxl.sdxl_generate(
-                prompt=prompt, negative=negative,
+
+        if mode == "parallel" and count > 1:
+            # Parallel: send all prompts at once to the pipeline
+            seeds = [seed + i for i in range(count)]
+            _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Generating {count} images in parallel...")
+            imgs = sdxl.sdxl_generate_parallel(
+                prompts=[prompt] * count,
+                negative=negative,
                 lora_paths=lora_paths, lora_weights=lora_weights,
                 model_path=model_path, vae_path=vae_path,
                 text_encoder_path=text_encoder_path,
-                steps=steps, cfg=cfg, seed=cur_seed, width=width, height=height,
-                progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1, total_images=count)
+                steps=steps, cfg=cfg, seeds=seeds, width=width, height=height,
+                progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total} ({count} images)")
             )
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
-            images_data.append(img_bytes.getvalue())
+            for img in imgs:
+                img_bytes = io.BytesIO()
+                img.save(img_bytes, format='PNG')
+                images_data.append(img_bytes.getvalue())
+        else:
+            # Queue: one by one
+            for i in range(count):
+                _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Image {i+1}/{count}: Loading...", current_image=i+1, total_images=count)
+                cur_seed = seed + i
+                img = sdxl.sdxl_generate(
+                    prompt=prompt, negative=negative,
+                    lora_paths=lora_paths, lora_weights=lora_weights,
+                    model_path=model_path, vae_path=vae_path,
+                    text_encoder_path=text_encoder_path,
+                    steps=steps, cfg=cfg, seed=cur_seed, width=width, height=height,
+                    progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1, total_images=count)
+                )
+                img_bytes = io.BytesIO()
+                img.save(img_bytes, format='PNG')
+                images_data.append(img_bytes.getvalue())
+
         _set_gen_progress(gen_id, status="done", message="Done", images_data=images_data, image_data=images_data[0] if images_data else None)
     except Exception as e:
         _set_gen_progress(gen_id, status="error", message=str(e))
@@ -473,6 +494,7 @@ async def api_generate_async(
     width: int = Form(1024),
     height: int = Form(1024),
     count: int = Form(1),
+    mode: str = Form("queue"),
 ):
     gen_id = str(uuid.uuid4())
     count = max(1, min(16, count))
@@ -490,7 +512,7 @@ async def api_generate_async(
 
     utils.set_seed(seed)
 
-    t = threading.Thread(target=_run_gen, args=(gen_id, prompt, negative, lora_paths, weight_list or None, model_path, vae_path or None, text_encoder_path or None, steps, cfg, seed, width, height, count), daemon=True)
+    t = threading.Thread(target=_run_gen, args=(gen_id, prompt, negative, lora_paths, weight_list or None, model_path, vae_path or None, text_encoder_path or None, steps, cfg, seed, width, height, count, mode), daemon=True)
     t.start()
     return {"gen_id": gen_id, "status": "started"}
 

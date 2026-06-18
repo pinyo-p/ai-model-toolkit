@@ -299,6 +299,15 @@
                             <input type="number" id="gen-count" value="1" min="1" max="16">
                         </div>
                     </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Mode</label>
+                            <select id="gen-mode">
+                                <option value="queue">Queue (safe)</option>
+                                <option value="parallel">Parallel (fast)</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1052,6 +1061,7 @@ a bird on a tree</textarea>
             formData.append('width', document.getElementById('gen-width').value);
             formData.append('height', document.getElementById('gen-height').value);
             formData.append('count', document.getElementById('gen-count').value);
+            formData.append('mode', document.getElementById('gen-mode').value);
             formData.append('model_path', modelPath);
             formData.append('vae_path', genVae || '');
             formData.append('text_encoder_path', genTe || '');
