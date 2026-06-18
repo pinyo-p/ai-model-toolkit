@@ -849,15 +849,44 @@ a bird on a tree</textarea>
             if (!select) return;
             while (select.options.length > 2) select.remove(2);
             var count = 0;
+            // These folder-based types support subfolders (e.g. vae/z-image, text_encoder/qwen)
+            var folderTypes = { 'text_encoder': true, 'vae': true, 'tokenizer': true };
             entries.forEach(function(m) {
-                if (m.type === 'folder' && m.files && m.files.length > 0) {
-                    // For text_encoder: only show files from 'text_encoder' folder
-                    if (filterType === 'text_encoder' && m.name !== 'text_encoder') return;
+                if (m.type === 'folder' && m.name === filterType) {
+                    // Show subfolders as options
+                    if (m.subdirs && m.subdirs.length > 0) {
+                        m.subdirs.forEach(function(sub) {
+                            var relPath = m.name + '/' + sub;
+                            var el = document.createElement('option');
+                            el.textContent = relPath;
+                            el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                            select.appendChild(el);
+                            count++;
+                        });
+                    }
+                    // Show files directly in folder (no subfolders, single file model)
+                    if (m.files && m.files.length > 0 && (!m.subdirs || m.subdirs.length === 0)) {
+                        m.files.forEach(function(f) {
+                            var fname = typeof f === 'string' ? f : f.name;
+                            var relPath = m.name + '/' + fname;
+                            var ft = _getFileType(f, m);
+                            var el = document.createElement('option');
+                            el.textContent = relPath;
+                            el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                            var ff = _getFileFamily(f, m);
+                            if (ff) el.setAttribute('data-family', ff);
+                            select.appendChild(el);
+                            count++;
+                        });
+                    }
+                } else if (m.type === 'folder' && m.files && m.files.length > 0) {
+                    // For checkpoint type: show files from matching folders (e.g. sd-xl/)
+                    if (filterType !== 'checkpoint') return;
                     (m.files).forEach(function(f) {
                         var fname = typeof f === 'string' ? f : f.name;
                         var relPath = m.name + '/' + fname;
                         var ft = _getFileType(f, m);
-                        if (filterType !== 'text_encoder' && ft !== filterType) return;
+                        if (ft !== 'checkpoint') return;
                         var el = document.createElement('option');
                         el.textContent = relPath;
                         el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
@@ -868,7 +897,7 @@ a bird on a tree</textarea>
                     });
                 } else if (m.type === 'file') {
                     var ft = m.model_type || 'checkpoint';
-                    if (filterType !== 'text_encoder' && ft !== filterType) return;
+                    if (ft !== filterType) return;
                     var el = document.createElement('option');
                     el.textContent = m.name;
                     el.value = modelsPath ? modelsPath + '/' + m.name : m.name;
@@ -878,11 +907,11 @@ a bird on a tree</textarea>
                     count++;
                 }
             });
-            // Show hint for empty text_encoder dropdown
-            if (filterType === 'text_encoder' && count === 0) {
+            // Show hint for empty dropdown
+            if (count === 0) {
                 var hint = document.createElement('option');
                 hint.value = '';
-                hint.textContent = '(no text encoder found - will auto-download)';
+                hint.textContent = '(no ' + filterType + ' found - will auto-download)';
                 hint.disabled = true;
                 hint.style.color = '#888';
                 select.appendChild(hint);
