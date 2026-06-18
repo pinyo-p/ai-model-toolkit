@@ -326,7 +326,10 @@
                 </div>
             </div>
 
-            <button class="btn" id="gen-btn" onclick="generate()">Generate Image</button>
+            <div style="display:flex;gap:8px;">
+                <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
+                <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
+            </div>
             <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
                 <div id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</div>
                 <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
@@ -2433,8 +2436,106 @@ a bird on a tree</textarea>
         }
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'Escape') closeGallery();
         });
+
+        // Gallery
+        async function openGallery() {
+            var modal = document.getElementById('gallery-modal');
+            var grid = document.getElementById('gallery-grid');
+            var countEl = document.getElementById('gallery-count');
+            grid.innerHTML = '<span class="loading">Loading...</span>';
+            modal.style.display = 'flex';
+
+            try {
+                var res = await fetch('/api/output_images', { headers: { 'Authorization': 'Basic ' + auth } });
+                var data = await res.json();
+                var images = data.images || [];
+                countEl.textContent = images.length + ' images';
+
+                if (images.length === 0) {
+                    grid.innerHTML = '<span style="color:#888;">No images yet</span>';
+                    return;
+                }
+
+                var html = '';
+                images.forEach(function(img) {
+                    html += '<div class="gen-img-wrap" data-url="' + img.url + '">'
+                        + '<img src="' + img.url + '" alt="' + img.name + '" onclick="openLightbox(this.src)">'
+                        + '<div class="gen-img-actions">'
+                        + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
+                        + '<a href="' + img.url + '" download="' + img.name + '" class="btn-small">Download</a>'
+                        + '<button class="btn-small" style="background:#d32f2f;" onclick="deleteGalleryImage(this)">Delete</button>'
+                        + '</div></div>';
+                });
+                grid.innerHTML = html;
+            } catch(e) {
+                grid.innerHTML = '<span class="error">Failed to load images</span>';
+            }
+        }
+
+        function closeGallery() {
+            document.getElementById('gallery-modal').style.display = 'none';
+        }
+
+        async function deleteGalleryImage(btn) {
+            var wrap = btn.closest('.gen-img-wrap');
+            var url = wrap.getAttribute('data-url');
+            if (!url) return;
+            try {
+                await fetch('/api/generate_image?url=' + encodeURIComponent(url), {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                wrap.remove();
+                var countEl = document.getElementById('gallery-count');
+                var remaining = document.querySelectorAll('#gallery-grid .gen-img-wrap').length;
+                countEl.textContent = remaining + ' images';
+            } catch(e) {}
+        }
+
+        async function deleteAllImages() {
+            if (!confirm('Delete ALL generated images? This cannot be undone.')) return;
+            try {
+                await fetch('/api/output_images', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                document.getElementById('gallery-grid').innerHTML = '<span style="color:#888;">No images yet</span>';
+                document.getElementById('gallery-count').textContent = '0 images';
+            } catch(e) {}
+        }
+
+        async function downloadAllImages() {
+            try {
+                var res = await fetch('/api/output_images', { headers: { 'Authorization': 'Basic ' + auth } });
+                var data = await res.json();
+                var images = data.images || [];
+                images.forEach(function(img) {
+                    var a = document.createElement('a');
+                    a.href = img.url;
+                    a.download = img.name;
+                    a.click();
+                });
+            } catch(e) {}
+        }
     </script>
+
+    <!-- Gallery Modal -->
+    <div class="modal-overlay" id="gallery-modal" style="display:none;">
+        <div class="modal-box" style="max-width:900px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
+            <button class="modal-close" onclick="closeGallery()">✕</button>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                <h3 style="margin:0;flex:1;">🖼️ Generated Images</h3>
+                <span id="gallery-count" style="color:#888;font-size:13px;"></span>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <button class="btn-small" onclick="downloadAllImages()" style="background:#1e3d1e;color:#4caf50;">⬇ Download All</button>
+                <button class="btn-small" onclick="deleteAllImages()" style="background:#3d1e1e;color:#ff6666;">🗑 Delete All</button>
+            </div>
+            <div class="gen-grid" id="gallery-grid" style="flex:1;overflow-y:auto;"></div>
+        </div>
+    </div>
 
     <!-- Lightbox -->
     <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">

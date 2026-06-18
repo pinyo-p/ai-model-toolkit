@@ -501,6 +501,34 @@ async def api_delete_generate_image(url: str = Query(...), user: str = Depends(g
     raise HTTPException(status_code=404, detail="File not found")
 
 
+@app.get("/api/output_images")
+async def api_list_output_images(user: str = Depends(get_current_user)):
+    """List all images in the output directory."""
+    images = []
+    if os.path.exists(OUTPUT_DIR):
+        for f in sorted(os.listdir(OUTPUT_DIR), reverse=True):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                fpath = os.path.join(OUTPUT_DIR, f)
+                images.append({
+                    "name": f,
+                    "url": f"/output/{f}",
+                    "size": os.path.getsize(fpath),
+                })
+    return {"images": images, "count": len(images)}
+
+
+@app.delete("/api/output_images")
+async def api_delete_all_output_images(user: str = Depends(get_current_user)):
+    """Delete all images in the output directory."""
+    count = 0
+    if os.path.exists(OUTPUT_DIR):
+        for f in os.listdir(OUTPUT_DIR):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                os.remove(os.path.join(OUTPUT_DIR, f))
+                count += 1
+    return {"status": "deleted", "count": count}
+
+
 @app.post("/api/generate_async")
 async def api_generate_async(
     user: str = Depends(get_current_user),
