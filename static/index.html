@@ -758,17 +758,20 @@ a bird on a tree</textarea>
 
             var val = select.value === '__custom__' ? customInput.value : select.value;
             var valLower = val.toLowerCase();
-            var isFlux = valLower.indexOf('flux') >= 0 || valLower.indexOf('z-image') >= 0 || valLower.indexOf('z_image') >= 0;
 
-            textEncoderRow.style.display = isFlux ? 'block' : 'none';
-            if (!isFlux) {
+            // Check model family from data-family attribute (set by backend detection)
+            var selectedOpt = select.options[select.selectedIndex];
+            var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
+            var isFluxOrZimage = family === 'flux' || family === 'zimage'
+                || valLower.indexOf('flux') >= 0 || valLower.indexOf('z-image') >= 0 || valLower.indexOf('z_image') >= 0;
+
+            textEncoderRow.style.display = isFluxOrZimage ? 'block' : 'none';
+            if (!isFluxOrZimage) {
                 textEncoderRow.value = '';
                 textEncoderCustom.style.display = 'none';
             }
 
             // Show model family badge + auto-set defaults
-            var selectedOpt = select.options[select.selectedIndex];
-            var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
             if (family) {
                 var label = FAMILY_LABELS[family] || family;
                 familyBadge.textContent = label;
