@@ -2246,7 +2246,6 @@ a bird on a tree</textarea>
                     var parts = w.download.split('/');
                     var repoId = parts[0] + '/' + parts[1];
                     var subfolder = parts.slice(2).join('/');
-                    var targetDir = await _getModelPath(subfolder);
 
                     list.innerHTML += '<div id="dl-status-' + i + '" style="padding:4px 0;color:#00d4ff;font-size:13px;">⬇ Downloading ' + subfolder + '...</div>';
 
@@ -2254,7 +2253,6 @@ a bird on a tree</textarea>
                         var fd = new FormData();
                         fd.append('repo_id', repoId);
                         fd.append('subfolder', subfolder);
-                        fd.append('target_dir', targetDir);
                         var res = await fetch('/api/download_hf_subfolder', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
                         var data = await res.json();
                         var dlId = data.download_id;
@@ -2301,18 +2299,6 @@ a bird on a tree</textarea>
                     document.getElementById('missing-modal').style.display = 'none';
                     if (missingResolver) { missingResolver('auto'); missingResolver = null; }
                 }, 800);
-            }
-        }
-
-        async function _getModelPath(subfolder) {
-            try {
-                var fd = new FormData();
-                fd.append('path', '/');
-                var res = await fetch('/api/browse', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
-                var data = await res.json();
-                return data.path + '/' + subfolder;
-            } catch(e) {
-                return subfolder;
             }
         }
 
