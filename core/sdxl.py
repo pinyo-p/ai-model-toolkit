@@ -130,7 +130,10 @@ def _get_pipeline(
 
     vae = None
     if vae_path and os.path.exists(vae_path):
-        vae = AutoencoderKL.from_pretrained(vae_path, torch_dtype=dtype)
+        if os.path.isfile(vae_path) and vae_path.endswith('.safetensors'):
+            vae = AutoencoderKL.from_single_file(vae_path, torch_dtype=dtype)
+        else:
+            vae = AutoencoderKL.from_pretrained(vae_path, torch_dtype=dtype)
 
     if model_type == "zimage":
         from diffusers import ZImagePipeline
