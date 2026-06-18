@@ -68,6 +68,23 @@
         /* Breadcrumb */
         .breadcrumb { color: #5a7a9a; font-size: 13px; margin-bottom: 12px; padding: 8px 12px; background: #0d1420; border-radius: 8px; border: 1px solid #1a2a3a; }
 
+        /* Generated images grid */
+        .gen-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+        .gen-img-wrap { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid #1e2d3d; }
+        .gen-img-wrap img { width: 100%; display: block; cursor: pointer; transition: transform 0.2s; }
+        .gen-img-wrap img:hover { transform: scale(1.02); }
+        .gen-img-actions { display: flex; gap: 4px; padding: 6px; background: rgba(0,0,0,0.7); position: absolute; bottom: 0; left: 0; right: 0; }
+        .gen-img-actions .btn-small { flex: 1; text-align: center; font-size: 11px; padding: 4px 8px; text-decoration: none; color: #fff; background: #1e2d3d; border: none; border-radius: 4px; cursor: pointer; }
+        .gen-img-actions .btn-small:hover { background: #00d4ff; color: #000; }
+        .gen-img-actions a { display: block; }
+
+        /* Lightbox */
+        .lightbox-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; justify-content: center; align-items: center; cursor: pointer; }
+        .lightbox-overlay.active { display: flex; }
+        .lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+        .lightbox-close { position: fixed; top: 20px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; z-index: 10000; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+        .lightbox-download { position: fixed; bottom: 20px; right: 20px; padding: 10px 20px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10000; text-decoration: none; font-size: 14px; }
+
         /* File Table */
         .file-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .file-table th { padding: 10px 12px; text-align: left; color: #5a7a9a; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-bottom: 1px solid #1a2a3a; }
@@ -193,7 +210,10 @@
         <div id="generate" class="panel active">
             <div class="card">
                 <h2>🎨 Generate</h2>
-                <label>Model</label>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label style="margin:0;">Model</label>
+                    <button class="btn-small" onclick="loadGenModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
+                </div>
                 <select id="gen-model" class="base-model" onchange="onGenModelChange()">
                     <option value="">-- Select local model --</option>
                     <option value="__custom__">Custom (type manually)...</option>
@@ -271,6 +291,12 @@
                         <div class="form-group">
                             <label>Height</label>
                             <input type="number" id="gen-height" value="1024" step="8">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Count</label>
+                            <input type="number" id="gen-count" value="1" min="1" max="16">
                         </div>
                     </div>
                 </div>
@@ -996,6 +1022,7 @@ a bird on a tree</textarea>
             if (seedRandom) document.getElementById('gen-seed').value = seedValue;
             formData.append('width', document.getElementById('gen-width').value);
             formData.append('height', document.getElementById('gen-height').value);
+            formData.append('count', document.getElementById('gen-count').value);
             formData.append('model_path', modelPath);
             formData.append('vae_path', genVae || '');
             formData.append('text_encoder_path', genTe || '');
@@ -1024,14 +1051,26 @@ a bird on a tree</textarea>
                         if (pg.status === 'done' || pg.status === 'error') {
                             clearInterval(poll);
                             if (pg.status === 'done') {
-                                var imgRes = await fetch('/api/generate_result?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
-                                var blob = await imgRes.blob();
+                                var totalImages = pg.total_images || 1;
                                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
-                                progressText.textContent = '✅ Done in ' + elapsed + 's';
+                                progressText.textContent = '✅ Done ' + totalImages + ' image' + (totalImages > 1 ? 's' : '') + ' in ' + elapsed + 's';
                                 setTimeout(function() { progress.style.display = 'none'; }, 3000);
-                                output.innerHTML = '<img src="' + URL.createObjectURL(blob) + '" alt="Generated">';
+
+                                // Fetch all images
+                                var html = '<div class="gen-grid">';
+                                for (var idx = 0; idx < totalImages; idx++) {
+                                    var imgUrl = '/api/generate_result?gen_id=' + encodeURIComponent(genId) + '&index=' + idx;
+                                    html += '<div class="gen-img-wrap">'
+                                        + '<img src="' + imgUrl + '" alt="Generated ' + (idx+1) + '" onclick="openLightbox(this.src)">'
+                                        + '<div class="gen-img-actions">'
+                                        + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
+                                        + '<a href="' + imgUrl + '" download="image_' + (idx+1) + '.png" class="btn-small">Download</a>'
+                                        + '</div></div>';
+                                }
+                                html += '</div>';
+                                output.innerHTML = html;
                             } else {
                                 progress.style.display = 'none';
                                 output.innerHTML = '<span class="error">Error: ' + pg.message + '</span>';
@@ -2313,7 +2352,31 @@ a bird on a tree</textarea>
         function closeModal(id) {
             document.getElementById(id).style.display = 'none';
         }
+
+        // Lightbox
+        function openLightbox(src) {
+            var lb = document.getElementById('lightbox');
+            var img = lb.querySelector('img');
+            var dl = lb.querySelector('.lightbox-download');
+            img.src = src;
+            dl.href = src;
+            dl.download = 'image.png';
+            lb.classList.add('active');
+        }
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeLightbox();
+        });
     </script>
+
+    <!-- Lightbox -->
+    <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">
+        <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+        <img src="" alt="Full size" onclick="event.stopPropagation()">
+        <a class="lightbox-download" href="" download="image.png" onclick="event.stopPropagation()">⬇ Download</a>
+    </div>
 
     <!-- Download Modal -->
     <div class="modal-overlay" id="download-modal">
