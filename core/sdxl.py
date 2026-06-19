@@ -96,29 +96,23 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
     """Load a pipeline, using from_single_file for single files and from_pretrained for directories/HF IDs."""
     is_file = os.path.isfile(model_path) and not os.path.isdir(model_path)
     kwargs = dict(torch_dtype=dtype, **extra)
-    if vae is not None:
-        kwargs['vae'] = vae
+    # Don't pass vae in kwargs to from_single_file — it can cause attribute errors.
+    # Apply vae after loading instead.
     if is_file:
-        # Try from_single_file first, then fallback to from_pretrained (for .safetensors too)
-        for loader in ['from_single_file', 'from_pretrained']:
-            try:
-                fn = getattr(pipeline_cls, loader)
-                result = fn(model_path, **kwargs)
-                return result
-            except AttributeError as e:
-                if 'text_model' in str(e):
-                    # diffusers can't map text encoder keys; try next loader
-                    continue
-                if 'from_single_file' in str(e):
-                    raise HTTPException(status_code=400,
-                        detail=f"{getattr(pipeline_cls, '__name__', str(pipeline_cls))}.{loader}() not available. "
-                               f"Upgrade: pip install -U diffusers")
+        try:
+            pipe = pipeline_cls.from_single_file(model_path, **kwargs)
+        except AttributeError as e:
+            if 'text_model' in str(e) and hasattr(pipeline_cls, 'from_single_file'):
+                # Retry without any extra kwargs
+                pipe = pipeline_cls.from_single_file(model_path, torch_dtype=dtype)
+            else:
                 raise
-            except Exception:
-                if loader == 'from_single_file':
-                    continue
-                raise
-    return pipeline_cls.from_pretrained(model_path, **kwargs)
+    else:
+        pipe = pipeline_cls.from_pretrained(model_path, **kwargs)
+
+    if vae is not None:
+        pipe.vae = vae
+    return pipe
 
 
 def _get_pipeline(
