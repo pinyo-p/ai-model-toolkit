@@ -7,6 +7,8 @@ import struct
 import json
 from .gpu import check_gpu
 
+from safetensors.torch import load_file as safetensors_load_file
+
 
 _pipelines = {}
 
@@ -96,15 +98,17 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
     """Load a pipeline, using from_single_file for single files and from_pretrained for directories/HF IDs."""
     is_file = os.path.isfile(model_path) and not os.path.isdir(model_path)
     kwargs = dict(torch_dtype=dtype, **extra)
-    # Don't pass vae in kwargs to from_single_file — it can cause attribute errors.
-    # Apply vae after loading instead.
     if is_file:
         try:
             pipe = pipeline_cls.from_single_file(model_path, **kwargs)
         except AttributeError as e:
-            if 'text_model' in str(e) and hasattr(pipeline_cls, 'from_single_file'):
-                # Retry without any extra kwargs
-                pipe = pipeline_cls.from_single_file(model_path, torch_dtype=dtype)
+            if 'text_model' in str(e):
+                pipe = _fallback_load_sdxl_from_file(model_path, dtype)
+            else:
+                raise
+        except Exception as e:
+            if 'text_model' in str(e):
+                pipe = _fallback_load_sdxl_from_file(model_path, dtype)
             else:
                 raise
     else:
@@ -112,6 +116,23 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
 
     if vae is not None:
         pipe.vae = vae
+    return pipe
+
+
+def _fallback_load_sdxl_from_file(model_path, dtype):
+    """Fallback: load base SDXL pipeline from HF hub, then load UNet weights from checkpoint."""
+    hf_token = os.environ.get("HF_TOKEN")
+    pipe = StableDiffusionXLPipeline.from_pretrained(
+        "stabilityai/stable-diffusion-xl-base-1.0",
+        torch_dtype=dtype, token=hf_token
+    )
+    # Load checkpoint and filter UNet keys only
+    ckpt = safetensors_load_file(model_path, device="cpu")
+    unet_prefix = "model.diffusion_model."
+    unet_state = {k.replace(unet_prefix, ""): v for k, v in ckpt.items() if k.startswith(unet_prefix)}
+    if unet_state:
+        pipe.unet.load_state_dict(unet_state, strict=False)
+    del ckpt
     return pipe
 
 
