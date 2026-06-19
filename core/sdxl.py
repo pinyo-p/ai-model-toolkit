@@ -232,10 +232,14 @@ def _get_pipeline(
             pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
         except Exception:
             kwargs = dict(vae=vae, dtype=dtype)
+            # Only use text_encoder if it's actually CLIP
             if text_encoder_path and os.path.exists(text_encoder_path):
-                from transformers import CLIPTextModel, CLIPTokenizer
-                text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
-                kwargs['text_encoder'] = text_encoder
+                try:
+                    from transformers import CLIPTextModel, CLIPTokenizer
+                    text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+                    kwargs['text_encoder'] = text_encoder
+                except Exception:
+                    pass
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux":
         try:
@@ -243,14 +247,24 @@ def _get_pipeline(
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception:
             kwargs = dict(vae=vae, dtype=dtype)
+            # Only use text_encoder if it's actually CLIP (not Qwen/Phi etc.)
             if text_encoder_path and os.path.exists(text_encoder_path):
-                from transformers import CLIPTextModel, CLIPTokenizer
-                text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
-                kwargs['text_encoder'] = text_encoder
+                try:
+                    from transformers import CLIPTextModel, CLIPTokenizer
+                    text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+                    kwargs['text_encoder'] = text_encoder
+                except Exception:
+                    pass  # Not CLIP, skip
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
     else:
+        # SDXL: load default VAE if not provided (some checkpoints don't include one)
+        if vae is None:
+            try:
+                vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae", torch_dtype=dtype)
+            except Exception:
+                pass
         kwargs = dict(vae=vae, dtype=dtype)
         pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
 
