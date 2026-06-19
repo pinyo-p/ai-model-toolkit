@@ -249,18 +249,9 @@ def _get_pipeline(
                 kwargs['text_encoder'] = text_encoder
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "sd15":
-        kwargs = dict(vae=vae, dtype=dtype)
-        if text_encoder_path and os.path.exists(text_encoder_path):
-            from transformers import CLIPTextModel, CLIPTokenizer
-            text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
-            kwargs['text_encoder'] = text_encoder
-        pipeline = _load_pipeline(StableDiffusionPipeline, model_path, **kwargs)
+        pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
     else:
         kwargs = dict(vae=vae, dtype=dtype)
-        if text_encoder_path and os.path.exists(text_encoder_path):
-            from transformers import CLIPTextModel, CLIPTokenizer
-            text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
-            kwargs['text_encoder'] = text_encoder
         pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
 
     gpu_info = check_gpu()
