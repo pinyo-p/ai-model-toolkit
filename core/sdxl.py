@@ -231,7 +231,6 @@ def _get_pipeline(
             from diffusers import PixArtAlphaPipeline
             pipeline = _load_pipeline(PixArtAlphaPipeline, model_path, dtype=dtype)
         except Exception:
-            from diffusers import StableDiffusionXLPipeline
             kwargs = dict(vae=vae, dtype=dtype)
             if text_encoder_path and os.path.exists(text_encoder_path):
                 from transformers import CLIPTextModel, CLIPTokenizer
@@ -243,7 +242,6 @@ def _get_pipeline(
             from diffusers import FluxPipeline
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception:
-            from diffusers import StableDiffusionXLPipeline
             kwargs = dict(vae=vae, dtype=dtype)
             if text_encoder_path and os.path.exists(text_encoder_path):
                 from transformers import CLIPTextModel, CLIPTokenizer
