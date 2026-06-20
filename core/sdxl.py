@@ -42,12 +42,12 @@ def _detect_model_type(model_path: str) -> str:
 
     # Single safetensors file → read keys for detection
     if model_path.endswith('.safetensors') and os.path.isfile(model_path):
+        fname = os.path.basename(model_path).lower()
         keys = _read_safetensors_meta(model_path)
         if keys:
             joined = ' '.join(k.lower() for k in keys)
             if 'single_stream_blocks' in joined and 'double_stream' not in joined:
                 return "zimage"
-            # Z-Image variants: noise_refiner / cap_embedder / context_refiner are unique to Z-Image
             if 'noise_refiner' in joined or 'cap_embedder' in joined or 'context_refiner' in joined:
                 return "zimage"
             if 'mmdit.' in joined:
@@ -55,11 +55,13 @@ def _detect_model_type(model_path: str) -> str:
             if 'model.diffusion_model' in joined:
                 if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
                     return "sdxl"
-                # DiT wrapped under model.diffusion_model (PixArt-style)
                 if 'x_embedder' in joined and 'model.diffusion_model.layers.' in joined:
                     return "pixart"
                 return "sdxl"
             if 'double_stream' in joined:
+                # FLUX.2 single file needs full directory — detect from filename
+                if any(x in fname for x in ['flux2', 'flux.2', 'flux-2']):
+                    return "flux2"
                 return "flux"
             if 'transformer_blocks' in joined and 'time_text_embed' in joined:
                 return "flux"
@@ -283,6 +285,11 @@ def _get_pipeline(
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
         from diffusers import Flux2Pipeline
+        if os.path.isfile(model_path):
+            raise HTTPException(status_code=400,
+                detail="FLUX.2 cannot be loaded from a single .safetensors file. "
+                       "Download the full directory with: "
+                       "huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev")
         pipeline = _load_pipeline(Flux2Pipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
