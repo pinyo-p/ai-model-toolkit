@@ -81,7 +81,7 @@ def _detect_model_type(model_path: str) -> str:
                     "StableDiffusionXLPipeline": "sdxl",
                     "StableDiffusion3Pipeline": "sd3",
                     "FluxPipeline": "flux",
-                    "Flux2Pipeline": "flux",
+                    "Flux2Pipeline": "flux2",
                     "ZImagePipeline": "zimage",
                     "HunyuanDiTPipeline": "hunyuan",
                     "PixArtAlphaPipeline": "pixart",
@@ -273,15 +273,17 @@ def _get_pipeline(
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception:
             kwargs = dict(vae=vae, dtype=dtype)
-            # Only use text_encoder if it's actually CLIP (not Qwen/Phi etc.)
             if text_encoder_path and os.path.exists(text_encoder_path):
                 try:
                     from transformers import CLIPTextModel, CLIPTokenizer
                     text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
                     kwargs['text_encoder'] = text_encoder
                 except Exception:
-                    pass  # Not CLIP, skip
+                    pass
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
+    elif model_type == "flux2":
+        from diffusers import Flux2Pipeline
+        pipeline = _load_pipeline(Flux2Pipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
     else:
