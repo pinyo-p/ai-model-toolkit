@@ -2280,12 +2280,18 @@ a bird on a tree</textarea>
                     html += '<div style="color:#ff6666;margin-bottom:8px;">❌ Missing:</div>';
                     data.missing.forEach(function(m) {
                         html += '<div style="padding:4px 0;color:#e0e0e0;">• ' + m.message + '</div>';
+                        if (m.download_repo) {
+                            html += '<div style="padding:4px 0 4px 16px;color:#00d4ff;font-size:12px;">Repo: ' + m.download_repo + '</div>';
+                        }
                     });
                 }
                 if (data.warnings && data.warnings.length > 0) {
                     html += '<div style="color:#ffaa00;margin-top:10px;margin-bottom:8px;">⚠ Not found locally:</div>';
                     data.warnings.forEach(function(w) {
                         html += '<div style="padding:4px 0;color:#e0e0e0;">• ' + w.message + '</div>';
+                        if (w.download_repo) {
+                            html += '<div style="padding:4px 0 4px 16px;color:#00d4ff;font-size:12px;">Repo: ' + w.download_repo + '</div>';
+                        }
                     });
                 }
                 list.innerHTML = html;
@@ -2293,10 +2299,20 @@ a bird on a tree</textarea>
                 var manualCmd = document.getElementById('missing-manual-cmd');
                 manualCmd.style.display = 'none';
                 var cmdLines = [];
+                if (data.missing) {
+                    data.missing.forEach(function(m) {
+                        if (m.download_repo) {
+                            cmdLines.push('huggingface-cli download ' + m.download_repo + ' --local-dir <path>');
+                        }
+                    });
+                }
                 if (data.warnings) {
                     data.warnings.forEach(function(w) {
                         if (w.download) {
                             cmdLines.push('huggingface-cli download ' + w.download + ' --local-dir <path>');
+                        }
+                        if (w.download_repo) {
+                            cmdLines.push('huggingface-cli download ' + w.download_repo + ' --local-dir <path>');
                         }
                     });
                 }
@@ -2323,52 +2339,101 @@ a bird on a tree</textarea>
                 document.getElementById('missing-manual-cmd').style.display = 'block';
                 return;
             }
-            if (choice === 'auto' && missingData && missingData.warnings) {
+            if (choice === 'auto' && missingData) {
                 var autoBtn = document.getElementById('missing-auto-btn');
                 var list = document.getElementById('missing-list');
                 autoBtn.disabled = true;
                 autoBtn.textContent = '⏳ Downloading...';
 
-                var downloads = missingData.warnings.filter(function(w) { return w.download; });
-                for (var i = 0; i < downloads.length; i++) {
-                    var w = downloads[i];
-                    var parts = w.download.split('/');
-                    var repoId = parts[0] + '/' + parts[1];
-                    var subfolder = parts.slice(2).join('/');
+                // Collect all download items (subfolder + full repo)
+                var allDownloads = [];
+                var allItems = (missingData.missing || []).concat(missingData.warnings || []);
+                allItems.forEach(function(item) {
+                    if (item.download_repo) {
+                        allDownloads.push({ type: 'repo', repo: item.download_repo });
+                    }
+                    if (item.download) {
+                        allDownloads.push({ type: 'subfolder', download: item.download });
+                    }
+                });
 
-                    list.innerHTML += '<div id="dl-status-' + i + '" style="padding:4px 0;color:#00d4ff;font-size:13px;">⬇ Downloading ' + subfolder + '...</div>';
+                for (var i = 0; i < allDownloads.length; i++) {
+                    var dl = allDownloads[i];
+                    if (dl.type === 'repo') {
+                        var repoName = dl.repo.split('/')[1];
+                        list.innerHTML += '<div id="dl-status-' + i + '" style="padding:4px 0;color:#00d4ff;font-size:13px;">⬇ Downloading ' + repoName + ' (full repo)...</div>';
+                        try {
+                            var fd = new FormData();
+                            fd.append('repo_id', dl.repo);
+                            var res = await fetch('/api/download_hf_repo', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                            var data = await res.json();
+                            var dlId = data.download_id;
+                            await new Promise(function(resolve) {
+                                var poll = setInterval(async function() {
+                                    try {
+                                        var pr = await fetch('/api/download_progress?download_id=' + dlId, { headers: { 'Authorization': 'Basic ' + auth } });
+                                        var pg = await pr.json();
+                                        var el = document.getElementById('dl-status-' + i);
+                                        if (pg.status === 'downloading' && pg.files_total > 0) {
+                                            el.textContent = '⬇ ' + repoName + ': ' + pg.files_done + '/' + pg.files_total + ' files';
+                                        } else if (pg.status === 'listing') {
+                                            el.textContent = '⬇ ' + repoName + ': Listing files...';
+                                        }
+                                        if (pg.status === 'done') {
+                                            clearInterval(poll);
+                                            el.textContent = '✅ ' + repoName + ' downloaded';
+                                            el.style.color = '#66ff66';
+                                            resolve();
+                                        } else if (pg.status === 'error') {
+                                            clearInterval(poll);
+                                            el.textContent = '❌ ' + repoName + ' failed: ' + (pg.error || 'Unknown error');
+                                            el.style.color = '#ff6666';
+                                            resolve();
+                                        }
+                                    } catch(e) { clearInterval(poll); resolve(); }
+                                }, 500);
+                            });
+                        } catch(e) {
+                            var el = document.getElementById('dl-status-' + i);
+                            if (el) { el.textContent = '❌ Download failed: ' + e.message; el.style.color = '#ff6666'; }
+                        }
+                    } else if (dl.type === 'subfolder') {
+                        var parts = dl.download.split('/');
+                        var repoId = parts[0] + '/' + parts[1];
+                        var subfolder = parts.slice(2).join('/');
 
-                    try {
-                        var fd = new FormData();
-                        fd.append('repo_id', repoId);
-                        fd.append('subfolder', subfolder);
-                        var res = await fetch('/api/download_hf_subfolder', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
-                        var data = await res.json();
-                        var dlId = data.download_id;
+                        list.innerHTML += '<div id="dl-status-' + i + '" style="padding:4px 0;color:#00d4ff;font-size:13px;">⬇ Downloading ' + subfolder + '...</div>';
 
-                        // Poll progress
-                        await new Promise(function(resolve) {
-                            var poll = setInterval(async function() {
-                                try {
-                                    var pr = await fetch('/api/download_progress?download_id=' + dlId, { headers: { 'Authorization': 'Basic ' + auth } });
-                                    var pg = await pr.json();
-                                    var el = document.getElementById('dl-status-' + i);
-                                    if (pg.status === 'downloading' && pg.files_total > 0) {
-                                        el.textContent = '⬇ ' + subfolder + ': ' + pg.files_done + '/' + pg.files_total + ' files';
-                                    } else if (pg.status === 'listing') {
-                                        el.textContent = '⬇ ' + subfolder + ': Listing files...';
-                                    }
-                                    if (pg.status === 'done') {
-                                        clearInterval(poll);
-                                        el.textContent = '✅ ' + subfolder + ' downloaded';
-                                        el.style.color = '#66ff66';
-                                        resolve();
-                                    } else if (pg.status === 'error') {
-                                        clearInterval(poll);
-                                        el.textContent = '❌ ' + subfolder + ' failed: ' + (pg.error || 'Unknown error');
-                                        el.style.color = '#ff6666';
-                                        resolve();
-                                    }
+                        try {
+                            var fd = new FormData();
+                            fd.append('repo_id', repoId);
+                            fd.append('subfolder', subfolder);
+                            var res = await fetch('/api/download_hf_subfolder', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+                            var data = await res.json();
+                            var dlId = data.download_id;
+
+                            await new Promise(function(resolve) {
+                                var poll = setInterval(async function() {
+                                    try {
+                                        var pr = await fetch('/api/download_progress?download_id=' + dlId, { headers: { 'Authorization': 'Basic ' + auth } });
+                                        var pg = await pr.json();
+                                        var el = document.getElementById('dl-status-' + i);
+                                        if (pg.status === 'downloading' && pg.files_total > 0) {
+                                            el.textContent = '⬇ ' + subfolder + ': ' + pg.files_done + '/' + pg.files_total + ' files';
+                                        } else if (pg.status === 'listing') {
+                                            el.textContent = '⬇ ' + subfolder + ': Listing files...';
+                                        }
+                                        if (pg.status === 'done') {
+                                            clearInterval(poll);
+                                            el.textContent = '✅ ' + subfolder + ' downloaded';
+                                            el.style.color = '#66ff66';
+                                            resolve();
+                                        } else if (pg.status === 'error') {
+                                            clearInterval(poll);
+                                            el.textContent = '❌ ' + subfolder + ' failed: ' + (pg.error || 'Unknown error');
+                                            el.style.color = '#ff6666';
+                                            resolve();
+                                        }
                                 } catch(e) {
                                     clearInterval(poll);
                                     resolve();
