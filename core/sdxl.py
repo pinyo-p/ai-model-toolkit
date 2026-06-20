@@ -273,7 +273,13 @@ def _get_pipeline(
         try:
             from diffusers import FluxPipeline
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
-        except Exception:
+        except Exception as e:
+            # If FluxPipeline fails and error mentions Mistral3, this is FLUX.2 not FLUX.1
+            if 'Mistral' in str(e) or 'text_model' in str(e):
+                raise HTTPException(status_code=400,
+                    detail="This appears to be a FLUX.2 checkpoint. FLUX.2 cannot be loaded from a single file. "
+                           "Download the full directory with: "
+                           "huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev")
             kwargs = dict(vae=vae, dtype=dtype)
             if text_encoder_path and os.path.exists(text_encoder_path):
                 try:
