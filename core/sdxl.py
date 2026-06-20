@@ -97,6 +97,10 @@ def _detect_model_type(model_path: str) -> str:
 def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **extra):
     """Load a pipeline, using from_single_file for single files and from_pretrained for directories/HF IDs."""
     is_file = os.path.isfile(model_path) and not os.path.isdir(model_path)
+    # Always pass HF token for gated repos
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        extra.setdefault('token', token)
     kwargs = dict(torch_dtype=dtype, **extra)
     if is_file:
         try:

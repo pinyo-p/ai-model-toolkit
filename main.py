@@ -89,6 +89,10 @@ def save_settings(settings):
 
 settings = load_settings()
 
+# Set HF token from settings as env var so core/sdxl.py can use it
+if settings.get("hf_token"):
+    os.environ["HF_TOKEN"] = settings["hf_token"]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -742,6 +746,8 @@ async def update_settings(
         settings["models_path"] = models_path
     settings["base_url"] = base_url
     save_settings(settings)
+    # Update env vars so core/sdxl.py picks up new tokens
+    os.environ["HF_TOKEN"] = settings.get("hf_token", "")
     return {"status": "ok", "message": "Settings saved"}
 
 
