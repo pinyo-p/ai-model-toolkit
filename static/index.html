@@ -2434,15 +2434,13 @@ a bird on a tree</textarea>
                                             el.style.color = '#ff6666';
                                             resolve();
                                         }
-                                } catch(e) {
-                                    clearInterval(poll);
-                                    resolve();
-                                }
-                            }, 500);
-                        });
-                    } catch(e) {
-                        var el = document.getElementById('dl-status-' + i);
-                        if (el) { el.textContent = '❌ ' + subfolder + ' failed: ' + e.message; el.style.color = '#ff6666'; }
+                                    } catch(e) { clearInterval(poll); resolve(); }
+                                }, 500);
+                            });
+                        } catch(e) {
+                            var el = document.getElementById('dl-status-' + i);
+                            if (el) { el.textContent = '❌ ' + subfolder + ' failed: ' + e.message; el.style.color = '#ff6666'; }
+                        }
                     }
                 }
 
