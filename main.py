@@ -890,7 +890,10 @@ def _detect_model_family_from_keys(tensor_keys):
     if 'mmdit.' in joined:
         return "sd3"
 
-    # Flux.2: double_stream with img_attn or txt_attn
+    # Flux.2: double_blocks + single_blocks (model.diffusion_model. prefix)
+    if 'model.diffusion_model.double_blocks' in joined and 'model.diffusion_model.single_blocks' in joined:
+        return "flux2"
+    # Flux.2 native: double_stream with img_attn or txt_attn
     if 'double_stream' in joined and ('img_attn' in joined or 'txt_attn' in joined):
         return "flux2"
 
@@ -905,6 +908,9 @@ def _detect_model_family_from_keys(tensor_keys):
     # DiT-based wrapped under model.diffusion_model (e.g. PixArt with diffusers wrapping)
     # Has x_embedder + layers.N instead of input_blocks/mid_block/output_blocks
     if 'model.diffusion_model' in joined:
+        # FLUX.2: double_blocks + single_blocks under model.diffusion_model
+        if 'model.diffusion_model.double_blocks' in joined and 'model.diffusion_model.single_blocks' in joined:
+            return "flux2"
         # Has UNet-specific blocks → SD UNet
         if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
             return "sd_unet"
