@@ -84,6 +84,8 @@ def _detect_model_type(model_path: str) -> str:
                     "StableDiffusion3Pipeline": "sd3",
                     "FluxPipeline": "flux",
                     "Flux2Pipeline": "flux2",
+                    "Flux2KleinPipeline": "flux2",
+                    "Flux2KleinKVPipeline": "flux2",
                     "ZImagePipeline": "zimage",
                     "HunyuanDiTPipeline": "hunyuan",
                     "PixArtAlphaPipeline": "pixart",
@@ -290,13 +292,14 @@ def _get_pipeline(
                     pass
             pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
-        from diffusers import Flux2Pipeline
+        from diffusers import DiffusionPipeline
         if os.path.isfile(model_path):
             raise HTTPException(status_code=400,
                 detail="FLUX.2 cannot be loaded from a single .safetensors file. "
-                       "Download the full directory with: "
-                       "huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev")
-        pipeline = _load_pipeline(Flux2Pipeline, model_path, dtype=dtype)
+                       "Download the full directory with:\n"
+                       "  huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev\n"
+                       "  huggingface-cli download black-forest-labs/FLUX.2-klein-base-9B --local-dir /path/to/FLUX.2-klein-9B")
+        pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
     else:

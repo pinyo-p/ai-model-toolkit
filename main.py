@@ -966,6 +966,8 @@ def _detect_family(path: str) -> str:
                     "StableDiffusion3Pipeline": "sd3",
                     "FluxPipeline": "flux1",
                     "Flux2Pipeline": "flux2",
+                    "Flux2KleinPipeline": "flux2",
+                    "Flux2KleinKVPipeline": "flux2",
                     "ZImagePipeline": "zimage",
                     "HunyuanDiTPipeline": "hunyuan",
                     "PixArtAlphaPipeline": "pixart",
