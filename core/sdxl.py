@@ -52,14 +52,25 @@ def _detect_model_type(model_path: str) -> str:
                 return "zimage"
             if 'mmdit.' in joined:
                 return "sd3"
+            # FLUX.2 / FLUX.1: model.diffusion_model.double_blocks + single_blocks
             if 'model.diffusion_model' in joined:
-                if any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.']):
+                has_double = 'double_blocks' in joined
+                has_single = 'single_blocks' in joined
+                has_sdxl = any(x in joined for x in ['input_blocks.', 'mid_block.', 'output_blocks.'])
+                has_pixart = 'x_embedder' in joined and 'model.diffusion_model.layers.' in joined
+                if has_double and has_single:
+                    # FLUX.2 (both double & single blocks)
+                    if any(x in fname for x in ['flux2', 'flux.2', 'flux-2']):
+                        return "flux2"
+                    return "flux2"
+                if has_double:
+                    return "flux"
+                if has_sdxl:
                     return "sdxl"
-                if 'x_embedder' in joined and 'model.diffusion_model.layers.' in joined:
+                if has_pixart:
                     return "pixart"
                 return "sdxl"
             if 'double_stream' in joined:
-                # FLUX.2 single file needs full directory — detect from filename
                 if any(x in fname for x in ['flux2', 'flux.2', 'flux-2']):
                     return "flux2"
                 return "flux"
@@ -276,30 +287,37 @@ def _get_pipeline(
             from diffusers import FluxPipeline
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception as e:
-            # If FluxPipeline fails and error mentions Mistral3, this is FLUX.2 not FLUX.1
-            if 'Mistral' in str(e) or 'text_model' in str(e):
-                raise HTTPException(status_code=400,
-                    detail="This appears to be a FLUX.2 checkpoint. FLUX.2 cannot be loaded from a single file. "
-                           "Download the full directory with: "
-                           "huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev")
-            kwargs = dict(vae=vae, dtype=dtype)
-            if text_encoder_path and os.path.exists(text_encoder_path):
+            if 'Mistral' in str(e) or 'text_model' in str(e) or 'Qwen' in str(e):
+                # Try auto-detection via DiffusionPipeline
                 try:
-                    from transformers import CLIPTextModel, CLIPTokenizer
-                    text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
-                    kwargs['text_encoder'] = text_encoder
+                    from diffusers import DiffusionPipeline
+                    pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
                 except Exception:
-                    pass
-            pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
+                    raise HTTPException(status_code=400,
+                        detail="This appears to be a FLUX.2 checkpoint. "
+                               "Make sure you have the latest diffusers: pip install -U diffusers")
+            else:
+                kwargs = dict(vae=vae, dtype=dtype)
+                if text_encoder_path and os.path.exists(text_encoder_path):
+                    try:
+                        from transformers import CLIPTextModel, CLIPTokenizer
+                        text_encoder = CLIPTextModel.from_pretrained(text_encoder_path, torch_dtype=dtype)
+                        kwargs['text_encoder'] = text_encoder
+                    except Exception:
+                        pass
+                pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
         from diffusers import DiffusionPipeline
         if os.path.isfile(model_path):
-            raise HTTPException(status_code=400,
-                detail="FLUX.2 cannot be loaded from a single .safetensors file. "
-                       "Download the full directory with:\n"
-                       "  huggingface-cli download black-forest-labs/FLUX.2-dev --local-dir /path/to/FLUX.2-dev\n"
-                       "  huggingface-cli download black-forest-labs/FLUX.2-klein-base-9B --local-dir /path/to/FLUX.2-klein-9B")
-        pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
+            # Try to load via DiffusionPipeline auto-detection
+            try:
+                pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
+            except Exception:
+                raise HTTPException(status_code=400,
+                    detail="Failed to load FLUX.2 checkpoint. Make sure you have the latest diffusers: "
+                           "pip install -U diffusers")
+        else:
+            pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
     else:
