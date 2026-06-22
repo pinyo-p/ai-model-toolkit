@@ -307,16 +307,21 @@ def _get_pipeline(
                         pass
                 pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
-        from diffusers import DiffusionPipeline
         if os.path.isfile(model_path):
-            # Try to load via DiffusionPipeline auto-detection
-            try:
-                pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
-            except Exception:
+            from diffusers import Flux2Pipeline, Flux2KleinPipeline, Flux2KleinKVPipeline, DiffusionPipeline
+            last_err = None
+            for cls in [Flux2KleinPipeline, Flux2KleinKVPipeline, Flux2Pipeline, DiffusionPipeline]:
+                try:
+                    pipeline = _load_pipeline(cls, model_path, dtype=dtype)
+                    break
+                except Exception as e:
+                    last_err = e
+                    continue
+            else:
                 raise HTTPException(status_code=400,
-                    detail="Failed to load FLUX.2 checkpoint. Make sure you have the latest diffusers: "
-                           "pip install -U diffusers")
+                    detail=f"Failed to load FLUX.2 checkpoint: {last_err}")
         else:
+            from diffusers import DiffusionPipeline
             pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
