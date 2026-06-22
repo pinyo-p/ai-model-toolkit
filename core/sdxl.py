@@ -157,6 +157,30 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
     return pipe
 
 
+def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token):
+    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
+    ckpt = safetensors_load_file(model_path, device="cpu")
+
+    from diffusers import Flux2KleinPipeline
+    repo = "black-forest-labs/FLUX.2-klein-9B"
+    pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
+
+    # Map model.diffusion_model.* keys to transformer state dict
+    unet_state = {}
+    for k, v in ckpt.items():
+        if k.startswith("model.diffusion_model."):
+            unet_state[k.replace("model.diffusion_model.", "")] = v
+    if unet_state:
+        missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
+        print(f"[flux2] Loaded {len(unet_state)} transformer keys. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+
+    # Also load text encoder if present in checkpoint
+    te_prefixes = ["te_encoder.", "text_encoder.", "clip_l.", "t5xxl."]
+    has_te = any(any(k.startswith(p) for p in te_prefixes) for k in ckpt)
+    del ckpt
+    return pipe
+
+
 def _get_pipeline(
     model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
     vae_path: str = None,
@@ -308,16 +332,12 @@ def _get_pipeline(
                         pass
                 pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
+        from diffusers import DiffusionPipeline
         if os.path.isfile(model_path):
-            raise HTTPException(status_code=400,
-                detail="FLUX.2 single .safetensors files are not supported.\n"
-                       "Use the full directory format instead:\n"
-                       "e.g. /home/yokiz/stable-diffusion/models/checkpoints/FLUX.2-dev/")
+            # FLUX.2 single files: load base pipeline from HF, then load transformer weights from checkpoint
+            hf_token = os.environ.get("HF_TOKEN")
+            pipeline = _load_base_flux2_and_swap_weights(model_path, dtype, hf_token)
         else:
-            from diffusers import DiffusionPipeline
-            pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
-        else:
-            from diffusers import DiffusionPipeline
             pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
         pipeline = _load_pipeline(StableDiffusionPipeline, model_path, dtype=dtype)
