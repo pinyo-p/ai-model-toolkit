@@ -32,6 +32,8 @@ _dl_lock = threading.Lock()
 
 _generate_progress: dict = {}
 _gen_lock = threading.Lock()
+_gen_cancel_events: dict = {}
+_gen_cancel_lock = threading.Lock()
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -441,7 +443,15 @@ def _set_gen_progress(gen_id, **kwargs):
         _generate_progress[gen_id].update(kwargs)
 
 
+def _get_cancel_event(gen_id):
+    with _gen_cancel_lock:
+        return _gen_cancel_events.get(gen_id)
+
+
 def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae_path, text_encoder_path, steps, cfg, seed, width, height, count=1, mode="queue"):
+    cancel_event = threading.Event()
+    with _gen_cancel_lock:
+        _gen_cancel_events[gen_id] = cancel_event
     try:
         _set_gen_progress(gen_id, status="loading", message="Loading model...", images_count=0, total_images=count)
 
@@ -450,6 +460,10 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
             fpath = os.path.join(OUTPUT_DIR, fname)
             img.save(fpath, format='PNG')
             return f"/output/{fname}"
+
+        if cancel_event.is_set():
+            _set_gen_progress(gen_id, status="cancelled", message="Cancelled")
+            return
 
         if mode == "parallel" and count > 1:
             seeds = [seed + i for i in range(count)]
@@ -461,7 +475,8 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                 model_path=model_path, vae_path=vae_path,
                 text_encoder_path=text_encoder_path,
                 steps=steps, cfg=cfg, seeds=seeds, width=width, height=height,
-                progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total} ({count} images)")
+                progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total} ({count} images)"),
+                cancel_event=cancel_event
             )
             image_urls = []
             for i, img in enumerate(imgs):
@@ -475,6 +490,9 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
             with _gen_lock:
                 _generate_progress[gen_id]["image_urls"] = []
             for i in range(count):
+                if cancel_event.is_set():
+                    _set_gen_progress(gen_id, status="cancelled", message="Cancelled")
+                    return
                 _set_gen_progress(gen_id, status="generating", step=0, total_steps=steps, message=f"Image {i+1}/{count}: Loading...", current_image=i+1)
                 cur_seed = seed + i
                 img = sdxl.sdxl_generate(
@@ -483,15 +501,21 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                     model_path=model_path, vae_path=vae_path,
                     text_encoder_path=text_encoder_path,
                     steps=steps, cfg=cfg, seed=cur_seed, width=width, height=height,
-                    progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1)
+                    progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1),
+                    cancel_event=cancel_event
                 )
                 url = _save_image(img, i)
                 with _gen_lock:
                     _generate_progress[gen_id]["image_urls"].append(url)
                     _generate_progress[gen_id]["images_count"] = i + 1
             _set_gen_progress(gen_id, status="done", message="Done")
+    except sdxl.CancelGeneration:
+        _set_gen_progress(gen_id, status="cancelled", message="Cancelled")
     except Exception as e:
         _set_gen_progress(gen_id, status="error", message=str(e))
+    finally:
+        with _gen_cancel_lock:
+            _gen_cancel_events.pop(gen_id, None)
 
 
 @app.get("/api/generate_progress")
@@ -510,6 +534,15 @@ async def api_generate_result(gen_id: str = Query(...), index: int = Query(0), u
     if not image_urls or index >= len(image_urls):
         raise HTTPException(status_code=404, detail="Not ready")
     return {"url": image_urls[index]}
+
+
+@app.post("/api/generate_cancel")
+async def api_generate_cancel(gen_id: str = Form(...), user: str = Depends(get_current_user)):
+    event = _get_cancel_event(gen_id)
+    if event:
+        event.set()
+        return {"status": "cancelling"}
+    return {"status": "not_found"}
 
 
 @app.delete("/api/generate_image")

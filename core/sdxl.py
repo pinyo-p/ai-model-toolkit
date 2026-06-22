@@ -13,6 +13,10 @@ from safetensors.torch import load_file as safetensors_load_file
 _pipelines = {}
 
 
+class CancelGeneration(Exception):
+    pass
+
+
 def _read_safetensors_meta(path: str):
     try:
         with open(path, 'rb') as f:
@@ -391,6 +395,7 @@ def sdxl_generate(
     width: int = 1024,
     height: int = 1024,
     progress_cb=None,
+    cancel_event=None,
 ) -> Image.Image:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
@@ -410,6 +415,8 @@ def sdxl_generate(
         pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
 
     def _step_cb(pipeline, step_index, timestep, callback_kwargs):
+        if cancel_event and cancel_event.is_set():
+            raise CancelGeneration()
         if progress_cb:
             try:
                 progress_cb(step_index, steps)
@@ -445,6 +452,7 @@ def sdxl_generate_parallel(
     width: int = 1024,
     height: int = 1024,
     progress_cb=None,
+    cancel_event=None,
 ) -> list[Image.Image]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
@@ -467,6 +475,8 @@ def sdxl_generate_parallel(
         pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
 
     def _step_cb(pipeline, step_index, timestep, callback_kwargs):
+        if cancel_event and cancel_event.is_set():
+            raise CancelGeneration()
         if progress_cb:
             try:
                 progress_cb(step_index, steps)

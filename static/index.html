@@ -331,7 +331,10 @@
                 <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
             </div>
             <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
-                <div id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</div>
+                    <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
+                </div>
                 <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
                     <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
                 </div>
@@ -998,6 +1001,8 @@ a bird on a tree</textarea>
             }
         }
 
+        var currentGenId = null;
+
         async function generate() {
             const output = document.getElementById('gen-output');
             const progress = document.getElementById('gen-progress');
@@ -1005,6 +1010,7 @@ a bird on a tree</textarea>
             const progressText = document.getElementById('gen-progress-text');
             const warningsEl = document.getElementById('gen-warnings');
             const genBtn = document.getElementById('gen-btn');
+            const cancelBtn = document.getElementById('gen-cancel-btn');
 
             var genModelSelect = document.getElementById('gen-model');
             var genModel = genModelSelect.value === '__custom__'
@@ -1077,6 +1083,8 @@ a bird on a tree</textarea>
                 if (!startRes.ok) throw new Error(await startRes.text());
                 var startData = await startRes.json();
                 var genId = startData.gen_id;
+                currentGenId = genId;
+                cancelBtn.style.display = 'inline-block';
                 var shownCount = 0;
                 var totalCount = parseInt(document.getElementById('gen-count').value) || 1;
 
@@ -1117,14 +1125,21 @@ a bird on a tree</textarea>
                             shownCount++;
                         }
 
-                        if (pg.status === 'done' || pg.status === 'error') {
+                        if (pg.status === 'done' || pg.status === 'error' || pg.status === 'cancelled') {
                             clearInterval(poll);
+                            cancelBtn.style.display = 'none';
+                            currentGenId = null;
                             if (pg.status === 'done') {
                                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
                                 progressText.textContent = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
                                 setTimeout(function() { progress.style.display = 'none'; }, 3000);
+                            } else if (pg.status === 'cancelled') {
+                                progressBar.style.animation = 'none';
+                                progressBar.style.width = '0%';
+                                progressText.textContent = '❌ Cancelled';
+                                setTimeout(function() { progress.style.display = 'none'; }, 2000);
                             } else {
                                 progress.style.display = 'none';
                                 output.innerHTML = '<span class="error">Error: ' + pg.message + '</span>';
@@ -1138,10 +1153,24 @@ a bird on a tree</textarea>
                 progressBar.style.animation = 'none';
                 progressBar.style.width = '0%';
                 progress.style.display = 'none';
+                cancelBtn.style.display = 'none';
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
                 genBtn.disabled = false;
                 genBtn.textContent = 'Generate Image';
+                currentGenId = null;
             }
+        }
+
+        async function cancelGeneration() {
+            if (!currentGenId) return;
+            const cancelBtn = document.getElementById('gen-cancel-btn');
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = '...';
+            try {
+                var fd = new FormData();
+                fd.append('gen_id', currentGenId);
+                await fetch('/api/generate_cancel', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
+            } catch(e) {}
         }
 
         async function batchGenerate() {
