@@ -290,14 +290,13 @@ def _get_pipeline(
             pipeline = _load_pipeline(FluxPipeline, model_path, dtype=dtype)
         except Exception as e:
             if 'Mistral' in str(e) or 'text_model' in str(e) or 'Qwen' in str(e):
-                # Try auto-detection via DiffusionPipeline
-                try:
+                if os.path.isdir(model_path):
                     from diffusers import DiffusionPipeline
                     pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
-                except Exception:
+                else:
                     raise HTTPException(status_code=400,
-                        detail="This appears to be a FLUX.2 checkpoint. "
-                               "Make sure you have the latest diffusers: pip install -U diffusers")
+                        detail="This appears to be a FLUX.2 single file, which is not supported.\n"
+                               "Use the full directory format instead.")
             else:
                 kwargs = dict(vae=vae, dtype=dtype)
                 if text_encoder_path and os.path.exists(text_encoder_path):
@@ -310,18 +309,13 @@ def _get_pipeline(
                 pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
         if os.path.isfile(model_path):
-            from diffusers import Flux2Pipeline, Flux2KleinPipeline, Flux2KleinKVPipeline, DiffusionPipeline
-            last_err = None
-            for cls in [Flux2KleinPipeline, Flux2KleinKVPipeline, Flux2Pipeline, DiffusionPipeline]:
-                try:
-                    pipeline = _load_pipeline(cls, model_path, dtype=dtype)
-                    break
-                except Exception as e:
-                    last_err = e
-                    continue
-            else:
-                raise HTTPException(status_code=400,
-                    detail=f"Failed to load FLUX.2 checkpoint: {last_err}")
+            raise HTTPException(status_code=400,
+                detail="FLUX.2 single .safetensors files are not supported.\n"
+                       "Use the full directory format instead:\n"
+                       "e.g. /home/yokiz/stable-diffusion/models/checkpoints/FLUX.2-dev/")
+        else:
+            from diffusers import DiffusionPipeline
+            pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
         else:
             from diffusers import DiffusionPipeline
             pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
