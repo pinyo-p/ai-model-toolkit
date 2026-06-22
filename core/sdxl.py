@@ -33,6 +33,8 @@ def _detect_model_type(model_path: str) -> str:
     model_lower = model_path.lower()
     if any(x in model_lower for x in ["z-image", "z_image", "zimage"]):
         return "zimage"
+    if any(x in model_lower for x in ["flux2", "flux.2", "flux-2"]):
+        return "flux2"
     if any(x in model_lower for x in ["flux"]):
         return "flux"
     if any(x in model_lower for x in ["xl", "sdxl", "pony", "sd_xl", "illustrious"]):
