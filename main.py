@@ -348,21 +348,13 @@ async def api_check_model(
             })
 
     if model_type == "flux2":
-        flux2_repo = "black-forest-labs/FLUX.2-dev"
         is_hf_repo = not os.path.isfile(model_path) and not os.path.isdir(model_path)
 
         if not os.path.exists(model_path) and not is_hf_repo:
             missing.append({
                 "component": "model",
                 "path": model_path,
-                "message": f"FLUX.2-dev not found. Download the full repo from HuggingFace.",
-                "download_repo": flux2_repo
-            })
-        elif os.path.isfile(model_path):
-            warnings.append({
-                "component": "model",
-                "message": "FLUX.2 cannot be loaded from a single .safetensors file. You need the full directory.",
-                "download_repo": flux2_repo
+                "message": f"Model not found.",
             })
 
     return {
@@ -640,7 +632,9 @@ async def api_generate_async(
 
     t = threading.Thread(target=_run_gen, args=(gen_id, prompt, negative, lora_paths, weight_list or None, model_path, vae_path or None, text_encoder_path or None, steps, cfg, seed, width, height, count, mode), daemon=True)
     t.start()
-    return {"gen_id": gen_id, "status": "started"}
+    gpu_info = gpu.check_gpu()
+    dev = gpu_info["gpu_name"] if gpu_info["cuda_available"] else "CPU"
+    return {"gen_id": gen_id, "status": "started", "device": dev}
 
 
 @app.post("/api/batch_generate")

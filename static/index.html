@@ -1084,8 +1084,10 @@ a bird on a tree</textarea>
                 if (!startRes.ok) throw new Error(await startRes.text());
                 var startData = await startRes.json();
                 var genId = startData.gen_id;
+                var devLabel = startData.device || '';
                 currentGenId = genId;
                 cancelBtn.style.display = 'inline-block';
+                progressText.textContent = 'Starting... (' + devLabel + ')';
                 var shownCount = 0;
                 var totalCount = parseInt(document.getElementById('gen-count').value) || 1;
 
