@@ -161,22 +161,37 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
 
 
 def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token):
-    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file.
-    Loads checkpoint directly into GPU/unified memory for speed."""
+    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    ckpt = safetensors_load_file(model_path, device=device)
+    import time
+    t0 = time.time()
 
     from diffusers import Flux2KleinPipeline
     repo = "black-forest-labs/FLUX.2-klein-9B"
+    print(f"[flux2] Loading base pipeline from {repo}...")
     pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
+    print(f"[flux2] Base pipeline loaded in {time.time()-t0:.1f}s")
 
-    # Map model.diffusion_model.* keys to transformer state dict
-    unet_state = {k.replace("model.diffusion_model.", ""): v for k, v in ckpt.items() if k.startswith("model.diffusion_model.")}
+    # Load transformer weights using safe_open (no full file load into memory)
+    from safetensors import safe_open
+    print(f"[flux2] Reading checkpoint keys via safe_open...")
+    unet_state = {}
+    with safe_open(model_path, framework="pt", device=device) as f:
+        keys = [k for k in f.keys() if k.startswith("model.diffusion_model.")]
+        print(f"[flux2] Found {len(keys)} transformer keys, loading...")
+        for i, k in enumerate(keys):
+            unet_state[k.replace("model.diffusion_model.", "")] = f.get_tensor(k)
+            if (i + 1) % 50 == 0:
+                print(f"[flux2]   loaded {i+1}/{len(keys)} keys ({time.time()-t0:.1f}s)")
+    print(f"[flux2] All keys loaded in {time.time()-t0:.1f}s")
+
     if unet_state:
+        t1 = time.time()
         missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
-        print(f"[flux2] Loaded {len(unet_state)} transformer keys. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+        print(f"[flux2] Weights swapped in {time.time()-t1:.1f}s. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
 
-    del ckpt, unet_state
+    del unet_state
+    print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
     return pipe
 
 
