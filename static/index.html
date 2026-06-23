@@ -1103,16 +1103,18 @@ a bird on a tree</textarea>
                     try {
                         var pr = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
                         var pg = await pr.json();
+                        var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                        var timeStr = ' [' + elapsed + 's]';
                         if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
                         if (pg.status === 'loading') {
                             progressBar.style.width = '15%';
-                            progressText.textContent = pg.message || 'Loading model...';
+                            progressText.textContent = (pg.message || 'Loading model...') + timeStr;
                         } else if (pg.status === 'generating' && pg.total_steps > 0) {
                             var pct = Math.min(90, 15 + (pg.step / pg.total_steps) * 75);
                             progressBar.style.animation = 'none';
                             progressBar.style.width = pct + '%';
                             var imgNum = pg.current_image || 1;
-                            progressText.textContent = 'Image ' + imgNum + '/' + totalCount + ': Step ' + pg.step + '/' + pg.total_steps;
+                            progressText.textContent = 'Image ' + imgNum + '/' + totalCount + ': Step ' + pg.step + '/' + pg.total_steps + timeStr;
                         }
 
                         // Show new images as they complete (queue mode)
@@ -1138,7 +1140,6 @@ a bird on a tree</textarea>
                             cancelBtn.style.display = 'none';
                             currentGenId = null;
                             if (pg.status === 'done') {
-                                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
                                 progressText.textContent = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
@@ -1146,11 +1147,11 @@ a bird on a tree</textarea>
                             } else if (pg.status === 'cancelled') {
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '0%';
-                                progressText.textContent = '❌ Cancelled';
+                                progressText.textContent = '❌ Cancelled [' + elapsed + 's]';
                                 setTimeout(function() { progress.style.display = 'none'; }, 2000);
                             } else {
                                 progress.style.display = 'none';
-                                output.innerHTML = '<span class="error">Error: ' + pg.message + '</span>';
+                                output.innerHTML = '<span class="error">' + escapeHtml(pg.message || 'Error') + timeStr + '</span>';
                             }
                             genBtn.disabled = false;
                             genBtn.textContent = 'Generate Image';
