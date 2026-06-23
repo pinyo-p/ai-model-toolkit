@@ -452,8 +452,10 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     cancel_event = threading.Event()
     with _gen_cancel_lock:
         _gen_cancel_events[gen_id] = cancel_event
+    gpu_info = gpu.check_gpu()
+    dev = gpu_info["gpu_name"] if gpu_info["cuda_available"] else "CPU"
     try:
-        _set_gen_progress(gen_id, status="loading", message="Loading model...", images_count=0, total_images=count)
+        _set_gen_progress(gen_id, status="loading", message=f"Loading model... ({dev})", images_count=0, total_images=count)
 
         def _save_image(img, idx):
             fname = f"{gen_id}_{idx}.png"
@@ -512,7 +514,7 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     except sdxl.CancelGeneration:
         _set_gen_progress(gen_id, status="cancelled", message="Cancelled")
     except Exception as e:
-        _set_gen_progress(gen_id, status="error", message=str(e))
+        _set_gen_progress(gen_id, status="error", message=f"{dev}: {e}")
     finally:
         with _gen_cancel_lock:
             _gen_cancel_events.pop(gen_id, None)
