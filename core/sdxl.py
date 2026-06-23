@@ -5,7 +5,6 @@ from PIL import Image
 import os
 import struct
 import json
-from .gpu import check_gpu
 
 from safetensors.torch import load_file as safetensors_load_file
 
@@ -355,19 +354,8 @@ def _get_pipeline(
         kwargs = dict(vae=vae, dtype=dtype)
         pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
 
-    gpu_info = check_gpu()
-    is_unified = gpu_info.get("unified_memory", False)
-    if not is_unified and gpu_info["vram_total_gb"] < 20:
-        if hasattr(pipeline, "enable_vae_slicing"):
-            pipeline.enable_vae_slicing()
-        if hasattr(pipeline, "enable_vae_tiling"):
-            pipeline.enable_vae_tiling()
-
     if device == "cuda":
-        if is_unified or not hasattr(pipeline, "enable_model_cpu_offload"):
-            pipeline = pipeline.to(device)
-        else:
-            pipeline.enable_model_cpu_offload()
+        pipeline = pipeline.to(device)
     else:
         pipeline = pipeline.to("cpu")
 
