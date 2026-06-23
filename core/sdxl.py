@@ -290,12 +290,6 @@ def _get_pipeline(
             if tokenizer is not None:
                 kwargs['tokenizer'] = tokenizer
             pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
-            # Optional optimizations for Z-Image-Turbo
-            if hasattr(pipeline, 'transformer'):
-                try:
-                    pipeline.transformer.compile()
-                except Exception:
-                    pass
     elif model_type == "pixart":
         try:
             from diffusers import PixArtAlphaPipeline
@@ -373,7 +367,6 @@ def _get_pipeline(
                         comp.fuse_qkv_projections()
                 except Exception:
                     pass
-                torch.compile(comp)
         try:
             vae_comp = pipeline.vae
             vae_comp.to(memory_format=torch.channels_last)
