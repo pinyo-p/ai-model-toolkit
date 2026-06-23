@@ -161,26 +161,22 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
 
 
 def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token):
-    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
-    ckpt = safetensors_load_file(model_path, device="cpu")
+    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file.
+    Loads checkpoint directly into GPU/unified memory for speed."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    ckpt = safetensors_load_file(model_path, device=device)
 
     from diffusers import Flux2KleinPipeline
     repo = "black-forest-labs/FLUX.2-klein-9B"
     pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
 
     # Map model.diffusion_model.* keys to transformer state dict
-    unet_state = {}
-    for k, v in ckpt.items():
-        if k.startswith("model.diffusion_model."):
-            unet_state[k.replace("model.diffusion_model.", "")] = v
+    unet_state = {k.replace("model.diffusion_model.", ""): v for k, v in ckpt.items() if k.startswith("model.diffusion_model.")}
     if unet_state:
         missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
         print(f"[flux2] Loaded {len(unet_state)} transformer keys. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
 
-    # Also load text encoder if present in checkpoint
-    te_prefixes = ["te_encoder.", "text_encoder.", "clip_l.", "t5xxl."]
-    has_te = any(any(k.startswith(p) for p in te_prefixes) for k in ckpt)
-    del ckpt
+    del ckpt, unet_state
     return pipe
 
 
