@@ -1094,7 +1094,8 @@ a bird on a tree</textarea>
                 var devLabel = startData.device || '';
                 currentGenId = genId;
                 genLogEntries = [];
-                lastLogMsg = '';
+                lastGenMsg = '';
+                lastGenStep = '';
                 cancelBtn.style.display = 'inline-block';
                 progressText.textContent = 'Starting...';
                 document.getElementById('gen-dev-label').textContent = devLabel ? '(' + devLabel + ')' : '';
@@ -1111,19 +1112,19 @@ a bird on a tree</textarea>
                         var pg = await pr.json();
                         if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
 
-                        // Log message changes
-                        var newMsg = pg.message || pg.status || '';
-                        if (newMsg && newMsg !== lastLogMsg) {
+                        // Log backend messages (deduplicated)
+                        var newMsg = pg.message || '';
+                        if (newMsg && newMsg !== lastGenMsg) {
                             appendGenLog(newMsg, t0);
-                            lastLogMsg = newMsg;
+                            lastGenMsg = newMsg;
                         }
-                        // Log step progress
+                        // Log step progress (only when step advances)
                         if (pg.status === 'generating' && pg.step !== undefined && pg.total_steps > 0) {
                             var stepKey = pg.current_image || 1;
                             var stepLabel = 'Step ' + pg.step + '/' + pg.total_steps + ' (Image ' + stepKey + ')';
-                            if (stepLabel !== lastLogMsg) {
+                            if (stepLabel !== lastGenStep) {
                                 appendGenLog(stepLabel, t0);
-                                lastLogMsg = stepLabel;
+                                lastGenStep = stepLabel;
                             }
                         }
 
@@ -1201,7 +1202,8 @@ a bird on a tree</textarea>
         }
 
         var genLogEntries = [];
-        var lastLogMsg = '';
+        var lastGenMsg = '';
+        var lastGenStep = '';
 
         function appendGenLog(msg, t0) {
             var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
