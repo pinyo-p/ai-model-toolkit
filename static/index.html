@@ -1112,6 +1112,9 @@ a bird on a tree</textarea>
                         var pg = await pr.json();
                         if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
 
+                        // Update last log entry timestamp in real-time
+                        if (genLogEntries.length > 0) updateLastGenLogTime(t0);
+
                         // Log backend messages (deduplicated)
                         var newMsg = pg.message || '';
                         if (newMsg && newMsg !== lastGenMsg) {
@@ -1208,11 +1211,23 @@ a bird on a tree</textarea>
         function appendGenLog(msg, t0) {
             var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
             genLogEntries.push('[' + elapsed + 's] ' + msg);
+            updateGenLogView();
+        }
+
+        function updateGenLogView() {
             var container = document.getElementById('gen-log');
             if (container && container.style.display !== 'none') {
                 container.innerHTML = genLogEntries.join('\n');
                 container.scrollTop = container.scrollHeight;
             }
+        }
+
+        function updateLastGenLogTime(t0) {
+            if (genLogEntries.length === 0) return;
+            var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            var last = genLogEntries[genLogEntries.length - 1];
+            genLogEntries[genLogEntries.length - 1] = last.replace(/^\[\d+\.\d+s\]/, '[' + elapsed + 's]');
+            updateGenLogView();
         }
 
         function toggleGenLog() {
