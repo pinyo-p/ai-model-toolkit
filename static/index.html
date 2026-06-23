@@ -344,6 +344,7 @@
             </div>
             <div style="margin:6px 0;">
                 <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
                 <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
             </div>
             <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
@@ -1259,10 +1260,22 @@ a bird on a tree</textarea>
                 container.innerHTML = genLogEntries.join('\n');
                 container.scrollTop = container.scrollHeight;
                 btn.textContent = '📋 Log ▲';
+                document.getElementById('gen-log-copy').style.display = 'inline-block';
             } else {
                 container.style.display = 'none';
                 btn.textContent = '📋 Log ▼';
+                document.getElementById('gen-log-copy').style.display = 'none';
             }
+        }
+
+        function copyGenLog() {
+            var text = genLogEntries.join('\n');
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(function() {
+                var btn = document.getElementById('gen-log-copy');
+                btn.textContent = '✅ Copied';
+                setTimeout(function() { btn.textContent = '📄 Copy'; }, 2000);
+            }).catch(function() {});
         }
 
         async function cancelGeneration() {
