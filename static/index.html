@@ -342,6 +342,10 @@
                     <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
                 </div>
             </div>
+            <div style="margin:6px 0;">
+                <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;"></div>
+            </div>
             <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
             <div id="active-jobs" style="margin:8px 0;display:none;"></div>
             <div class="output" id="gen-output">
@@ -1089,6 +1093,8 @@ a bird on a tree</textarea>
                 var genId = startData.gen_id;
                 var devLabel = startData.device || '';
                 currentGenId = genId;
+                genLogEntries = [];
+                lastLogMsg = '';
                 cancelBtn.style.display = 'inline-block';
                 progressText.textContent = 'Starting...';
                 document.getElementById('gen-dev-label').textContent = devLabel ? '(' + devLabel + ')' : '';
@@ -1103,18 +1109,33 @@ a bird on a tree</textarea>
                     try {
                         var pr = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
                         var pg = await pr.json();
-                        var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                        var timeStr = ' [' + elapsed + 's]';
                         if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
+
+                        // Log message changes
+                        var newMsg = pg.message || pg.status || '';
+                        if (newMsg && newMsg !== lastLogMsg) {
+                            appendGenLog(newMsg, t0);
+                            lastLogMsg = newMsg;
+                        }
+                        // Log step progress
+                        if (pg.status === 'generating' && pg.step !== undefined && pg.total_steps > 0) {
+                            var stepKey = pg.current_image || 1;
+                            var stepLabel = 'Step ' + pg.step + '/' + pg.total_steps + ' (Image ' + stepKey + ')';
+                            if (stepLabel !== lastLogMsg) {
+                                appendGenLog(stepLabel, t0);
+                                lastLogMsg = stepLabel;
+                            }
+                        }
+
                         if (pg.status === 'loading') {
                             progressBar.style.width = '15%';
-                            progressText.textContent = (pg.message || 'Loading model...') + timeStr;
+                            progressText.textContent = pg.message || 'Loading model...';
                         } else if (pg.status === 'generating' && pg.total_steps > 0) {
                             var pct = Math.min(90, 15 + (pg.step / pg.total_steps) * 75);
                             progressBar.style.animation = 'none';
                             progressBar.style.width = pct + '%';
                             var imgNum = pg.current_image || 1;
-                            progressText.textContent = 'Image ' + imgNum + '/' + totalCount + ': Step ' + pg.step + '/' + pg.total_steps + timeStr;
+                            progressText.textContent = 'Image ' + imgNum + '/' + totalCount + ': Step ' + pg.step + '/' + pg.total_steps;
                         }
 
                         // Show new images as they complete (queue mode)
@@ -1133,6 +1154,7 @@ a bird on a tree</textarea>
                                 + '</div>';
                             grid.appendChild(wrap);
                             shownCount++;
+                            appendGenLog('✅ Image ' + shownCount + '/' + totalCount + ' completed', t0);
                         }
 
                         if (pg.status === 'done' || pg.status === 'error' || pg.status === 'cancelled') {
@@ -1140,18 +1162,26 @@ a bird on a tree</textarea>
                             cancelBtn.style.display = 'none';
                             currentGenId = null;
                             if (pg.status === 'done') {
+                                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                                var doneMsg = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
-                                progressText.textContent = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
+                                progressText.textContent = doneMsg;
+                                appendGenLog(doneMsg, t0);
                                 setTimeout(function() { progress.style.display = 'none'; }, 3000);
                             } else if (pg.status === 'cancelled') {
+                                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                                var cancelMsg = '❌ Cancelled [' + elapsed + 's]';
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '0%';
-                                progressText.textContent = '❌ Cancelled [' + elapsed + 's]';
+                                progressText.textContent = cancelMsg;
+                                appendGenLog(cancelMsg, t0);
                                 setTimeout(function() { progress.style.display = 'none'; }, 2000);
                             } else {
                                 progress.style.display = 'none';
-                                output.innerHTML = '<span class="error">' + escapeHtml(pg.message || 'Error') + timeStr + '</span>';
+                                var errMsg = escapeHtml(pg.message || 'Error');
+                                output.innerHTML = '<span class="error">' + errMsg + '</span>';
+                                appendGenLog('❌ Error: ' + errMsg, t0);
                             }
                             genBtn.disabled = false;
                             genBtn.textContent = 'Generate Image';
@@ -1167,6 +1197,33 @@ a bird on a tree</textarea>
                 genBtn.disabled = false;
                 genBtn.textContent = 'Generate Image';
                 currentGenId = null;
+            }
+        }
+
+        var genLogEntries = [];
+        var lastLogMsg = '';
+
+        function appendGenLog(msg, t0) {
+            var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+            genLogEntries.push('[' + elapsed + 's] ' + msg);
+            var container = document.getElementById('gen-log');
+            if (container && container.style.display !== 'none') {
+                container.innerHTML = genLogEntries.join('\n');
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function toggleGenLog() {
+            var container = document.getElementById('gen-log');
+            var btn = document.getElementById('gen-log-toggle');
+            if (container.style.display === 'none') {
+                container.style.display = 'block';
+                container.innerHTML = genLogEntries.join('\n');
+                container.scrollTop = container.scrollHeight;
+                btn.textContent = '📋 Log ▲';
+            } else {
+                container.style.display = 'none';
+                btn.textContent = '📋 Log ▼';
             }
         }
 
