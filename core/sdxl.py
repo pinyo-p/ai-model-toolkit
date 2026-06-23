@@ -160,7 +160,7 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
     return pipe
 
 
-def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token):
+def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None):
     """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     import time
@@ -168,9 +168,52 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token):
 
     from diffusers import Flux2KleinPipeline
     repo = "black-forest-labs/FLUX.2-klein-9B"
-    print(f"[flux2] Loading base pipeline from {repo}...")
+
+    # Pre-download with progress if not cached
+    import huggingface_hub as hf_hub
+    cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
+    if cached is None or not os.path.exists(cached):
+        if on_message:
+            on_message("Downloading base model from HuggingFace...")
+
+        files = hf_hub.list_repo_files(repo, token=hf_token)
+        sizes = {}
+        total_bytes = 0
+        for f in files:
+            try:
+                s = hf_hub.file_size(repo, f, token=hf_token)
+                sizes[f] = s
+                total_bytes += s
+            except Exception:
+                pass
+
+        if total_bytes and on_progress:
+            dl_base = [0]
+
+            def _file_progress(curr, tot):
+                on_progress(dl_base[0] + curr, total_bytes)
+
+            if on_message:
+                gb = total_bytes / (1024**3)
+                on_message(f"Downloading {len(files)} files ({gb:.1f}GB)...")
+
+            for f in files:
+                hf_hub.hf_hub_download(repo, f, token=hf_token, progress_callback=_file_progress)
+                dl_base[0] += sizes.get(f, 0)
+                on_progress(dl_base[0], total_bytes)
+        else:
+            if on_message:
+                on_message(f"Downloading {len(files)} files...")
+            for f in files:
+                hf_hub.hf_hub_download(repo, f, token=hf_token)
+
+    if on_message:
+        on_message("Loading base pipeline...")
     pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
     print(f"[flux2] Base pipeline loaded in {time.time()-t0:.1f}s")
+
+    if on_message:
+        on_message("Swapping checkpoint weights...")
 
     # Load transformer weights using safe_open (no full file load into memory)
     from safetensors import safe_open
@@ -199,6 +242,8 @@ def _get_pipeline(
     model_path: str = "stabilityai/stable-diffusion-xl-base-1.0",
     vae_path: str = None,
     text_encoder_path: str = None,
+    on_message=None,
+    on_progress=None,
 ):
     cache_key = f"{model_path}|{vae_path}|{text_encoder_path}"
 
@@ -344,7 +389,7 @@ def _get_pipeline(
         if os.path.isfile(model_path):
             # FLUX.2 single files: load base pipeline from HF, then load transformer weights from checkpoint
             hf_token = os.environ.get("HF_TOKEN")
-            pipeline = _load_base_flux2_and_swap_weights(model_path, dtype, hf_token)
+            pipeline = _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=on_message, on_progress=on_progress)
         else:
             pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
@@ -403,9 +448,11 @@ def sdxl_generate(
     height: int = 1024,
     progress_cb=None,
     cancel_event=None,
+    on_message=None,
+    on_progress=None,
 ) -> Image.Image:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
+    pipeline = _get_pipeline(model_path, vae_path, text_encoder_path, on_message=on_message, on_progress=on_progress)
 
     generator = torch.Generator(device=device).manual_seed(seed)
 
@@ -460,9 +507,11 @@ def sdxl_generate_parallel(
     height: int = 1024,
     progress_cb=None,
     cancel_event=None,
+    on_message=None,
+    on_progress=None,
 ) -> list[Image.Image]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    pipeline = _get_pipeline(model_path, vae_path, text_encoder_path)
+    pipeline = _get_pipeline(model_path, vae_path, text_encoder_path, on_message=on_message, on_progress=on_progress)
 
     if seeds is None:
         seeds = list(range(len(prompts)))

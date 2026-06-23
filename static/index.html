@@ -85,6 +85,8 @@
         .lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
         .lightbox-close { position: fixed; top: 20px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; z-index: 10002; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
         .lightbox-download { position: fixed; bottom: 20px; right: 20px; padding: 10px 20px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10002; text-decoration: none; font-size: 14px; }
+        .lightbox-share { position: fixed; bottom: 20px; right: 120px; padding: 10px 20px; background: #555; color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10002; font-size: 14px; }
+        .lightbox-share:hover { background: #777; }
 
         /* File Table */
         .file-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -1137,8 +1139,15 @@ a bird on a tree</textarea>
                         }
 
                         if (pg.status === 'loading') {
-                            progressBar.style.width = '15%';
-                            progressText.textContent = pg.message || 'Loading model...';
+                            if (pg.dl_total > 0 && pg.dl_received < pg.dl_total) {
+                                var dlPct = Math.min(100, (pg.dl_received / pg.dl_total) * 100);
+                                progressBar.style.animation = 'none';
+                                progressBar.style.width = dlPct + '%';
+                                progressText.textContent = friendlySize(pg.dl_received) + ' / ' + friendlySize(pg.dl_total) + ' (' + dlPct.toFixed(1) + '%)';
+                            } else {
+                                progressBar.style.width = '15%';
+                                progressText.textContent = pg.message || 'Loading model...';
+                            }
                         } else if (pg.status === 'generating' && pg.total_steps > 0) {
                             var pct = Math.min(90, 15 + (pg.step / pg.total_steps) * 75);
                             progressBar.style.animation = 'none';
@@ -1276,13 +1285,13 @@ a bird on a tree</textarea>
                 navigator.clipboard.writeText(text).then(function() {
                     btn.textContent = '✅ Copied';
                     setTimeout(function() { btn.textContent = '📄 Copy'; }, 2000);
-                }).catch(function() { fallbackCopy(text, btn); });
+                }).catch(function() { fallbackCopyGenLog(text, btn); });
             } else {
-                fallbackCopy(text, btn);
+                fallbackCopyGenLog(text, btn);
             }
         }
 
-        function fallbackCopy(text, btn) {
+        function fallbackCopyGenLog(text, btn) {
             var ta = document.createElement('textarea');
             ta.value = text;
             ta.style.position = 'fixed';
@@ -1879,9 +1888,14 @@ a bird on a tree</textarea>
                 const data = await res.json();
                 if (res.ok) {
                     var msg = '<pre style="color:#4caf50;font-size:12px;max-height:200px;overflow:auto;white-space:pre-wrap;">' + escapeHtml(data.output || '') + '</pre>';
-                    msg += '<br><span style="color:#00ff00;">Update done. Restarting...</span>';
+                    if (!data.already_updated) {
+                        msg += '<br><span style="color:#00ff00;">Update done. Restarting...</span>';
+                        setTimeout(() => { btn.disabled = false; btn.textContent = 'git pull & restart'; }, 5000);
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = 'git pull & restart';
+                    }
                     output.innerHTML = msg;
-                    setTimeout(() => { btn.disabled = false; btn.textContent = 'git pull & restart'; }, 5000);
                 } else {
                     output.innerHTML = '<span class="error">' + escapeHtml(data.detail || 'Update failed') + '</span>';
                     btn.disabled = false;
@@ -2694,6 +2708,17 @@ a bird on a tree</textarea>
         function closeLightbox() {
             document.getElementById('lightbox').classList.remove('active');
         }
+        function shareLightboxImage(e) {
+            e.stopPropagation();
+            var src = document.querySelector('#lightbox img').src;
+            if (navigator.share) {
+                navigator.share({ title: 'AI Generated Image', url: src }).catch(function(){});
+            } else {
+                navigator.clipboard.writeText(src).then(function() {
+                    showAlert('Copied', 'Image URL copied to clipboard');
+                }).catch(function(){});
+            }
+        }
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeLightbox();
             if (e.key === 'Escape') closeGallery();
@@ -2801,6 +2826,7 @@ a bird on a tree</textarea>
     <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">
         <button class="lightbox-close" onclick="closeLightbox()">✕</button>
         <img src="" alt="Full size" onclick="event.stopPropagation()">
+        <button class="lightbox-share" onclick="shareLightboxImage(event)">📤 Share</button>
         <a class="lightbox-download" href="" download="image.png" onclick="event.stopPropagation()">⬇ Download</a>
     </div>
 

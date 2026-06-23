@@ -454,6 +454,12 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     try:
         _set_gen_progress(gen_id, status="loading", message=f"Loading {model_name}{model_size}...", images_count=0, total_images=count, dev=dev)
 
+        def _on_loading_msg(msg):
+            _set_gen_progress(gen_id, status="loading", message=msg)
+
+        def _on_dl_progress(received, total):
+            _set_gen_progress(gen_id, dl_received=received, dl_total=total)
+
         def _save_image(img, idx):
             fname = f"{gen_id}_{idx}.png"
             fpath = os.path.join(OUTPUT_DIR, fname)
@@ -475,7 +481,9 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                 text_encoder_path=text_encoder_path,
                 steps=steps, cfg=cfg, seeds=seeds, width=width, height=height,
                 progress_cb=lambda step, total: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Step {step}/{total} ({count} images)"),
-                cancel_event=cancel_event
+                cancel_event=cancel_event,
+                on_message=_on_loading_msg,
+                on_progress=_on_dl_progress
             )
             image_urls = []
             for i, img in enumerate(imgs):
@@ -501,7 +509,9 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                     text_encoder_path=text_encoder_path,
                     steps=steps, cfg=cfg, seed=cur_seed, width=width, height=height,
                     progress_cb=lambda step, total, _i=i: _set_gen_progress(gen_id, status="generating", step=step, total_steps=total, message=f"Image {_i+1}/{count}: Step {step}/{total}", current_image=_i+1),
-                    cancel_event=cancel_event
+                    cancel_event=cancel_event,
+                    on_message=_on_loading_msg,
+                    on_progress=_on_dl_progress
                 )
                 url = _save_image(img, i)
                 with _gen_lock:
@@ -1807,26 +1817,29 @@ async def update_app(user: str = Depends(get_current_user)):
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=output or "git pull failed")
 
-    # Restart depending on runtime
+    already_updated = "Already up to date" in output
+
     restart_msg = ""
-    if runtime == "docker":
-        restart_msg = "Running inside Docker. Please restart the container manually."
-    elif runtime == "pm2":
-        try:
-            pm2_name = os.environ.get("name", "")
-            if not pm2_name:
-                pm2_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
-            subprocess.run(["pm2", "restart", pm2_name], capture_output=True, text=True, timeout=15, cwd=app_dir)
-            restart_msg = f"PM2 process '{pm2_name}' restarted."
-        except Exception:
-            restart_msg = "PM2 detected but restart failed. Please restart PM2 manually."
-    else:
-        restart_msg = "Bare process — please restart the server manually."
+    if not already_updated:
+        if runtime == "docker":
+            restart_msg = "Running inside Docker. Please restart the container manually."
+        elif runtime == "pm2":
+            try:
+                pm2_name = os.environ.get("name", "")
+                if not pm2_name:
+                    pm2_name = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+                subprocess.run(["pm2", "restart", pm2_name], capture_output=True, text=True, timeout=15, cwd=app_dir)
+                restart_msg = f"PM2 process '{pm2_name}' restarted."
+            except Exception:
+                restart_msg = "PM2 detected but restart failed. Please restart PM2 manually."
+        else:
+            restart_msg = "Bare process — please restart the server manually."
 
     return {
         "output": output,
         "runtime": runtime,
         "restart": restart_msg,
+        "already_updated": already_updated,
     }
 
 
