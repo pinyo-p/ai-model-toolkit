@@ -340,6 +340,7 @@
                 </div>
             </div>
             <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
+            <div id="active-jobs" style="display:none;margin:8px 0;"></div>
             <div class="output" id="gen-output">
                 <span class="placeholder">Image will appear here</span>
             </div>
@@ -1172,6 +1173,46 @@ a bird on a tree</textarea>
                 await fetch('/api/generate_cancel', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } });
             } catch(e) {}
         }
+
+        var activeJobsPoll = null;
+
+        function startActiveJobsPoll() {
+            if (activeJobsPoll) return;
+            activeJobsPoll = setInterval(async function() {
+                try {
+                    var res = await fetch('/api/active_jobs', { headers: { 'Authorization': 'Basic ' + auth } });
+                    var data = await res.json();
+                    var container = document.getElementById('active-jobs');
+                    if (data.jobs && data.jobs.length > 0) {
+                        container.style.display = 'block';
+                        container.innerHTML = '<div style="font-size:12px;color:#888;margin-bottom:4px;">⚙️ Active Jobs:</div>'
+                            + data.jobs.map(function(j) {
+                                var cancelBtn = j.type === 'generate'
+                                    ? '<button class="btn-small" style="background:#d32f2f;margin-left:8px;" onclick="cancelJob(\'' + j.id + '\')">✕</button>'
+                                    : '';
+                                return '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1e1e1e;border-radius:3px;margin-bottom:3px;font-size:12px;">'
+                                    + '<span style="color:' + (j.type === 'generate' ? '#00d4ff' : '#ffaa00') + ';">' + j.type + '</span>'
+                                    + '<span style="color:#ccc;flex:1;">' + escapeHtml(j.message || j.status) + '</span>'
+                                    + '<span style="color:#888;font-size:10px;">' + j.status + '</span>'
+                                    + cancelBtn
+                                    + '</div>';
+                            }).join('');
+                    } else {
+                        container.style.display = 'none';
+                        container.innerHTML = '';
+                    }
+                } catch(e) {}
+            }, 2000);
+        }
+
+        function cancelJob(jobId) {
+            var fd = new FormData();
+            fd.append('gen_id', jobId);
+            fetch('/api/generate_cancel', { method: 'POST', body: fd, headers: { 'Authorization': 'Basic ' + auth } }).catch(function(){});
+        }
+
+        // Start active jobs poll on page load
+        startActiveJobsPoll();
 
         async function batchGenerate() {
             const output = document.getElementById('batch-output');

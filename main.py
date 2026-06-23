@@ -547,6 +547,24 @@ async def api_generate_cancel(gen_id: str = Form(...), user: str = Depends(get_c
     return {"status": "not_found"}
 
 
+ACTIVE_STATUSES = {"loading", "generating", "pending", "downloading"}
+
+
+@app.get("/api/active_jobs")
+async def api_active_jobs(user: str = Depends(get_current_user)):
+    jobs = []
+    with _gen_lock:
+        for gid, data in _generate_progress.items():
+            if data.get("status") in ACTIVE_STATUSES:
+                jobs.append({
+                    "type": "generate",
+                    "id": gid,
+                    "status": data.get("status"),
+                    "message": data.get("message", ""),
+                })
+    return {"jobs": jobs}
+
+
 @app.delete("/api/generate_image")
 async def api_delete_generate_image(url: str = Query(...), user: str = Depends(get_current_user)):
     """Delete a generated image file."""
