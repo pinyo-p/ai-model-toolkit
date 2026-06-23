@@ -1178,7 +1178,8 @@ a bird on a tree</textarea>
 
         function startActiveJobsPoll() {
             if (activeJobsPoll) return;
-            activeJobsPoll = setInterval(async function() {
+
+            async function pollActiveJobs() {
                 try {
                     var res = await fetch('/api/active_jobs', { headers: { 'Authorization': 'Basic ' + auth } });
                     var data = await res.json();
@@ -1202,7 +1203,10 @@ a bird on a tree</textarea>
                         container.innerHTML = '';
                     }
                 } catch(e) {}
-            }, 2000);
+            }
+
+            pollActiveJobs();  // immediate on page load
+            activeJobsPoll = setInterval(pollActiveJobs, 2000);
         }
 
         function cancelJob(jobId) {
