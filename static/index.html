@@ -1112,13 +1112,13 @@ a bird on a tree</textarea>
                         var pg = await pr.json();
                         if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
 
-                        // Update last log entry timestamp in real-time
+                        // Update last elapsed timestamp live
                         if (genLogEntries.length > 0) updateLastGenLogTime(t0);
 
                         // Log backend messages (deduplicated)
                         var newMsg = pg.message || '';
                         if (newMsg && newMsg !== lastGenMsg) {
-                            appendGenLog(newMsg, t0);
+                            appendGenLog(newMsg, t0, false);
                             lastGenMsg = newMsg;
                         }
                         // Log step progress (only when step advances)
@@ -1126,7 +1126,7 @@ a bird on a tree</textarea>
                             var stepKey = pg.current_image || 1;
                             var stepLabel = 'Step ' + pg.step + '/' + pg.total_steps + ' (Image ' + stepKey + ')';
                             if (stepLabel !== lastGenStep) {
-                                appendGenLog(stepLabel, t0);
+                                appendGenLog(stepLabel, t0, true);
                                 lastGenStep = stepLabel;
                             }
                         }
@@ -1158,7 +1158,7 @@ a bird on a tree</textarea>
                                 + '</div>';
                             grid.appendChild(wrap);
                             shownCount++;
-                            appendGenLog('✅ Image ' + shownCount + '/' + totalCount + ' completed', t0);
+                            appendGenLog('✅ Image ' + shownCount + '/' + totalCount + ' completed', t0, false);
                         }
 
                         if (pg.status === 'done' || pg.status === 'error' || pg.status === 'cancelled') {
@@ -1167,25 +1167,25 @@ a bird on a tree</textarea>
                             currentGenId = null;
                             if (pg.status === 'done') {
                                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                                var doneMsg = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + elapsed + 's';
+                                var doneMsg = '✅ Done ' + shownCount + ' image' + (shownCount > 1 ? 's' : '') + ' in ' + fmtTime(elapsed);
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '100%';
                                 progressText.textContent = doneMsg;
-                                appendGenLog(doneMsg, t0);
+                                appendGenLog(doneMsg, t0, false);
                                 setTimeout(function() { progress.style.display = 'none'; }, 3000);
                             } else if (pg.status === 'cancelled') {
                                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                                var cancelMsg = '❌ Cancelled [' + elapsed + 's]';
+                                var cancelMsg = '❌ Cancelled [' + fmtTime(elapsed) + ']';
                                 progressBar.style.animation = 'none';
                                 progressBar.style.width = '0%';
                                 progressText.textContent = cancelMsg;
-                                appendGenLog(cancelMsg, t0);
+                                appendGenLog(cancelMsg, t0, false);
                                 setTimeout(function() { progress.style.display = 'none'; }, 2000);
                             } else {
                                 progress.style.display = 'none';
                                 var errMsg = escapeHtml(pg.message || 'Error');
                                 output.innerHTML = '<span class="error">' + errMsg + '</span>';
-                                appendGenLog('❌ Error: ' + errMsg, t0);
+                                appendGenLog('❌ Error: ' + errMsg, t0, false);
                             }
                             genBtn.disabled = false;
                             genBtn.textContent = 'Generate Image';
@@ -1204,13 +1204,27 @@ a bird on a tree</textarea>
             }
         }
 
+        function fmtTime(secs) {
+            var s = Math.round(parseFloat(secs));
+            if (s < 60) return s + 's';
+            var m = Math.floor(s / 60);
+            s = s % 60;
+            return m + 'm ' + s + 's';
+        }
+
         var genLogEntries = [];
         var lastGenMsg = '';
         var lastGenStep = '';
 
-        function appendGenLog(msg, t0) {
-            var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-            genLogEntries.push('[' + elapsed + 's] ' + msg);
+        function appendGenLog(msg, t0, useElapsed) {
+            if (useElapsed) {
+                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                genLogEntries.push('[' + fmtTime(elapsed) + '] ' + msg);
+            } else {
+                var now = new Date();
+                var timeStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0');
+                genLogEntries.push('[' + timeStr + '] ' + msg);
+            }
             updateGenLogView();
         }
 
@@ -1226,8 +1240,11 @@ a bird on a tree</textarea>
             if (genLogEntries.length === 0) return;
             var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
             var last = genLogEntries[genLogEntries.length - 1];
-            genLogEntries[genLogEntries.length - 1] = last.replace(/^\[\d+\.\d+s\]/, '[' + elapsed + 's]');
-            updateGenLogView();
+            // Check if last entry uses elapsed format (starts with [digits...] not [HH:MM:SS])
+            if (/^\[(\d+(\.\d+)?s|\d+m \d+s)\]/.test(last)) {
+                genLogEntries[genLogEntries.length - 1] = last.replace(/^\[[^\]]+\]/, '[' + fmtTime(elapsed) + ']');
+                updateGenLogView();
+            }
         }
 
         function toggleGenLog() {
