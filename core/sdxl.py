@@ -166,20 +166,43 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
     import time
     t0 = time.time()
 
-    from diffusers import Flux2KleinPipeline
-    repo = "black-forest-labs/FLUX.2-klein-9B"
+    from diffusers import Flux2KleinPipeline, AutoencoderKL
 
-    # Pre-download with progress if not cached
-    import huggingface_hub as hf_hub
-    cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
-    if cached is None or not os.path.exists(cached):
+    # Step 1: Try from_single_file directly (no HF download needed)
+    try:
         if on_message:
-            on_message("Downloading base model from HuggingFace...")
+            on_message("Loading single file...")
+        pipe = Flux2KleinPipeline.from_single_file(model_path, torch_dtype=dtype, token=hf_token)
+        print(f"[flux2] from_single_file succeeded in {time.time()-t0:.1f}s")
+        return pipe
+    except Exception as e:
+        print(f"[flux2] from_single_file failed: {e}")
+        if on_message:
+            on_message("from_single_file not supported, using swap method...")
+
+    # Fallback: download config + non-transformer components, then swap transformer weights
+    repo = "black-forest-labs/FLUX.2-klein-9B"
+    import huggingface_hub as hf_hub
+    skip_suffixes = ("flux-2-klein-9b.safetensors",
+                     "model-00001-of-00002.safetensors",
+                     "model-00002-of-00002.safetensors",
+                     "model.fp16.safetensors")
+
+    def _is_skip(f):
+        return any(f.endswith(s) for s in skip_suffixes)
+
+    cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
+    needs_dl = cached is None or not os.path.exists(cached)
+
+    if needs_dl:
+        if on_message:
+            on_message("Downloading config + VAE + text encoder...")
 
         files = hf_hub.list_repo_files(repo, token=hf_token)
+        dl_files = [f for f in files if not _is_skip(f)]
         sizes = {}
         total_bytes = 0
-        for f in files:
+        for f in dl_files:
             try:
                 s = hf_hub.file_size(repo, f, token=hf_token)
                 sizes[f] = s
@@ -189,28 +212,45 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
 
         if total_bytes and on_progress:
             dl_base = [0]
-
-            def _file_progress(curr, tot):
+            def _fp(curr, tot):
                 on_progress(dl_base[0] + curr, total_bytes)
-
             if on_message:
-                gb = total_bytes / (1024**3)
-                on_message(f"Downloading {len(files)} files ({gb:.1f}GB)...")
-
-            for f in files:
-                hf_hub.hf_hub_download(repo, f, token=hf_token, progress_callback=_file_progress)
+                on_message(f"Downloading non-transformer components ({total_bytes/1024**3:.1f}GB)...")
+            for f in dl_files:
+                hf_hub.hf_hub_download(repo, f, token=hf_token, progress_callback=_fp)
                 dl_base[0] += sizes.get(f, 0)
                 on_progress(dl_base[0], total_bytes)
         else:
             if on_message:
-                on_message(f"Downloading {len(files)} files...")
-            for f in files:
+                on_message(f"Downloading {len(dl_files)} files...")
+            for f in dl_files:
                 hf_hub.hf_hub_download(repo, f, token=hf_token)
 
+    # Step 2: Load VAE + text encoder from cache
     if on_message:
-        on_message("Loading base pipeline...")
-    pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
-    print(f"[flux2] Base pipeline loaded in {time.time()-t0:.1f}s")
+        on_message("Loading VAE...")
+    vae = AutoencoderKL.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=hf_token)
+
+    if on_message:
+        on_message("Loading text encoder...")
+    # FLUX.2-klein uses Qwen2; FLUX.2-dev uses T5; try both
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    try:
+        text_encoder = AutoModelForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
+        tokenizer = AutoTokenizer.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
+    except Exception:
+        from transformers import T5EncoderModel, T5Tokenizer
+        text_encoder = T5EncoderModel.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
+        tokenizer = T5Tokenizer.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
+
+    # Step 3: Assemble pipeline
+    if on_message:
+        on_message("Assembling pipeline...")
+    pipe = Flux2KleinPipeline.from_config(repo, torch_dtype=dtype, token=hf_token)
+    pipe.vae = vae
+    pipe.text_encoder = text_encoder
+    pipe.tokenizer = tokenizer
+    print(f"[flux2] Pipeline assembled in {time.time()-t0:.1f}s")
 
     if on_message:
         on_message("Swapping checkpoint weights...")
