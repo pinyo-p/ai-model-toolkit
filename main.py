@@ -639,7 +639,12 @@ async def api_generate_async(
     t.start()
     gpu_info = gpu.check_gpu()
     dev = gpu_info["gpu_name"] if gpu_info["cuda_available"] else "CPU"
-    return {"gen_id": gen_id, "status": "started", "device": dev}
+    model_name = os.path.basename(model_path)
+    model_size = ""
+    if os.path.isfile(model_path):
+        size = os.path.getsize(model_path)
+        model_size = " (" + _friendly_size(size) + ")"
+    return {"gen_id": gen_id, "status": "started", "device": dev, "model_info": f"Loading {model_name}{model_size}..."}
 
 
 @app.post("/api/batch_generate")

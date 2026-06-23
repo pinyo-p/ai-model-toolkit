@@ -1099,6 +1099,10 @@ a bird on a tree</textarea>
                 cancelBtn.style.display = 'inline-block';
                 progressText.textContent = 'Starting...';
                 document.getElementById('gen-dev-label').textContent = devLabel ? '(' + devLabel + ')' : '';
+                if (startData.model_info) {
+                    appendGenLog(startData.model_info, t0, false);
+                    lastGenMsg = startData.model_info;
+                }
                 var shownCount = 0;
                 var totalCount = parseInt(document.getElementById('gen-count').value) || 1;
 
