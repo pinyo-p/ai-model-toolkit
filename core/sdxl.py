@@ -377,6 +377,27 @@ def _get_pipeline(
     else:
         pipeline = pipeline.to("cpu")
 
+    # Speed optimizations
+    if device == "cuda":
+        for comp_name in ("transformer", "unet"):
+            comp = getattr(pipeline, comp_name, None)
+            if comp is not None:
+                try:
+                    comp.to(memory_format=torch.channels_last)
+                except Exception:
+                    pass
+                try:
+                    if hasattr(comp, "fuse_qkv_projections"):
+                        comp.fuse_qkv_projections()
+                except Exception:
+                    pass
+                torch.compile(comp)
+        try:
+            vae_comp = pipeline.vae
+            vae_comp.to(memory_format=torch.channels_last)
+        except Exception:
+            pass
+
     _pipelines[cache_key] = pipeline
     return pipeline
 
