@@ -446,8 +446,13 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
         _gen_cancel_events[gen_id] = cancel_event
     gpu_info = gpu.check_gpu()
     dev = gpu_info["gpu_name"] if gpu_info["cuda_available"] else "CPU"
+    model_name = os.path.basename(model_path)
+    model_size = ""
+    if os.path.isfile(model_path):
+        size = os.path.getsize(model_path)
+        model_size = " (" + _friendly_size(size) + ")"
     try:
-        _set_gen_progress(gen_id, status="loading", message="Loading model...", images_count=0, total_images=count, dev=dev)
+        _set_gen_progress(gen_id, status="loading", message=f"Loading {model_name}{model_size}...", images_count=0, total_images=count, dev=dev)
 
         def _save_image(img, idx):
             fname = f"{gen_id}_{idx}.png"
