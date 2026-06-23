@@ -10,14 +10,24 @@ def check_gpu() -> dict:
         "vram_total_gb": 0,
         "vram_free_gb": 0,
         "cuda_version": None,
+        "unified_memory": False,
     }
 
     if torch.cuda.is_available():
         result["cuda_available"] = True
         result["gpu_name"] = torch.cuda.get_device_name(0)
-        result["vram_total_gb"] = round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2)
-        result["vram_free_gb"] = round((torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / 1024**3, 2)
+        try:
+            result["vram_total_gb"] = round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2)
+        except Exception:
+            pass
+        try:
+            result["vram_free_gb"] = round((torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / 1024**3, 2)
+        except Exception:
+            pass
         result["cuda_version"] = torch.version.cuda or ""
+        result["unified_memory"] = any(kw in result["gpu_name"] for kw in ("GB10", "Grace", "Blackwell"))
+        if result["unified_memory"] and result["vram_total_gb"] == 0:
+            result["vram_total_gb"] = 128  # GB10 has 128GB unified
         return result
 
     try:
@@ -49,6 +59,7 @@ def check_gpu() -> dict:
         m = re.search(r"CUDA Version:\s*([\d.]+)", ver_out.stdout)
         if m:
             result["cuda_version"] = m.group(1)
+        result["unified_memory"] = any(kw in result["gpu_name"] for kw in ("GB10", "Grace", "Blackwell"))
     except Exception:
         pass
 

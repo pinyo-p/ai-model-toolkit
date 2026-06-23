@@ -356,24 +356,18 @@ def _get_pipeline(
         pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
 
     gpu_info = check_gpu()
-    if gpu_info["vram_total_gb"] < 20:
-        if hasattr(pipeline, "enable_vae_slicing"):
-            pipeline.enable_vae_slicing()
-        if hasattr(pipeline, "enable_vae_tiling"):
-            pipeline.enable_vae_tiling()
-
-    gpu_info = check_gpu()
-    if gpu_info["vram_total_gb"] < 20:
+    is_unified = gpu_info.get("unified_memory", False)
+    if not is_unified and gpu_info["vram_total_gb"] < 20:
         if hasattr(pipeline, "enable_vae_slicing"):
             pipeline.enable_vae_slicing()
         if hasattr(pipeline, "enable_vae_tiling"):
             pipeline.enable_vae_tiling()
 
     if device == "cuda":
-        if hasattr(pipeline, "enable_model_cpu_offload"):
-            pipeline.enable_model_cpu_offload()
-        else:
+        if is_unified or not hasattr(pipeline, "enable_model_cpu_offload"):
             pipeline = pipeline.to(device)
+        else:
+            pipeline.enable_model_cpu_offload()
     else:
         pipeline = pipeline.to("cpu")
 
