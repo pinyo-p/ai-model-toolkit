@@ -332,7 +332,10 @@
             </div>
             <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</div>
+                    <div>
+                        <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
+                        <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+                    </div>
                     <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
                 </div>
                 <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
@@ -1087,7 +1090,8 @@ a bird on a tree</textarea>
                 var devLabel = startData.device || '';
                 currentGenId = genId;
                 cancelBtn.style.display = 'inline-block';
-                progressText.textContent = 'Starting... (' + devLabel + ')';
+                progressText.textContent = 'Starting...';
+                document.getElementById('gen-dev-label').textContent = devLabel ? '(' + devLabel + ')' : '';
                 var shownCount = 0;
                 var totalCount = parseInt(document.getElementById('gen-count').value) || 1;
 
@@ -1099,6 +1103,7 @@ a bird on a tree</textarea>
                     try {
                         var pr = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), { headers: { 'Authorization': 'Basic ' + auth } });
                         var pg = await pr.json();
+                        if (pg.dev) document.getElementById('gen-dev-label').textContent = '(' + pg.dev + ')';
                         if (pg.status === 'loading') {
                             progressBar.style.width = '15%';
                             progressText.textContent = pg.message || 'Loading model...';

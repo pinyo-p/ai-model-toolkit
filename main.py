@@ -447,7 +447,7 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     gpu_info = gpu.check_gpu()
     dev = gpu_info["gpu_name"] if gpu_info["cuda_available"] else "CPU"
     try:
-        _set_gen_progress(gen_id, status="loading", message=f"Loading model... ({dev})", images_count=0, total_images=count)
+        _set_gen_progress(gen_id, status="loading", message="Loading model...", images_count=0, total_images=count, dev=dev)
 
         def _save_image(img, idx):
             fname = f"{gen_id}_{idx}.png"
