@@ -1271,11 +1271,30 @@ a bird on a tree</textarea>
         function copyGenLog() {
             var text = genLogEntries.join('\n');
             if (!text) return;
-            navigator.clipboard.writeText(text).then(function() {
-                var btn = document.getElementById('gen-log-copy');
+            var btn = document.getElementById('gen-log-copy');
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function() {
+                    btn.textContent = '✅ Copied';
+                    setTimeout(function() { btn.textContent = '📄 Copy'; }, 2000);
+                }).catch(function() { fallbackCopy(text, btn); });
+            } else {
+                fallbackCopy(text, btn);
+            }
+        }
+
+        function fallbackCopy(text, btn) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
                 btn.textContent = '✅ Copied';
                 setTimeout(function() { btn.textContent = '📄 Copy'; }, 2000);
-            }).catch(function() {});
+            } catch(e) {}
+            document.body.removeChild(ta);
         }
 
         async function cancelGeneration() {
