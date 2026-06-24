@@ -105,10 +105,16 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     if on_message:
         on_message("Loading scheduler + transformer config...")
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=hf_token)
-    transformer = Flux2Transformer2DModel.from_config(
-        Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token),
-        torch_dtype=dtype,
-    )
+
+    # Load transformer config and ensure correct architecture
+    raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token)
+    print(f"[flux2] Transformer raw config: class={raw_cfg.get('_class_name')}, guidance_embeds={raw_cfg.get('guidance_embeds')}, num_layers={raw_cfg.get('num_layers')}, num_single_layers={raw_cfg.get('num_single_layers')}")
+    # Remove _class_name to prevent dispatch to wrong model class (e.g. SD3Transformer2DModel)
+    raw_cfg.pop("_class_name", None)
+    # Klein (distilled) has no guidance embedding
+    if is_klein:
+        raw_cfg["guidance_embeds"] = False
+    transformer = Flux2Transformer2DModel.from_config(raw_cfg, torch_dtype=dtype)
 
     # Step 4: Assemble pipeline
     if on_message:
