@@ -13,7 +13,7 @@ dtype = torch.bfloat16
 device = "cuda" if torch.cuda.is_available() else "cpu"
 repo = "black-forest-labs/FLUX.2-klein-9B"
 
-model_path = sys.argv[1] if len(sys.argv) > 1 else "/home/yokiz/ai-model-toolkit/models/Pornmaster_Flux2_Klein.safetensors"
+model_path = sys.argv[1] if len(sys.argv) > 1 else "/home/yokiz/stable-diffusion/models/checkpoints/Moody_Desire_Mix.safetensors"
 
 name_lower = os.path.basename(model_path).lower()
 is_klein = "klein" in name_lower or "schnell" in name_lower
