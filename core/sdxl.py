@@ -1,4 +1,5 @@
 import torch
+import inspect
 from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline, AutoencoderKL
 from fastapi import HTTPException
 from PIL import Image
@@ -251,7 +252,10 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
     if on_message:
         on_message("Loading scheduler + transformer config...")
     scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=hf_token)
-    transformer = Flux2Transformer2DModel.from_config(repo, subfolder="transformer", torch_dtype=dtype, token=hf_token)
+    transformer = Flux2Transformer2DModel.from_config(
+        Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token),
+        torch_dtype=dtype,
+    )
 
     # Step 4: Assemble pipeline
     if on_message:
@@ -531,16 +535,18 @@ def sdxl_generate(
                 pass
         return callback_kwargs
 
-    image = pipeline(
+    call_kwargs = dict(
         prompt=prompt,
-        negative_prompt=negative if negative else None,
         num_inference_steps=steps,
         generator=generator,
         width=width,
         height=height,
         guidance_scale=cfg,
         callback_on_step_end=_step_cb,
-    ).images[0]
+    )
+    if negative and 'negative_prompt' in inspect.signature(pipeline.__call__).parameters:
+        call_kwargs['negative_prompt'] = negative
+    image = pipeline(**call_kwargs).images[0]
 
     return image
 
@@ -595,9 +601,8 @@ def sdxl_generate_parallel(
 
     negative_prompts = [negative if negative else None] * len(prompts)
 
-    result = pipeline(
+    call_kwargs = dict(
         prompt=prompts,
-        negative_prompt=negative_prompts,
         num_inference_steps=steps,
         generator=generators,
         width=width,
@@ -605,6 +610,9 @@ def sdxl_generate_parallel(
         guidance_scale=cfg,
         callback_on_step_end=_step_cb,
     )
+    if negative and 'negative_prompt' in inspect.signature(pipeline.__call__).parameters:
+        call_kwargs['negative_prompt'] = negative_prompts
+    result = pipeline(**call_kwargs)
 
     return result.images
 
