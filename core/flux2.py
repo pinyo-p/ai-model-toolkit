@@ -297,12 +297,14 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
         t1 = time.time()
         model_sd = pipe.transformer.state_dict()
         remapped = _remap_flux2_state_dict(unet_state, model_sd)
-        # Validate shapes before loading
+        # Validate shapes and print all mappings for debugging
         shape_errors = []
         for df_key, tensor in sorted(remapped.items()):
             expected = model_sd[df_key].shape
             if tensor.shape != expected:
                 shape_errors.append(f"  {df_key}: got {tensor.shape}, expected {expected}")
+            else:
+                print(f"[flux2] map ok: {df_key}")
         if shape_errors:
             print(f"[flux2] SHAPE MISMATCHES ({len(shape_errors)}):")
             for e in shape_errors:
