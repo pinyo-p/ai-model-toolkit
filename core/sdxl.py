@@ -217,14 +217,11 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
             on_message(f"Downloading VAE + text encoder + config ({total/1024**3:.1f}GB)...")
 
         dl_base = [0]
-        def _fp(curr, tot):
-            if on_progress:
-                on_progress(dl_base[0] + curr, total)
 
         for f in files:
             for attempt in range(3):
                 try:
-                    hf_hub.hf_hub_download(repo, f, token=hf_token, progress_callback=_fp if total else None)
+                    hf_hub.hf_hub_download(repo, f, token=hf_token)
                     dl_base[0] += sizes.get(f, 0)
                     if on_progress:
                         on_progress(dl_base[0], total)
