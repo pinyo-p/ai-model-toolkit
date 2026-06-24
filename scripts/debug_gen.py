@@ -84,17 +84,20 @@ orig_transformer_forward = transformer.forward
 model_outputs = []
 model_inputs = []
 
-def patched_transformer_forward(hidden_states, timestep, encoder_hidden_states, guidance=None, *args, **kwargs):
+def patched_transformer_forward(*args, **kwargs):
     # Capture input stats
+    hs = kwargs.get('hidden_states', args[0] if len(args) > 0 else None)
+    ts = kwargs.get('timestep', args[1] if len(args) > 1 else None)
+    enc = kwargs.get('encoder_hidden_states', args[2] if len(args) > 2 else None)
     model_inputs.append({
-        'hidden_states_mean': hidden_states.float().mean().item(),
-        'hidden_states_std': hidden_states.float().std().item(),
-        'timestep_val': timestep.item() if hasattr(timestep, 'item') else float(timestep),
-        'encoder_mean': encoder_hidden_states.float().mean().item(),
-        'encoder_std': encoder_hidden_states.float().std().item(),
+        'hidden_states_mean': hs.float().mean().item() if hs is not None else None,
+        'hidden_states_std': hs.float().std().item() if hs is not None else None,
+        'timestep_val': ts.item() if hasattr(ts, 'item') else (float(ts) if ts is not None else None),
+        'encoder_mean': enc.float().mean().item() if enc is not None else None,
+        'encoder_std': enc.float().std().item() if enc is not None else None,
     })
     # Run original forward
-    result = orig_transformer_forward(hidden_states, timestep, encoder_hidden_states, guidance, *args, **kwargs)
+    result = orig_transformer_forward(*args, **kwargs)
     # Capture output stats
     out = result.sample if hasattr(result, 'sample') else result[0]
     model_outputs.append({
