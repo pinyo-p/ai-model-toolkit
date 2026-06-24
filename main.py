@@ -463,7 +463,9 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
         model_name=model_name, family=sdxl._detect_model_type(model_path),
         steps=steps, cfg=cfg, seeds=seeds,
         prompt=prompt, negative=negative, width=width, height=height,
-        lora=lora_info, start_time=start_time)
+        lora=lora_info, start_time=start_time,
+        vae=os.path.basename(vae_path) if vae_path else "default",
+        text_encoder=os.path.basename(text_encoder_path) if text_encoder_path else "default")
     try:
 
         def _on_loading_msg(msg):

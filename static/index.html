@@ -2872,6 +2872,8 @@ a bird on a tree</textarea>
                 panel.innerHTML = '<table>' + v('Status', statusIcon + ' ' + data.status)
                     + v('Model Type', familyLabel)
                     + v('Model', data.model_name || '-')
+                    + v('VAE', data.vae || 'default')
+                    + v('Text Encoder', data.text_encoder || 'default')
                     + v('Prompt', (data.prompt || '').substring(0, 200))
                     + v('Negative', (data.negative || '').substring(0, 100))
                     + v('Steps', data.steps || '-')
