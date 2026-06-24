@@ -97,6 +97,8 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     if on_message:
         on_message("Loading VAE...")
     vae = AutoencoderKLFlux2.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=hf_token)
+    vae_cfg = vae.config
+    print(f"[flux2] VAE config: scaling_factor={vae_cfg.scaling_factor}, block_out_channels={vae_cfg.block_out_channels}, latent_channels={vae_cfg.latent_channels}, in_channels={vae_cfg.in_channels}"
 
     if on_message:
         on_message("Loading text encoder...")
@@ -149,6 +151,13 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
             print(f"[flux2] Non-transformer keys ({len(other_keys)}):")
             for k in other_keys:
                 print(f"  {k}")
+        # Check for VAE keys in checkpoint
+        vae_ckpt_keys = [k for k in all_ckpt_keys if "first_stage_model" in k]
+        if vae_ckpt_keys:
+            print(f"[flux2] WARNING: checkpoint has first_stage_model (VAE) keys: {len(vae_ckpt_keys)}")
+        # Check for any key that suggests a different base model
+        if any("sdpa" in k or "lora" in k or "diffusion_model." not in k for k in all_ckpt_keys):
+            print(f"[flux2] NOTE: checkpoint contains non-standard keys (sdpa/lora/etc) - may be from a different source")
         # Group transformer keys
         double_blocks = sorted([k for k in trans_keys if "double_blocks" in k])
         single_blocks = sorted([k for k in trans_keys if "single_blocks" in k])
