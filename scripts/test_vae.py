@@ -1,7 +1,13 @@
 """Test AutoencoderKLFlux2 by encoding & decoding a real image."""
-import os, sys, torch
+import os, sys, json, torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["HF_TOKEN"] = open(os.path.expanduser("~/.huggingface/token")).read().strip()
+if "HF_TOKEN" not in os.environ:
+    sf = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
+    if os.path.exists(sf):
+        s = json.load(open(sf))
+        os.environ["HF_TOKEN"] = s.get("hf_token", "")
+    if not os.environ.get("HF_TOKEN"):
+        os.environ["HF_TOKEN"] = open(os.path.expanduser("~/.huggingface/token")).read().strip()
 
 import numpy as np
 from PIL import Image
