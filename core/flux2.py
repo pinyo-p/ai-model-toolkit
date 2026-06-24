@@ -98,7 +98,7 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
         on_message("Loading VAE...")
     vae = AutoencoderKLFlux2.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=hf_token)
     vae_cfg = vae.config
-    print(f"[flux2] VAE config: scaling_factor={vae_cfg.scaling_factor}, block_out_channels={vae_cfg.block_out_channels}, latent_channels={vae_cfg.latent_channels}, in_channels={vae_cfg.in_channels}"
+    print(f"[flux2] VAE config: scaling_factor={vae_cfg.scaling_factor}, block_out_channels={vae_cfg.block_out_channels}, latent_channels={vae_cfg.latent_channels}, in_channels={vae_cfg.in_channels}")
 
     if on_message:
         on_message("Loading text encoder...")
