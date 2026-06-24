@@ -15,6 +15,97 @@ from diffusers import (
 from transformers import Qwen3ForCausalLM, Qwen2TokenizerFast
 
 
+def _remap_flux2_state_dict(ckpt_state, model_sd):
+    """Remap original FLUX checkpoint keys to diffusers Flux2Transformer2DModel keys."""
+    mapped = {}
+
+    # Simple top-level renames
+    SIMPLE_MAP = {
+        "img_in.weight": "x_embedder.weight",
+        "img_in.bias": "x_embedder.bias",
+        "txt_in.weight": "context_embedder.weight",
+        "txt_in.bias": "context_embedder.bias",
+        "time_in.in_layer.weight": "time_guidance_embed.timestep_embedder.linear_1.weight",
+        "time_in.in_layer.bias": "time_guidance_embed.timestep_embedder.linear_1.bias",
+        "time_in.out_layer.weight": "time_guidance_embed.timestep_embedder.linear_2.weight",
+        "time_in.out_layer.bias": "time_guidance_embed.timestep_embedder.linear_2.bias",
+        "final_layer.linear.weight": "proj_out.weight",
+        "final_layer.linear.bias": "proj_out.bias",
+        "final_layer.adaLN_modulation.1.weight": "norm_out.linear.weight",
+        "final_layer.adaLN_modulation.1.bias": "norm_out.linear.bias",
+        "double_stream_modulation_img.lin.weight": "double_stream_modulation_img.linear.weight",
+        "double_stream_modulation_img.lin.bias": "double_stream_modulation_img.linear.bias",
+        "double_stream_modulation_txt.lin.weight": "double_stream_modulation_txt.linear.weight",
+        "double_stream_modulation_txt.lin.bias": "double_stream_modulation_txt.linear.bias",
+        "single_stream_modulation.lin.weight": "single_stream_modulation.linear.weight",
+        "single_stream_modulation.lin.bias": "single_stream_modulation.linear.bias",
+    }
+    for ck_key, df_key in SIMPLE_MAP.items():
+        if ck_key in ckpt_state:
+            mapped[df_key] = ckpt_state[ck_key]
+
+    def split_qkv(qkv_tensor):
+        d = qkv_tensor.shape[0] // 3
+        return qkv_tensor[:d], qkv_tensor[d:2*d], qkv_tensor[2*d:]
+
+    # Double blocks (transformer_blocks)
+    for n in range(8):
+        prefix_ck = f"double_blocks.{n}"
+        prefix_df = f"transformer_blocks.{n}"
+
+        for suffix in (".weight", ".bias"):
+            key = f"{prefix_ck}.img_attn.qkv{suffix}"
+            if key in ckpt_state:
+                q, k, v = split_qkv(ckpt_state[key])
+                mapped[f"{prefix_df}.attn.to_q{suffix}"] = q
+                mapped[f"{prefix_df}.attn.to_k{suffix}"] = k
+                mapped[f"{prefix_df}.attn.to_v{suffix}"] = v
+
+        for suffix in (".weight", ".bias"):
+            key = f"{prefix_ck}.txt_attn.qkv{suffix}"
+            if key in ckpt_state:
+                q, k, v = split_qkv(ckpt_state[key])
+                mapped[f"{prefix_df}.attn.add_q_proj{suffix}"] = q
+                mapped[f"{prefix_df}.attn.add_k_proj{suffix}"] = k
+                mapped[f"{prefix_df}.attn.add_v_proj{suffix}"] = v
+
+        RENAME = {
+            "img_attn.proj": "attn.to_out.0",
+            "img_attn.norm.key_norm": "attn.norm_k",
+            "img_attn.norm.query_norm": "attn.norm_q",
+            "txt_attn.proj": "attn.to_add_out",
+            "txt_attn.norm.key_norm": "attn.norm_added_k",
+            "txt_attn.norm.query_norm": "attn.norm_added_q",
+            "img_mlp.0": "ff.linear_in",
+            "img_mlp.2": "ff.linear_out",
+            "txt_mlp.0": "ff_context.linear_in",
+            "txt_mlp.2": "ff_context.linear_out",
+        }
+        for ck_src, df_dst in RENAME.items():
+            for suffix in (".weight", ".bias"):
+                ck_key = f"{prefix_ck}.{ck_src}{suffix}"
+                if ck_key in ckpt_state:
+                    mapped[f"{prefix_df}.{df_dst}{suffix}"] = ckpt_state[ck_key]
+
+    # Single blocks (single_transformer_blocks)
+    for n in range(24):
+        prefix_ck = f"single_blocks.{n}"
+        prefix_df = f"single_transformer_blocks.{n}"
+        RENAME = {
+            "linear1": "attn.to_qkv_mlp_proj",
+            "linear2": "attn.to_out",
+            "norm.key_norm": "attn.norm_k",
+            "norm.query_norm": "attn.norm_q",
+        }
+        for ck_src, df_dst in RENAME.items():
+            for suffix in (".weight", ".bias"):
+                ck_key = f"{prefix_ck}.{ck_src}{suffix}"
+                if ck_key in ckpt_state:
+                    mapped[f"{prefix_df}.{df_dst}{suffix}"] = ckpt_state[ck_key]
+
+    return mapped
+
+
 def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None, cancel_event=None):
     """Load base Flux2 pipeline from HF, then swap transformer weights from a single checkpoint file."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -191,31 +282,19 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
 
     if unet_state:
         t1 = time.time()
-        # Dump all expected model keys for comparison
+        # Remap checkpoint keys to diffusers format
         model_sd = pipe.transformer.state_dict()
-        model_keys = set(model_sd.keys())
-        ckpt_keys = set(unet_state.keys())
-        print(f"[flux2] Model state_dict total: {len(model_keys)}")
-        print(f"[flux2] Checkpoint state_dict total: {len(ckpt_keys)}")
-        intersect = model_keys & ckpt_keys
-        print(f"[flux2] Matching keys (intersection): {len(intersect)}")
-        print(f"[flux2] Keys in model but NOT in checkpoint: {len(model_keys - ckpt_keys)}")
-        for k in sorted(model_keys - ckpt_keys)[:20]:
-            print(f"  model-only: {k}")
-        print(f"[flux2] Keys in checkpoint but NOT in model: {len(ckpt_keys - model_keys)}")
-        for k in sorted(ckpt_keys - model_keys)[:20]:
-            print(f"  ckpt-only:  {k}")
-
-        missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
-        print(f"[flux2] Weights swapped in {time.time()-t1:.1f}s. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+        remapped = _remap_flux2_state_dict(unet_state, model_sd)
+        # Remaining keys (top-level modulations and norms)
+        for k, v in unet_state.items():
+            if k not in remapped:
+                print(f"[flux2] Unmapped key: {k}  shape={v.shape}")
+        print(f"[flux2] Remapped {len(remapped)}/{len(unet_state)} keys")
+        missing, _ = pipe.transformer.load_state_dict(remapped, strict=False)
+        print(f"[flux2] Weights loaded. Still missing: {len(missing)}")
         if missing:
-            print(f"[flux2] ALL missing keys ({len(missing)}):")
             for k in missing:
-                print(f"  missing: {k}")
-        if unexpected:
-            print(f"[flux2] ALL unexpected keys ({len(unexpected)}):")
-            for k in unexpected:
-                print(f"  unexpected: {k}")
+                print(f"  still-missing: {k}")
 
     pipe.to(device=device)
     print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
