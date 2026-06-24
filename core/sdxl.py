@@ -1,6 +1,6 @@
 import torch
 import inspect
-from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline, AutoencoderKL
+from diffusers import StableDiffusionXLPipeline, StableDiffusionPipeline, AutoencoderKL, DiffusionPipeline
 from fastapi import HTTPException
 from PIL import Image
 import os
@@ -8,6 +8,8 @@ import struct
 import json
 
 from safetensors.torch import load_file as safetensors_load_file
+from .zimage import load_zimage_pipeline
+from .flux2 import load_base_flux2_and_swap_weights
 
 
 _pipelines = {}
@@ -123,6 +125,8 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
     if token:
         extra.setdefault('token', token)
     kwargs = dict(torch_dtype=dtype, **extra)
+    if vae is not None:
+        kwargs['vae'] = vae
     if is_file:
         try:
             pipe = pipeline_cls.from_single_file(model_path, **kwargs)
@@ -138,9 +142,6 @@ def _load_pipeline(pipeline_cls, model_path, vae=None, dtype=torch.float16, **ex
                 raise
     else:
         pipe = pipeline_cls.from_pretrained(model_path, **kwargs)
-
-    if vae is not None:
-        pipe.vae = vae
     return pipe
 
 
@@ -158,145 +159,6 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
     if unet_state:
         pipe.unet.load_state_dict(unet_state, strict=False)
     del ckpt
-    return pipe
-
-
-def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None, cancel_event=None):
-    """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    import time
-    t0 = time.time()
-
-    from diffusers import (
-        Flux2KleinPipeline,
-        AutoencoderKLFlux2,
-        Flux2Transformer2DModel,
-        FlowMatchEulerDiscreteScheduler,
-    )
-    from transformers import Qwen3ForCausalLM, Qwen2TokenizerFast
-
-    # Step 1: Try from_single_file directly (no HF download needed)
-    try:
-        if on_message:
-            on_message("Loading single file...")
-        pipe = Flux2KleinPipeline.from_single_file(model_path, torch_dtype=dtype, token=hf_token)
-        print(f"[flux2] from_single_file succeeded in {time.time()-t0:.1f}s")
-        return pipe
-    except Exception as e:
-        print(f"[flux2] from_single_file failed: {e}")
-
-    # Step 2: Download only config + VAE + text encoder (skip main transformer weights)
-    repo = "black-forest-labs/FLUX.2-klein-9B"
-    import huggingface_hub as hf_hub
-
-    SKIP_FILES = (
-        "flux-2-klein-9b.safetensors",
-        "model-00001-of-00002.safetensors",
-        "model-00002-of-00002.safetensors",
-        "model.fp16.safetensors",
-    )
-
-    cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
-    needs_dl = cached is None or not os.path.exists(cached)
-
-    if needs_dl:
-        if on_message:
-            on_message("Listing repo files...")
-
-        files = [f for f in hf_hub.list_repo_files(repo, token=hf_token) if f not in SKIP_FILES]
-        sizes = {}
-        total = 0
-        for f in files:
-            try:
-                s = hf_hub.file_size(repo, f, token=hf_token)
-                sizes[f] = s
-                total += s
-            except Exception:
-                pass
-
-        if on_message:
-            on_message(f"Downloading VAE + text encoder + config ({total/1024**3:.1f}GB)...")
-
-        dl_base = [0]
-
-        for f in files:
-            if cancel_event and cancel_event.is_set():
-                print("[flux2] Cancelled during download")
-                return None
-            for attempt in range(3):
-                try:
-                    hf_hub.hf_hub_download(repo, f, token=hf_token)
-                    dl_base[0] += sizes.get(f, 0)
-                    if on_progress:
-                        on_progress(dl_base[0], total)
-                    break
-                except Exception as e:
-                    if attempt == 2:
-                        raise
-                    if on_message:
-                        on_message(f"Retrying {os.path.basename(f)} (attempt {attempt+2})...")
-
-    # Step 3: Load individual components
-    if on_message:
-        on_message("Loading VAE...")
-    vae = AutoencoderKLFlux2.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=hf_token)
-
-    if on_message:
-        on_message("Loading text encoder...")
-    text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
-
-    if on_message:
-        on_message("Loading tokenizer...")
-    tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
-
-    if on_message:
-        on_message("Loading scheduler + transformer config...")
-    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=hf_token)
-    transformer = Flux2Transformer2DModel.from_config(
-        Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token),
-        torch_dtype=dtype,
-    )
-
-    # Step 4: Assemble pipeline
-    if on_message:
-        on_message("Assembling pipeline...")
-    pipe = Flux2KleinPipeline(
-        scheduler=scheduler,
-        vae=vae,
-        text_encoder=text_encoder,
-        tokenizer=tokenizer,
-        transformer=transformer,
-    )
-    pipe.to(dtype=dtype)
-    print(f"[flux2] Pipeline assembled in {time.time()-t0:.1f}s")
-
-    if on_message:
-        on_message("Swapping checkpoint weights...")
-
-    # Load transformer weights using safe_open (no full file load into memory)
-    from safetensors import safe_open
-    print(f"[flux2] Reading checkpoint keys via safe_open...")
-    unet_state = {}
-    with safe_open(model_path, framework="pt", device="cpu") as f:
-        keys = [k for k in f.keys() if k.startswith("model.diffusion_model.")]
-        print(f"[flux2] Found {len(keys)} transformer keys, loading...")
-        for i, k in enumerate(keys):
-            unet_state[k.replace("model.diffusion_model.", "")] = f.get_tensor(k)
-            if (i + 1) % 50 == 0:
-                print(f"[flux2]   loaded {i+1}/{len(keys)} keys ({time.time()-t0:.1f}s)")
-    print(f"[flux2] All keys loaded in {time.time()-t0:.1f}s")
-
-    if unet_state:
-        t1 = time.time()
-        missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
-        print(f"[flux2] Weights swapped in {time.time()-t1:.1f}s. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
-        if missing:
-            print(f"[flux2] Missing keys (first 10): {list(missing)[:10]}")
-        if unexpected:
-            print(f"[flux2] Unexpected keys (first 10): {list(unexpected)[:10]}")
-
-    del unet_state
-    print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
     return pipe
 
 
@@ -324,90 +186,13 @@ def _get_pipeline(
             vae = AutoencoderKL.from_pretrained(vae_path, torch_dtype=dtype)
 
     if model_type == "zimage":
-        from diffusers import ZImagePipeline
-        hf_token = os.environ.get("HF_TOKEN")
-        zimage_repo = "Tongyi-MAI/Z-Image-Turbo"
-
-        # HF repo ID → use from_pretrained directly (repo has everything)
-        if not os.path.isfile(model_path) and not os.path.isdir(model_path):
-            pipeline = ZImagePipeline.from_pretrained(
-                model_path, torch_dtype=dtype, low_cpu_mem_usage=False, token=hf_token
-            )
-        else:
-            # Local file → load VAE + text encoder from HF repo, then from_single_file
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-
-            # Load VAE from repo
-            if vae is None:
-                try:
-                    vae = AutoencoderKL.from_pretrained(
-                        zimage_repo, subfolder="vae", torch_dtype=dtype, token=hf_token
-                    )
-                except Exception:
-                    pass
-
-            # Load text encoder + tokenizer from repo
-            # NOTE: tokenizer is in a SEPARATE tokenizer/ folder, not text_encoder/
-            text_encoder = None
-            tokenizer = None
-            model_dir = os.path.dirname(model_path) if os.path.isfile(model_path) else ""
-
-            # Try local paths first
-            local_te_paths = [
-                text_encoder_path,
-                os.path.join(model_dir, "text_encoder"),
-                os.path.join(model_dir, "phi"),
-            ]
-            for tp in local_te_paths:
-                if tp and os.path.exists(tp):
-                    try:
-                        if os.path.isfile(tp) and tp.endswith('.safetensors'):
-                            text_encoder = AutoModelForCausalLM.from_single_file(tp, torch_dtype=dtype)
-                        else:
-                            text_encoder = AutoModelForCausalLM.from_pretrained(tp, torch_dtype=dtype)
-                        break
-                    except Exception:
-                        pass
-
-            # Tokenizer: try local tokenizer/ dir first
-            local_tok_paths = [
-                os.path.join(model_dir, "tokenizer"),
-                text_encoder_path,
-                os.path.join(model_dir, "text_encoder"),
-            ]
-            for tok_p in local_tok_paths:
-                if tok_p and os.path.exists(tok_p):
-                    try:
-                        tokenizer = AutoTokenizer.from_pretrained(tok_p, trust_remote_code=True)
-                        if getattr(tokenizer, 'chat_template', None):
-                            break
-                    except Exception:
-                        pass
-
-            # Fallback: download from HF repo (text_encoder + tokenizer are separate subfolders)
-            if text_encoder is None:
-                try:
-                    text_encoder = AutoModelForCausalLM.from_pretrained(
-                        zimage_repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token
-                    )
-                except Exception:
-                    pass
-            if tokenizer is None or not getattr(tokenizer, 'chat_template', None):
-                try:
-                    tokenizer = AutoTokenizer.from_pretrained(
-                        zimage_repo, subfolder="tokenizer", trust_remote_code=True, token=hf_token
-                    )
-                except Exception:
-                    pass
-
-            kwargs = dict(dtype=dtype, low_cpu_mem_usage=False)
-            if vae is not None:
-                kwargs['vae'] = vae
-            if text_encoder is not None:
-                kwargs['text_encoder'] = text_encoder
-            if tokenizer is not None:
-                kwargs['tokenizer'] = tokenizer
-            pipeline = _load_pipeline(ZImagePipeline, model_path, **kwargs)
+        pipeline = load_zimage_pipeline(
+            model_path, dtype,
+            vae_path=vae_path,
+            text_encoder_path=text_encoder_path,
+            local_vae=vae,
+            on_message=on_message,
+        )
     elif model_type == "pixart":
         try:
             from diffusers import PixArtAlphaPipeline
@@ -447,11 +232,9 @@ def _get_pipeline(
                         pass
                 pipeline = _load_pipeline(StableDiffusionXLPipeline, model_path, **kwargs)
     elif model_type == "flux2":
-        from diffusers import DiffusionPipeline
         if os.path.isfile(model_path):
-            # FLUX.2 single files: load base pipeline from HF, then load transformer weights from checkpoint
             hf_token = os.environ.get("HF_TOKEN")
-            pipeline = _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=on_message, on_progress=on_progress)
+            pipeline = load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=on_message, on_progress=on_progress)
         else:
             pipeline = _load_pipeline(DiffusionPipeline, model_path, dtype=dtype)
     elif model_type == "sd15":
