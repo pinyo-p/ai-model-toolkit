@@ -1893,9 +1893,14 @@ a bird on a tree</textarea>
                 if (res.ok) {
                     var msg = '<pre style="color:#4caf50;font-size:12px;max-height:200px;overflow:auto;white-space:pre-wrap;">' + escapeHtml(data.output || '') + '</pre>';
                     if (!data.already_updated) {
-                        msg += '<br><span style="color:#00ff00;">Update done. Restarting...</span>';
-                        setTimeout(() => { btn.disabled = false; btn.textContent = 'git pull & restart'; }, 5000);
+                        msg += '<br><span style="color:#00ff00;">Update done.</span>';
+                        output.innerHTML = msg;
+                        btn.disabled = false;
+                        btn.textContent = 'git pull & restart';
+                        var doRefresh = await showConfirm('Update complete. Refresh page to load new code?');
+                        if (doRefresh) window.location.reload();
                     } else {
+                        btn.disabled = false;
                         btn.disabled = false;
                         btn.textContent = 'git pull & restart';
                     }
