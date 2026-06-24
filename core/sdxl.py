@@ -180,12 +180,50 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         if on_message:
             on_message("from_single_file not supported, using swap method...")
 
-    # Fallback: snapshot_download (caches everything) + from_pretrained
+    # Fallback: download files sequentially (more reliable than snapshot_download)
     repo = "black-forest-labs/FLUX.2-klein-9B"
     import huggingface_hub as hf_hub
-    if on_message:
-        on_message("Downloading base model from HuggingFace...")
-    hf_hub.snapshot_download(repo, token=hf_token)
+
+    cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
+    needs_dl = cached is None or not os.path.exists(cached)
+
+    if needs_dl:
+        if on_message:
+            on_message("Listing repo files...")
+
+        files = hf_hub.list_repo_files(repo, token=hf_token)
+        total = 0
+        sizes = {}
+        for f in files:
+            try:
+                s = hf_hub.file_size(repo, f, token=hf_token)
+                sizes[f] = s
+                total += s
+            except Exception:
+                pass
+
+        if on_message:
+            gb = total / (1024**3)
+            on_message(f"Downloading {len(files)} files ({gb:.1f}GB)...")
+
+        dl_base = [0]
+        def _fp(curr, tot):
+            if on_progress:
+                on_progress(dl_base[0] + curr, total)
+
+        for f in files:
+            for attempt in range(3):
+                try:
+                    hf_hub.hf_hub_download(repo, f, token=hf_token, progress_callback=_fp if total else None)
+                    dl_base[0] += sizes.get(f, 0)
+                    if on_progress:
+                        on_progress(dl_base[0], total)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        raise
+                    if on_message:
+                        on_message(f"Retrying {f} (attempt {attempt+2})...")
 
     if on_message:
         on_message("Loading pipeline...")
