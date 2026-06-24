@@ -37,6 +37,10 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
         print(f"[flux2] {pipeline_cls.__name__}.from_single_file failed: {e}")
         traceback.print_exc()
 
+    import importlib.metadata
+    print(f"[flux2] diffusers version: {importlib.metadata.version('diffusers')}")
+    print(f"[flux2] transformers version: {importlib.metadata.version('transformers')}")
+
     # Step 2: Download only config + VAE + text encoder
     repo = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
 
@@ -135,19 +139,74 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     print(f"[flux2] Reading checkpoint keys via safe_open...")
     unet_state = {}
     with safe_open(model_path, framework="pt", device="cpu") as f:
-        keys = [k for k in f.keys() if k.startswith("model.diffusion_model.")]
-        print(f"[flux2] Found {len(keys)} transformer keys, loading...")
-        for i, k in enumerate(keys):
+        all_ckpt_keys = list(f.keys())
+        print(f"[flux2] Total keys in checkpoint: {len(all_ckpt_keys)}")
+        # Dump ALL keys grouped by type
+        trans_keys = [k for k in all_ckpt_keys if k.startswith("model.diffusion_model.")]
+        other_keys = [k for k in all_ckpt_keys if not k.startswith("model.diffusion_model.")]
+        print(f"[flux2] model.diffusion_model.* keys: {len(trans_keys)}")
+        if other_keys:
+            print(f"[flux2] Non-transformer keys ({len(other_keys)}):")
+            for k in other_keys:
+                print(f"  {k}")
+        # Group transformer keys
+        double_blocks = sorted([k for k in trans_keys if "double_blocks" in k])
+        single_blocks = sorted([k for k in trans_keys if "single_blocks" in k])
+        other_trans = sorted([k for k in trans_keys if "double_blocks" not in k and "single_blocks" not in k])
+        print(f"[flux2] double_blocks keys: {len(double_blocks)}")
+        for k in double_blocks[:5]:
+            print(f"  {k}")
+        if len(double_blocks) > 5:
+            print(f"  ... and {len(double_blocks)-5} more")
+        print(f"[flux2] single_blocks keys: {len(single_blocks)}")
+        for k in single_blocks[:5]:
+            print(f"  {k}")
+        if len(single_blocks) > 5:
+            print(f"  ... and {len(single_blocks)-5} more")
+        if other_trans:
+            print(f"[flux2] Other transformer keys ({len(other_trans)}):")
+            for k in other_trans:
+                print(f"  {k}")
+        # Also check if there are transformer_blocks or double_stream keys
+        tb_keys = [k for k in all_ckpt_keys if "transformer_blocks" in k]
+        ds_keys = [k for k in all_ckpt_keys if "double_stream" in k]
+        if tb_keys:
+            print(f"[flux2] WARNING: found 'transformer_blocks' keys (diffusers format): {len(tb_keys)}")
+        if ds_keys:
+            print(f"[flux2] Found 'double_stream' keys: {len(ds_keys)}")
+
+        # Load transformer weights
+        print(f"[flux2] Loading {len(trans_keys)} transformer tensors...")
+        for i, k in enumerate(trans_keys):
             unet_state[k.replace("model.diffusion_model.", "")] = f.get_tensor(k)
 
     if unet_state:
         t1 = time.time()
+        # Dump all expected model keys for comparison
+        model_sd = pipe.transformer.state_dict()
+        model_keys = set(model_sd.keys())
+        ckpt_keys = set(unet_state.keys())
+        print(f"[flux2] Model state_dict total: {len(model_keys)}")
+        print(f"[flux2] Checkpoint state_dict total: {len(ckpt_keys)}")
+        intersect = model_keys & ckpt_keys
+        print(f"[flux2] Matching keys (intersection): {len(intersect)}")
+        print(f"[flux2] Keys in model but NOT in checkpoint: {len(model_keys - ckpt_keys)}")
+        for k in sorted(model_keys - ckpt_keys)[:20]:
+            print(f"  model-only: {k}")
+        print(f"[flux2] Keys in checkpoint but NOT in model: {len(ckpt_keys - model_keys)}")
+        for k in sorted(ckpt_keys - model_keys)[:20]:
+            print(f"  ckpt-only:  {k}")
+
         missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
         print(f"[flux2] Weights swapped in {time.time()-t1:.1f}s. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
         if missing:
-            print(f"[flux2] Missing keys (first 10): {list(missing)[:10]}")
+            print(f"[flux2] ALL missing keys ({len(missing)}):")
+            for k in missing:
+                print(f"  missing: {k}")
         if unexpected:
-            print(f"[flux2] Unexpected keys (first 10): {list(unexpected)[:10]}")
+            print(f"[flux2] ALL unexpected keys ({len(unexpected)}):")
+            for k in unexpected:
+                print(f"  unexpected: {k}")
 
     pipe.to(device=device)
     print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
