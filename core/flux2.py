@@ -111,11 +111,12 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     device = "cuda" if torch.cuda.is_available() else "cpu"
     t0 = time.time()
 
-    # Pick pipeline class from filename
+    # FLUX.2 always uses Flux2KleinPipeline (Qwen3) — the dev variant
+    # (Mistral3) repo does not exist on HF, so Flux2KleinPipeline works for both.
     name_lower = os.path.basename(model_path).lower()
-    is_klein = "klein" in name_lower
-    pipeline_cls = Flux2KleinPipeline if is_klein else Flux2Pipeline
-    pipe_name = "Flux2KleinPipeline" if is_klein else "Flux2Pipeline"
+    is_klein = "klein" in name_lower or "schnell" in name_lower
+    pipeline_cls = Flux2KleinPipeline
+    pipe_name = "Flux2KleinPipeline"
 
     # Step 1: Try from_single_file directly
     if on_message:
@@ -146,7 +147,8 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
             print("[flux2] _load_state_dict_into_flux2_transformer NOT available")
 
     # Step 2: Download only config + VAE + text encoder
-    repo = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
+    # FLUX.2-dev-9B may not exist yet; always prefer klein repo
+    repo = "black-forest-labs/FLUX.2-klein-9B"
 
     SKIP_FILES = (
         "flux-2-klein-9b.safetensors",
@@ -294,6 +296,13 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
             unet_state[k.replace("model.diffusion_model.", "")] = f.get_tensor(k)
 
     if unet_state:
+        # Debug: show modulation-related and MLP key shapes from checkpoint
+        print("[flux2] === Checkpoint modulation/MLP debugging ===")
+        for ck_key in sorted(unet_state.keys()):
+            if any(x in ck_key for x in ["mod.lin", "modulation", "mlp.0", "mlp.2", "linear1", "linear2", "norm.query_norm", "norm.key_norm", "img_attn.qkv", "txt_attn.qkv"]):
+                print(f"  {ck_key}: {unet_state[ck_key].shape}")
+        print("[flux2] === End debug ===")
+
         t1 = time.time()
         model_sd = pipe.transformer.state_dict()
         remapped = _remap_flux2_state_dict(unet_state, model_sd)
