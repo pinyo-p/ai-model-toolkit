@@ -1896,7 +1896,22 @@ a bird on a tree</textarea>
                         btn.disabled = false;
                         btn.textContent = 'git pull & restart';
                         var doRefresh = await showConfirm('Update complete. Refresh page to load new code?');
-                        if (doRefresh) window.location.reload();
+                        if (doRefresh) {
+                            const outputEl = document.getElementById('update-output');
+                            outputEl.innerHTML = '<span class="loading">Waiting for server to restart...</span>';
+                            // Poll until server responds, then reload
+                            var pollInterval = setInterval(async function() {
+                                try {
+                                    var r = await fetch('/api/output_images?t=' + Date.now(), {
+                                        headers: { 'Authorization': 'Basic ' + auth }
+                                    });
+                                    if (r.ok) {
+                                        clearInterval(pollInterval);
+                                        window.location.reload();
+                                    }
+                                } catch(e) {}
+                            }, 1000);
+                        }
                     } else {
                         btn.disabled = false;
                         btn.disabled = false;
