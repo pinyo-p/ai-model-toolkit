@@ -457,15 +457,43 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     if lora_paths and lora_weights:
         for lp, lw in zip(lora_paths, lora_weights):
             lora_info.append({"path": lp, "weight": lw})
+    family = sdxl._detect_model_type(model_path)
+    # Resolve default VAE/text_encoder name per family
+    if vae_path:
+        vae_label = os.path.basename(vae_path)
+    else:
+        name_lower = os.path.basename(model_path).lower()
+        if family == "flux2":
+            is_klein = "klein" in name_lower
+            vae_label = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
+        elif family == "flux":
+            vae_label = "black-forest-labs/FLUX.1-dev"
+        elif family == "zimage":
+            vae_label = "Tongyi-MAI/Z-Image-Turbo"
+        elif family == "sdxl":
+            vae_label = "stabilityai/sdxl-vae"
+        elif family == "sd15":
+            vae_label = "runwayml/stable-diffusion-v1-5"
+        else:
+            vae_label = "built-in"
+    if text_encoder_path:
+        te_label = os.path.basename(text_encoder_path)
+    else:
+        if family == "flux2":
+            is_klein = "klein" in name_lower
+            te_label = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
+        elif family == "zimage":
+            te_label = "Tongyi-MAI/Z-Image-Turbo"
+        else:
+            te_label = "built-in"
     _set_gen_progress(gen_id,
         status="loading", message=f"Loading {model_name}{model_size}...",
         images_count=0, total_images=count, dev=dev,
-        model_name=model_name, family=sdxl._detect_model_type(model_path),
+        model_name=model_name, family=family,
         steps=steps, cfg=cfg, seeds=seeds,
         prompt=prompt, negative=negative, width=width, height=height,
         lora=lora_info, start_time=start_time,
-        vae=os.path.basename(vae_path) if vae_path else "default",
-        text_encoder=os.path.basename(text_encoder_path) if text_encoder_path else "default")
+        vae=vae_label, text_encoder=te_label)
     try:
 
         def _on_loading_msg(msg):
