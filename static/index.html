@@ -212,163 +212,154 @@
         <div id="base-url-bar" style="display:none;padding:6px 15px;background:#1a2a1a;border-bottom:1px solid #2a4a2a;font-size:12px;color:#4caf50;text-align:center;word-break:break-all;"></div>
 
         <div id="generate" class="panel active">
-            <div style="display:flex;gap:16px;flex-direction:column;">
-                <div style="display:flex;gap:16px;">
-                    <div style="flex:1;min-width:0;">
-                        <div class="card">
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <label style="margin:0;">Model</label>
-                                <button class="btn-small" onclick="loadGenModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
-                            </div>
-                            <select id="gen-model" class="base-model" onchange="onGenModelChange()">
-                                <option value="">-- Select local model --</option>
-                                <option value="__custom__">Custom (type manually)...</option>
-                            </select>
-                            <span id="gen-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
-                            <input type="text" id="gen-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
+            <div style="display:flex;gap:16px;">
+                <div style="flex:1;min-width:0;">
+                    <div class="card">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <label style="margin:0;">Model</label>
+                            <button class="btn-small" onclick="loadGenModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
+                        </div>
+                        <select id="gen-model" class="base-model" onchange="onGenModelChange()">
+                            <option value="">-- Select local model --</option>
+                            <option value="__custom__">Custom (type manually)...</option>
+                        </select>
+                        <span id="gen-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
+                        <input type="text" id="gen-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
 
-                            <div class="row" style="margin-top:8px;">
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>VAE (optional)</label>
-                                        <select id="gen-vae" class="base-model" onchange="onModelSelect(this, 'gen-vae-custom')">
-                                            <option value="">-- Default VAE --</option>
-                                            <option value="__custom__">Custom...</option>
-                                        </select>
-                                        <input type="text" id="gen-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
-                                    </div>
+                        <div class="row" style="margin-top:8px;">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>VAE (optional)</label>
+                                    <select id="gen-vae" class="base-model" onchange="onModelSelect(this, 'gen-vae-custom')">
+                                        <option value="">-- Default VAE --</option>
+                                        <option value="__custom__">Custom...</option>
+                                    </select>
+                                    <input type="text" id="gen-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
                                 </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Text Encoder (optional)</label>
-                                        <select id="gen-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'gen-text-encoder-custom')">
-                                            <option value="">-- Default --</option>
-                                            <option value="__custom__">Custom...</option>
-                                        </select>
-                                        <input type="text" id="gen-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
-                                    </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Text Encoder (optional)</label>
+                                    <select id="gen-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'gen-text-encoder-custom')">
+                                        <option value="">-- Default --</option>
+                                        <option value="__custom__">Custom...</option>
+                                    </select>
+                                    <input type="text" id="gen-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div style="flex:1;min-width:0;">
-                        <div class="card">
-                            <div class="form-group">
-                                <label>Prompt</label>
-                                <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
+
+                    <div class="card">
+                        <div class="row">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Steps</label>
+                                    <input type="number" id="gen-steps" value="20" min="1" max="100">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>Negative Prompt</label>
-                                <textarea id="gen-negative" placeholder="What to avoid..."></textarea>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>CFG</label>
+                                    <input type="number" id="gen-cfg" value="7.0" min="0" max="30" step="0.5">
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Seed</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input type="number" id="gen-seed" value="42" class="flex-grow-1">
+                                        <label class="d-flex align-items-center gap-1 mb-0" style="white-space:nowrap;font-size:0.85rem;">
+                                            <input type="checkbox" id="gen-seed-random" checked> Random
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <div style="display:flex;gap:16px;">
-                    <div style="flex:1;min-width:0;">
-                        <div class="card">
-                            <div class="row">
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Steps</label>
-                                        <input type="number" id="gen-steps" value="20" min="1" max="100">
-                                    </div>
-                                </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>CFG</label>
-                                        <input type="number" id="gen-cfg" value="7.0" min="0" max="30" step="0.5">
-                                    </div>
-                                </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Seed</label>
-                                        <div class="d-flex gap-2 align-items-center">
-                                            <input type="number" id="gen-seed" value="42" class="flex-grow-1">
-                                            <label class="d-flex align-items-center gap-1 mb-0" style="white-space:nowrap;font-size:0.85rem;">
-                                                <input type="checkbox" id="gen-seed-random" checked> Random
-                                            </label>
-                                        </div>
-                                    </div>
+                        <div class="row">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Width</label>
+                                    <input type="number" id="gen-width" value="1024" step="8">
                                 </div>
                             </div>
-                            <div class="row">
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Width</label>
-                                        <input type="number" id="gen-width" value="1024" step="8">
-                                    </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Height</label>
+                                    <input type="number" id="gen-height" value="1024" step="8">
                                 </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Height</label>
-                                        <input type="number" id="gen-height" value="1024" step="8">
-                                    </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Count</label>
+                                    <input type="number" id="gen-count" value="1" min="1" max="16">
                                 </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Count</label>
-                                        <input type="number" id="gen-count" value="1" min="1" max="16">
-                                    </div>
-                                </div>
-                                <div class="col">
-                                    <div class="form-group">
-                                        <label>Mode</label>
-                                        <select id="gen-mode">
-                                            <option value="queue">Queue (safe)</option>
-                                            <option value="parallel">Parallel (fast)</option>
-                                        </select>
-                                    </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Mode</label>
+                                    <select id="gen-mode">
+                                        <option value="queue">Queue (safe)</option>
+                                        <option value="parallel">Parallel (fast)</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div style="flex:1;min-width:0;">
-                        <div style="display:flex;gap:8px;">
-                            <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
-                            <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
-                        </div>
-                        <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
-                            <div style="display:flex;justify-content:space-between;align-items:center;">
-                                <div>
-                                    <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
-                                    <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+
+                    <div class="card">
+                        <div class="form-group">
+                            <label>LoRAs</label>
+                            <div id="lora-container">
+                                <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                                    <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                                    <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                                    <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
                                 </div>
-                                <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
                             </div>
-                            <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
-                                <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
-                            </div>
+                            <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
                         </div>
-                        <div style="margin:6px 0;">
-                            <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
-                            <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
-                            <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
-                        </div>
-                        <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
-                        <div id="active-jobs" style="margin:8px 0;display:none;"></div>
                     </div>
                 </div>
-                <div style="display:flex;gap:16px;">
-                    <div style="flex:1;min-width:0;">
-                        <div class="card">
-                            <div class="form-group">
-                                <label>LoRAs</label>
-                                <div id="lora-container">
-                                    <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                                        <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
-                                        <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                                        <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
-                                    </div>
-                                </div>
-                                <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
-                            </div>
+
+                <div style="flex:1;min-width:0;">
+                    <div class="card">
+                        <div class="form-group">
+                            <label>Prompt</label>
+                            <textarea id="gen-prompt" placeholder="Enter your prompt...">a beautiful landscape with mountains and a lake</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Negative Prompt</label>
+                            <textarea id="gen-negative" placeholder="What to avoid..."></textarea>
                         </div>
                     </div>
-                    <div style="flex:1;min-width:0;">
-                        <div class="output" id="gen-output" style="margin:0;">
-                            <span class="placeholder">Image will appear here</span>
+
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
+                        <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
+                    </div>
+                    <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
+                                <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+                            </div>
+                            <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
                         </div>
+                        <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                            <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                        </div>
+                    </div>
+                    <div style="margin:6px 0;">
+                        <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                        <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
+                        <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
+                    </div>
+                    <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
+                    <div id="active-jobs" style="margin:8px 0;display:none;"></div>
+
+                    <div class="output" id="gen-output" style="margin-top:12px;">
+                        <span class="placeholder">Image will appear here</span>
                     </div>
                 </div>
             </div>
