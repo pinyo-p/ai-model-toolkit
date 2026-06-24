@@ -63,8 +63,8 @@ print(f"  shift: {scheduler.config.shift}")
 print(f"  use_dynamic_shifting: {scheduler.config.use_dynamic_shifting}")
 print(f"  scheduler class: {scheduler.__class__.__name__}")
 print(f"  num_train_timesteps: {scheduler.config.num_train_timesteps}")
-print(f"  use_karras_sigmas: {scheduler.config.use_karras_sigmas}")
-print(f"  use_lucretine_sigmas: {scheduler.config.use_lucretine_sigmas}")
+print(f"  use_karras_sigmas: {getattr(scheduler.config, 'use_karras_sigmas', 'N/A')}")
+print(f"  use_lucretine_sigmas: {getattr(scheduler.config, 'use_lucretine_sigmas', 'N/A')}")
 
 # ======== TRANSFORMER DIAGNOSTICS ========
 print("\n" + "="*60)
