@@ -84,7 +84,10 @@
         .lightbox-overlay.active { display: flex; }
         .lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
         .lightbox-close { position: fixed; top: 20px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; z-index: 10002; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
-        .lightbox-download { position: fixed; bottom: 20px; right: 20px; padding: 10px 20px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10002; text-decoration: none; font-size: 14px; }
+        .lightbox-btn { padding: 10px 20px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; text-decoration: none; }
+        .lightbox-btn:hover { filter: brightness(1.15); }
+        .lightbox-dl { background: #00d4ff; color: #000; }
+        .lightbox-btn:not(.lightbox-dl) { background: #555; color: #fff; }
 
         /* File Table */
         .file-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -2718,6 +2721,7 @@ a bird on a tree</textarea>
         }
 
         // Lightbox
+        var _lightboxGenId = null;
         function openLightbox(src) {
             var lb = document.getElementById('lightbox');
             var img = lb.querySelector('img');
@@ -2725,10 +2729,16 @@ a bird on a tree</textarea>
             img.src = src;
             dl.href = src;
             dl.download = 'image.png';
+            _lightboxGenId = genIdFromUrl(src);
             lb.classList.add('active');
         }
         function closeLightbox() {
             document.getElementById('lightbox').classList.remove('active');
+            _lightboxGenId = null;
+        }
+        function lightboxDetails() {
+            if (_lightboxGenId) showGenDetailsById(_lightboxGenId);
+            else showAlert('Error', 'Cannot identify generation ID');
         }
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeLightbox();
@@ -2827,6 +2837,9 @@ a bird on a tree</textarea>
             var wrap = btn.closest('.gen-img-wrap');
             var url = wrap.getAttribute('data-url');
             var genId = genIdFromUrl(url);
+            if (genId) showGenDetailsById(genId);
+        }
+        async function showGenDetailsById(genId) {
             if (!genId) { showAlert('Error', 'Cannot identify generation ID'); return; }
             try {
                 var res = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), {
@@ -2838,6 +2851,8 @@ a bird on a tree</textarea>
                     return '<tr><td style="padding:4px 12px 4px 0;color:#aaa;white-space:nowrap;vertical-align:top;">' + label + '</td>'
                         + '<td style="padding:4px 0;color:#eee;word-break:break-word;">' + (val || '-') + '</td></tr>';
                 }
+                var familyNames = {'sdxl':'SDXL','sd15':'SD1.5','flux':'Flux.1','flux2':'Flux.2','zimage':'Z-Image','pixart':'PixArt','sd3':'SD3','hunyuan':'Hunyuan','kolors':'Kolors'};
+                var familyLabel = familyNames[data.family] || data.family || '-';
                 var elapsed = data.elapsed ? data.elapsed.toFixed(1) + 's' : '-';
                 var seedStr = data.seeds ? data.seeds.join(', ') : '-';
                 var loraStr = '-';
@@ -2847,6 +2862,7 @@ a bird on a tree</textarea>
                 var statusMap = {'loading':'⏳','generating':'⚙️','done':'✅','error':'❌','cancelled':'🚫'};
                 var statusIcon = statusMap[data.status] || '❓';
                 panel.innerHTML = '<table>' + v('Status', statusIcon + ' ' + data.status)
+                    + v('Model Type', familyLabel)
                     + v('Model', data.model_name || '-')
                     + v('Prompt', (data.prompt || '').substring(0, 200))
                     + v('Negative', (data.negative || '').substring(0, 100))
@@ -2887,7 +2903,10 @@ a bird on a tree</textarea>
     <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">
         <button class="lightbox-close" onclick="closeLightbox()">✕</button>
         <img src="" alt="Full size" onclick="event.stopPropagation()">
-        <a class="lightbox-download" href="" download="image.png" onclick="event.stopPropagation()">⬇ Download</a>
+        <div style="position:fixed;bottom:20px;right:20px;display:flex;gap:8px;z-index:10002;">
+            <button class="lightbox-btn" onclick="event.stopPropagation();lightboxDetails()">📋 Details</button>
+            <a class="lightbox-btn lightbox-dl" href="" download="image.png" onclick="event.stopPropagation()">⬇ Download</a>
+        </div>
     </div>
 
     <!-- Gen Details Modal -->

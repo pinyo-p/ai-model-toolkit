@@ -176,7 +176,7 @@ def _get_pipeline(
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model_type = _detect_model_type(model_path)
-    dtype = torch.bfloat16 if model_type == "zimage" else torch.float16
+    dtype = torch.bfloat16 if model_type in ("zimage", "flux2") else torch.float16
 
     vae = None
     if vae_path and os.path.exists(vae_path):

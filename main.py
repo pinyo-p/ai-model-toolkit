@@ -460,7 +460,8 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     _set_gen_progress(gen_id,
         status="loading", message=f"Loading {model_name}{model_size}...",
         images_count=0, total_images=count, dev=dev,
-        model_name=model_name, steps=steps, cfg=cfg, seeds=seeds,
+        model_name=model_name, family=sdxl._detect_model_type(model_path),
+        steps=steps, cfg=cfg, seeds=seeds,
         prompt=prompt, negative=negative, width=width, height=height,
         lora=lora_info, start_time=start_time)
     try:
