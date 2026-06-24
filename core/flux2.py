@@ -120,6 +120,12 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     # Step 1: Try from_single_file directly
     if on_message:
         on_message(f"Loading single file ({pipe_name})...")
+
+    import importlib.metadata
+    print(f"[flux2] diffusers version: {importlib.metadata.version('diffusers')}")
+    print(f"[flux2] transformers version: {importlib.metadata.version('transformers')}")
+
+    # Check if from_single_file works
     try:
         pipe = pipeline_cls.from_single_file(model_path, torch_dtype=dtype, token=hf_token)
         print(f"[flux2] {pipeline_cls.__name__}.from_single_file succeeded in {time.time()-t0:.1f}s")
@@ -127,10 +133,17 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     except Exception as e:
         print(f"[flux2] {pipeline_cls.__name__}.from_single_file failed: {e}")
         traceback.print_exc()
-
-    import importlib.metadata
-    print(f"[flux2] diffusers version: {importlib.metadata.version('diffusers')}")
-    print(f"[flux2] transformers version: {importlib.metadata.version('transformers')}")
+        # Check if the conversion function exists in diffusers
+        try:
+            from diffusers.pipelines.flux.pipeline_flux2_single_file import load_flux2_single_file
+            print("[flux2] Found load_flux2_single_file in diffusers")
+        except ImportError:
+            print("[flux2] load_flux2_single_file NOT available")
+        try:
+            from diffusers.models.modeling_flux import _load_state_dict_into_flux2_transformer
+            print("[flux2] Found diffusers built-in _load_state_dict_into_flux2_transformer")
+        except ImportError:
+            print("[flux2] _load_state_dict_into_flux2_transformer NOT available")
 
     # Step 2: Download only config + VAE + text encoder
     repo = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
