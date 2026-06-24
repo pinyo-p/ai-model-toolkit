@@ -282,14 +282,20 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
 
     if unet_state:
         t1 = time.time()
-        # Remap checkpoint keys to diffusers format
         model_sd = pipe.transformer.state_dict()
         remapped = _remap_flux2_state_dict(unet_state, model_sd)
-        # Remaining keys (top-level modulations and norms)
-        for k, v in unet_state.items():
-            if k not in remapped:
-                print(f"[flux2] Unmapped key: {k}  shape={v.shape}")
-        print(f"[flux2] Remapped {len(remapped)}/{len(unet_state)} keys")
+        # Validate shapes before loading
+        shape_errors = []
+        for df_key, tensor in sorted(remapped.items()):
+            expected = model_sd[df_key].shape
+            if tensor.shape != expected:
+                shape_errors.append(f"  {df_key}: got {tensor.shape}, expected {expected}")
+        if shape_errors:
+            print(f"[flux2] SHAPE MISMATCHES ({len(shape_errors)}):")
+            for e in shape_errors:
+                print(e)
+        else:
+            print(f"[flux2] All {len(remapped)} shapes match ✓")
         missing, _ = pipe.transformer.load_state_dict(remapped, strict=False)
         print(f"[flux2] Weights loaded. Still missing: {len(missing)}")
         if missing:
