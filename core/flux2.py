@@ -329,13 +329,16 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     pipe.to(device=device)
 
     # Scheduler fix: Klein models were trained with uniform timesteps.
-    # use_dynamic_shifting=True + shift=3.0 compresses sigmas into a narrow range
-    # (e.g. [1.0, 0.967, 0.908, 0.767, 0.0]) which forces the last step to remove
-    # 76% of noise at once — impossible to denoise correctly.
-    # Fix: disable dynamic shifting so scheduler uses linear sigmas: [1.0, 0.75, 0.5, 0.25, 0.0]
+    # The pretrained scheduler config has use_dynamic_shifting=True + shift=3.0
+    # which compresses sigmas (e.g. [1.0, 0.9, 0.75, 0.5, 0.0] instead of linear
+    # [1.0, 0.75, 0.5, 0.25, 0.0]). Last step then removes 50% noise at once.
+    # FrozenDict prevents config modification, so replace scheduler entirely.
     if is_klein:
-        pipe.scheduler.config.use_dynamic_shifting = False
-        pipe.scheduler.config.shift = 1.0
+        pipe.scheduler = FlowMatchEulerDiscreteScheduler(
+            num_train_timesteps=1000,
+            shift=1.0,
+            use_dynamic_shifting=False,
+        )
 
     # VAE precision fix: cast to float32 for decode to avoid bfloat16 quantization noise
     # that manifests as high-frequency stippling/pointillism artifacts.

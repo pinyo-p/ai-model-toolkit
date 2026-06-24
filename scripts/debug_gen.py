@@ -137,9 +137,12 @@ pipe = Flux2KleinPipeline(
 )
 pipe.to(device, dtype=dtype)
 
-# Scheduler fix: disable dynamic shifting for Klein model
-pipe.scheduler.config.use_dynamic_shifting = False
-pipe.scheduler.config.shift = 1.0
+# Scheduler fix: replace with linear sigmas scheduler for Klein model
+pipe.scheduler = FlowMatchEulerDiscreteScheduler(
+    num_train_timesteps=1000,
+    shift=1.0,
+    use_dynamic_shifting=False,
+)
 
 # VAE precision fix
 pipe.vae.to(dtype=torch.float32)
