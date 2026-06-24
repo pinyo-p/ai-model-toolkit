@@ -22,8 +22,9 @@ repo = "black-forest-labs/FLUX.2-klein-9B"
 vae = AutoencoderKLFlux2.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=os.environ["HF_TOKEN"])
 vae.to(device)
 vae.eval()
-print(f"[vae] Config: scaling_factor={vae.config.scaling_factor}, latent_channels={vae.config.latent_channels}")
-print(f"[vae] block_out_channels={vae.config.block_out_channels}")
+print(f"[vae] Config keys: {list(vae.config.keys())}")
+for k in ["scaling_factor", "latent_channels", "block_out_channels", "in_channels"]:
+    print(f"  {k}={getattr(vae.config, k, 'N/A')}")
 
 # Load a test image (first .png from output dir)
 out_dir = "/home/yokiz/ai-model-toolkit/output"
