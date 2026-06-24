@@ -336,58 +336,37 @@
                 </div>
             </div>
 
-            <div style="display:flex;gap:8px;">
-                <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
-                <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
-            </div>
-            <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                        <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
-                        <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+            <div style="display:flex;gap:16px;">
+                <div style="flex:1;min-width:0;">
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
+                        <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
                     </div>
-                    <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
-                </div>
-                <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
-                    <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
-                </div>
-            </div>
-            <div style="margin:6px 0;">
-                <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
-                <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
-                <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
-            </div>
-            <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
-            <div id="active-jobs" style="margin:8px 0;display:none;"></div>
-            <div class="output" id="gen-output">
-                <span class="placeholder">Image will appear here</span>
-            </div>
-
-            <div style="display:flex;gap:8px;">
-                <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
-                <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
-            </div>
-            <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div>
-                        <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
-                        <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+                    <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
+                                <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
+                            </div>
+                            <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
+                        </div>
+                        <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                            <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                        </div>
                     </div>
-                    <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
+                    <div style="margin:6px 0;">
+                        <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                        <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
+                        <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
+                    </div>
+                    <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
+                    <div id="active-jobs" style="margin:8px 0;display:none;"></div>
                 </div>
-                <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
-                    <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                <div style="flex:1;min-width:0;">
+                    <div class="output" id="gen-output" style="margin:0;">
+                        <span class="placeholder">Image will appear here</span>
+                    </div>
                 </div>
-            </div>
-            <div style="margin:6px 0;">
-                <button id="gen-log-toggle" onclick="toggleGenLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
-                <button onclick="copyGenLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="gen-log-copy">📄 Copy</button>
-                <div id="gen-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
-            </div>
-            <div id="gen-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
-            <div id="active-jobs" style="margin:8px 0;display:none;"></div>
-            <div class="output" id="gen-output">
-                <span class="placeholder">Image will appear here</span>
             </div>
         </div>
 
