@@ -166,7 +166,13 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
     import time
     t0 = time.time()
 
-    from diffusers import Flux2KleinPipeline, AutoencoderKL
+    from diffusers import (
+        Flux2KleinPipeline,
+        AutoencoderKLFlux2,
+        Flux2Transformer2DModel,
+        FlowMatchEulerDiscreteScheduler,
+    )
+    from transformers import Qwen3ForCausalLM, Qwen2TokenizerFast
 
     # Step 1: Try from_single_file directly (no HF download needed)
     try:
@@ -177,12 +183,17 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         return pipe
     except Exception as e:
         print(f"[flux2] from_single_file failed: {e}")
-        if on_message:
-            on_message("from_single_file not supported, using swap method...")
 
-    # Fallback: download files sequentially (more reliable than snapshot_download)
+    # Step 2: Download only config + VAE + text encoder (skip main transformer weights)
     repo = "black-forest-labs/FLUX.2-klein-9B"
     import huggingface_hub as hf_hub
+
+    SKIP_FILES = (
+        "flux-2-klein-9b.safetensors",
+        "model-00001-of-00002.safetensors",
+        "model-00002-of-00002.safetensors",
+        "model.fp16.safetensors",
+    )
 
     cached = hf_hub.try_to_load_from_cache(repo_id=repo, filename="model_index.json")
     needs_dl = cached is None or not os.path.exists(cached)
@@ -191,9 +202,9 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         if on_message:
             on_message("Listing repo files...")
 
-        files = hf_hub.list_repo_files(repo, token=hf_token)
-        total = 0
+        files = [f for f in hf_hub.list_repo_files(repo, token=hf_token) if f not in SKIP_FILES]
         sizes = {}
+        total = 0
         for f in files:
             try:
                 s = hf_hub.file_size(repo, f, token=hf_token)
@@ -203,8 +214,7 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
                 pass
 
         if on_message:
-            gb = total / (1024**3)
-            on_message(f"Downloading {len(files)} files ({gb:.1f}GB)...")
+            on_message(f"Downloading VAE + text encoder + config ({total/1024**3:.1f}GB)...")
 
         dl_base = [0]
         def _fp(curr, tot):
@@ -223,12 +233,37 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
                     if attempt == 2:
                         raise
                     if on_message:
-                        on_message(f"Retrying {f} (attempt {attempt+2})...")
+                        on_message(f"Retrying {os.path.basename(f)} (attempt {attempt+2})...")
+
+    # Step 3: Load individual components
+    if on_message:
+        on_message("Loading VAE...")
+    vae = AutoencoderKLFlux2.from_pretrained(repo, subfolder="vae", torch_dtype=dtype, token=hf_token)
 
     if on_message:
-        on_message("Loading pipeline...")
-    pipe = Flux2KleinPipeline.from_pretrained(repo, torch_dtype=dtype, token=hf_token)
-    print(f"[flux2] Pipeline loaded in {time.time()-t0:.1f}s")
+        on_message("Loading text encoder...")
+    text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
+
+    if on_message:
+        on_message("Loading tokenizer...")
+    tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
+
+    if on_message:
+        on_message("Loading scheduler + transformer config...")
+    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=hf_token)
+    transformer = Flux2Transformer2DModel.from_config(repo, subfolder="transformer", torch_dtype=dtype, token=hf_token)
+
+    # Step 4: Assemble pipeline
+    if on_message:
+        on_message("Assembling pipeline...")
+    pipe = Flux2KleinPipeline(
+        scheduler=scheduler,
+        vae=vae,
+        text_encoder=text_encoder,
+        tokenizer=tokenizer,
+        transformer=transformer,
+    )
+    print(f"[flux2] Pipeline assembled in {time.time()-t0:.1f}s")
 
     if on_message:
         on_message("Swapping checkpoint weights...")
