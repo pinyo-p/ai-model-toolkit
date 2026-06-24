@@ -323,13 +323,18 @@ def sdxl_generate(
                 pass
         return callback_kwargs
 
+    # Klein (distilled) models MUST use guidance_scale=1.0
+    name_lower = os.path.basename(model_path).lower()
+    is_klein = "klein" in name_lower or "schnell" in name_lower
+    effective_cfg = 1.0 if is_klein else cfg
+
     call_kwargs = dict(
         prompt=prompt,
         num_inference_steps=steps,
         generator=generator,
         width=width,
         height=height,
-        guidance_scale=cfg,
+        guidance_scale=effective_cfg,
         callback_on_step_end=_step_cb,
     )
     if negative and 'negative_prompt' in inspect.signature(pipeline.__call__).parameters:
@@ -389,13 +394,18 @@ def sdxl_generate_parallel(
 
     negative_prompts = [negative if negative else None] * len(prompts)
 
+    # Klein (distilled) models MUST use guidance_scale=1.0
+    name_lower = os.path.basename(model_path).lower()
+    is_klein = "klein" in name_lower or "schnell" in name_lower
+    effective_cfg = 1.0 if is_klein else cfg
+
     call_kwargs = dict(
         prompt=prompts,
         num_inference_steps=steps,
         generator=generators,
         width=width,
         height=height,
-        guidance_scale=cfg,
+        guidance_scale=effective_cfg,
         callback_on_step_end=_step_cb,
     )
     if negative and 'negative_prompt' in inspect.signature(pipeline.__call__).parameters:

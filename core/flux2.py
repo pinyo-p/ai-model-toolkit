@@ -327,5 +327,13 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
                 print(f"  still-missing: {k}")
 
     pipe.to(device=device)
+
+    # VAE precision fix: cast to float32 for decode to avoid bfloat16 quantization noise
+    # that manifests as high-frequency stippling/pointillism artifacts.
+    # bfloat16 VAE decode is known to produce noisy reconstructions; float32 is clean.
+    pipe.vae.to(dtype=torch.float32)
+    orig_vae_decode = pipe.vae.decode
+    pipe.vae.decode = lambda z, *a, **kw: orig_vae_decode(z.to(torch.float32), *a, **kw)
+
     print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
     return pipe
