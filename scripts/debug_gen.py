@@ -70,13 +70,14 @@ print(f"  use_lucretine_sigmas: {getattr(scheduler.config, 'use_lucretine_sigmas
 print("\n" + "="*60)
 print("TRANSFORMER CONFIG")
 print("="*60)
-print(f"  inner_dim: {transformer.config.inner_dim}")
-print(f"  num_heads: {transformer.config.num_heads}")
-print(f"  head_dim: {transformer.config.head_dim}")
-print(f"  num_layers: {transformer.config.num_layers}")
-print(f"  num_single_layers: {transformer.config.num_single_layers}")
-print(f"  guidance_embeds: {transformer.config.guidance_embeds}")
-print(f"  mlp_ratio: {transformer.config.mlp_ratio}")
+for attr in ['inner_dim', 'num_heads', 'head_dim', 'num_layers', 'num_single_layers',
+             'guidance_embeds', 'mlp_ratio', 'hidden_size', 'num_attention_heads',
+             'num_hidden_layers', 'channels', 'patch_size']:
+    val = getattr(transformer.config, attr, 'N/A')
+    if val != 'N/A':
+        print(f"  {attr}: {val}")
+# Also dump full config for inspection
+print(f"  [full config keys]: {list(transformer.config.keys())}")
 
 # ======== MONKEY-PATCH TRANSFORMER TO CAPTURE OUTPUT ========
 orig_transformer_forward = transformer.forward
