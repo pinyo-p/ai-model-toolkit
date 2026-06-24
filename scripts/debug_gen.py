@@ -116,7 +116,7 @@ scheduler_steps = []
 
 def patched_scheduler_step(model_output, timestep, sample, *args, **kwargs):
     result = orig_scheduler_step(model_output, timestep, sample, *args, **kwargs)
-    prev = result.prev_sample
+    prev = result[0] if isinstance(result, tuple) else result.prev_sample
     scheduler_steps.append({
         'timestep': timestep.item() if hasattr(timestep, 'item') else float(timestep),
         'sample_before_mean': sample.float().mean().item(),
