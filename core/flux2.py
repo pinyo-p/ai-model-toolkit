@@ -328,6 +328,21 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
 
     pipe.to(device=device)
 
+    # Scheduler fix: Klein models were trained with uniform timesteps.
+    # use_dynamic_shifting=True + shift=3.0 compresses sigmas into a narrow range
+    # (e.g. [1.0, 0.967, 0.908, 0.767, 0.0]) which forces the last step to remove
+    # 76% of noise at once — impossible to denoise correctly.
+    # Fix: override sigmas to linearly spaced values after each set_timesteps call.
+    if is_klein:
+        _orig_set_timesteps = pipe.scheduler.set_timesteps
+        def _patched_set_timesteps(num_inference_steps, device=None, **kwargs):
+            _orig_set_timesteps(num_inference_steps, device=device, **kwargs)
+            _dev = device or pipe.scheduler.sigmas.device
+            pipe.scheduler.sigmas = torch.linspace(1.0, 0.0, num_inference_steps + 1,
+                                                    device=_dev, dtype=pipe.scheduler.sigmas.dtype)
+            pipe.scheduler.timesteps = pipe.scheduler.sigmas * pipe.scheduler.config.num_train_timesteps
+        pipe.scheduler.set_timesteps = _patched_set_timesteps
+
     # VAE precision fix: cast to float32 for decode to avoid bfloat16 quantization noise
     # that manifests as high-frequency stippling/pointillism artifacts.
     # bfloat16 VAE decode is known to produce noisy reconstructions; float32 is clean.
