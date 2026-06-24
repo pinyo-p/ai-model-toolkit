@@ -451,8 +451,19 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
     if os.path.isfile(model_path):
         size = os.path.getsize(model_path)
         model_size = " (" + _friendly_size(size) + ")"
+    start_time = time.time()
+    seeds = [seed + i for i in range(count)]
+    lora_info = []
+    if lora_paths and lora_weights:
+        for lp, lw in zip(lora_paths, lora_weights):
+            lora_info.append({"path": lp, "weight": lw})
+    _set_gen_progress(gen_id,
+        status="loading", message=f"Loading {model_name}{model_size}...",
+        images_count=0, total_images=count, dev=dev,
+        model_name=model_name, steps=steps, cfg=cfg, seeds=seeds,
+        prompt=prompt, negative=negative, width=width, height=height,
+        lora=lora_info, start_time=start_time)
     try:
-        _set_gen_progress(gen_id, status="loading", message=f"Loading {model_name}{model_size}...", images_count=0, total_images=count, dev=dev)
 
         def _on_loading_msg(msg):
             _set_gen_progress(gen_id, status="loading", message=msg)
@@ -491,7 +502,7 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
             with _gen_lock:
                 _generate_progress[gen_id]["image_urls"] = image_urls
                 _generate_progress[gen_id]["images_count"] = len(image_urls)
-            _set_gen_progress(gen_id, status="done", message="Done")
+            _set_gen_progress(gen_id, status="done", message="Done", elapsed=time.time() - start_time)
         else:
             # Queue: one by one, show each image as it completes
             with _gen_lock:
@@ -517,7 +528,7 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
                 with _gen_lock:
                     _generate_progress[gen_id]["image_urls"].append(url)
                     _generate_progress[gen_id]["images_count"] = i + 1
-            _set_gen_progress(gen_id, status="done", message="Done")
+            _set_gen_progress(gen_id, status="done", message="Done", elapsed=time.time() - start_time)
     except sdxl.CancelGeneration:
         _set_gen_progress(gen_id, status="cancelled", message="Cancelled")
     except Exception as e:

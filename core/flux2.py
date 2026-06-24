@@ -31,10 +31,10 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
         on_message(f"Loading single file ({pipe_name})...")
     try:
         pipe = pipeline_cls.from_single_file(model_path, torch_dtype=dtype, token=hf_token)
-        print(f"[flux2] {pipe_cls.__name__}.from_single_file succeeded in {time.time()-t0:.1f}s")
+        print(f"[flux2] {pipeline_cls.__name__}.from_single_file succeeded in {time.time()-t0:.1f}s")
         return pipe
     except Exception as e:
-        print(f"[flux2] {pipe_cls.__name__}.from_single_file failed: {e}")
+        print(f"[flux2] {pipeline_cls.__name__}.from_single_file failed: {e}")
         traceback.print_exc()
 
     # Step 2: Download only config + VAE + text encoder

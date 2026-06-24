@@ -85,8 +85,6 @@
         .lightbox-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
         .lightbox-close { position: fixed; top: 20px; right: 20px; font-size: 28px; color: #fff; cursor: pointer; z-index: 10002; background: rgba(0,0,0,0.5); border: none; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
         .lightbox-download { position: fixed; bottom: 20px; right: 20px; padding: 10px 20px; background: #00d4ff; color: #000; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10002; text-decoration: none; font-size: 14px; }
-        .lightbox-share { position: fixed; bottom: 20px; right: 120px; padding: 10px 20px; background: #555; color: #fff; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; z-index: 10002; font-size: 14px; }
-        .lightbox-share:hover { background: #777; }
 
         /* File Table */
         .file-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -2717,21 +2715,16 @@ a bird on a tree</textarea>
         function closeLightbox() {
             document.getElementById('lightbox').classList.remove('active');
         }
-        function shareLightboxImage(e) {
-            e.stopPropagation();
-            var src = document.querySelector('#lightbox img').src;
-            if (navigator.share) {
-                navigator.share({ title: 'AI Generated Image', url: src }).catch(function(){});
-            } else {
-                navigator.clipboard.writeText(src).then(function() {
-                    showAlert('Copied', 'Image URL copied to clipboard');
-                }).catch(function(){});
-            }
-        }
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeLightbox();
             if (e.key === 'Escape') closeGallery();
         });
+
+        // Parse gen_id from /output/{gen_id}_N.png
+        function genIdFromUrl(url) {
+            var m = url.match(/\/output\/(.+)_\d+\.png$/);
+            return m ? m[1] : null;
+        }
 
         // Gallery
         async function openGallery() {
@@ -2759,6 +2752,7 @@ a bird on a tree</textarea>
                         + '<div class="gen-img-actions">'
                         + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
                         + '<a href="' + img.url + '" download="' + img.name + '" class="btn-small">Download</a>'
+                        + '<button class="btn-small" onclick="showGenDetails(this)">Details</button>'
                         + '<button class="btn-small" style="background:#d32f2f;" onclick="deleteGalleryImage(this)">Delete</button>'
                         + '</div></div>';
                 });
@@ -2813,6 +2807,49 @@ a bird on a tree</textarea>
                 });
             } catch(e) {}
         }
+
+        async function showGenDetails(btn) {
+            var wrap = btn.closest('.gen-img-wrap');
+            var url = wrap.getAttribute('data-url');
+            var genId = genIdFromUrl(url);
+            if (!genId) { showAlert('Error', 'Cannot identify generation ID'); return; }
+            try {
+                var res = await fetch('/api/generate_progress?gen_id=' + encodeURIComponent(genId), {
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                var data = await res.json();
+                var panel = document.getElementById('gen-detail-body');
+                function v(label, val) {
+                    return '<tr><td style="padding:4px 12px 4px 0;color:#aaa;white-space:nowrap;vertical-align:top;">' + label + '</td>'
+                        + '<td style="padding:4px 0;color:#eee;word-break:break-word;">' + (val || '-') + '</td></tr>';
+                }
+                var elapsed = data.elapsed ? data.elapsed.toFixed(1) + 's' : '-';
+                var seedStr = data.seeds ? data.seeds.join(', ') : '-';
+                var loraStr = '-';
+                if (data.lora && data.lora.length) {
+                    loraStr = data.lora.map(function(l){ return l.path.split('/').pop() + ' (' + l.weight + ')'; }).join('<br>');
+                }
+                var statusMap = {'loading':'⏳','generating':'⚙️','done':'✅','error':'❌','cancelled':'🚫'};
+                var statusIcon = statusMap[data.status] || '❓';
+                panel.innerHTML = '<table>' + v('Status', statusIcon + ' ' + data.status)
+                    + v('Model', data.model_name || '-')
+                    + v('Prompt', (data.prompt || '').substring(0, 200))
+                    + v('Negative', (data.negative || '').substring(0, 100))
+                    + v('Steps', data.steps || '-')
+                    + v('CFG', data.cfg || '-')
+                    + v('Seeds', seedStr)
+                    + v('Size', (data.width || '?') + 'x' + (data.height || '?'))
+                    + v('LoRA', loraStr)
+                    + v('Time', elapsed)
+                    + '</table>';
+                document.getElementById('gen-detail-modal').style.display = 'flex';
+            } catch(e) {
+                showAlert('Error', 'Failed to load details: ' + e.message);
+            }
+        }
+        function closeGenDetails() {
+            document.getElementById('gen-detail-modal').style.display = 'none';
+        }
     </script>
 
     <!-- Gallery Modal -->
@@ -2835,8 +2872,16 @@ a bird on a tree</textarea>
     <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">
         <button class="lightbox-close" onclick="closeLightbox()">✕</button>
         <img src="" alt="Full size" onclick="event.stopPropagation()">
-        <button class="lightbox-share" onclick="shareLightboxImage(event)">📤 Share</button>
         <a class="lightbox-download" href="" download="image.png" onclick="event.stopPropagation()">⬇ Download</a>
+    </div>
+
+    <!-- Gen Details Modal -->
+    <div class="modal-overlay" id="gen-detail-modal" style="display:none;" onclick="closeGenDetails()">
+        <div class="modal-box" style="max-width:480px;width:95%;max-height:70vh;position:relative;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeGenDetails()" style="position:absolute;top:12px;right:16px;">✕</button>
+            <h3 style="margin-top:0;">📋 Generation Details</h3>
+            <div id="gen-detail-body" style="max-height:55vh;overflow-y:auto;"></div>
+        </div>
     </div>
 
     <!-- Download Modal -->
