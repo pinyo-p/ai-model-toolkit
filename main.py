@@ -1845,6 +1845,18 @@ async def update_app(user: str = Depends(get_current_user)):
 
 if __name__ == "__main__":
     import uvicorn
+    import logging
+
+    class _SuppressPollFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if '"/api/generate_progress' in msg or '"/api/active_jobs' in msg:
+                return False
+            return True
+
+    for _name in ("uvicorn.access", "uvicorn"):
+        logging.getLogger(_name).addFilter(_SuppressPollFilter())
+
     # Ensure component folders exist in models directory
     _models_dir = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
     for _sub in ("text_encoder", "vae", "tokenizer"):
