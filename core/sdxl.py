@@ -277,7 +277,7 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
     from safetensors import safe_open
     print(f"[flux2] Reading checkpoint keys via safe_open...")
     unet_state = {}
-    with safe_open(model_path, framework="pt", device=device) as f:
+    with safe_open(model_path, framework="pt", device="cpu") as f:
         keys = [k for k in f.keys() if k.startswith("model.diffusion_model.")]
         print(f"[flux2] Found {len(keys)} transformer keys, loading...")
         for i, k in enumerate(keys):
@@ -290,6 +290,10 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         t1 = time.time()
         missing, unexpected = pipe.transformer.load_state_dict(unet_state, strict=False)
         print(f"[flux2] Weights swapped in {time.time()-t1:.1f}s. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+        if missing:
+            print(f"[flux2] Missing keys (first 10): {list(missing)[:10]}")
+        if unexpected:
+            print(f"[flux2] Unexpected keys (first 10): {list(unexpected)[:10]}")
 
     del unet_state
     print(f"[flux2] Pipeline ready in {time.time()-t0:.1f}s total")
