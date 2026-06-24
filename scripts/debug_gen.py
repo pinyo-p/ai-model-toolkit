@@ -137,15 +137,9 @@ pipe = Flux2KleinPipeline(
 )
 pipe.to(device, dtype=dtype)
 
-# Scheduler fix: override dynamic shifting with linear sigmas for Klein model
-_orig_set_timesteps = pipe.scheduler.set_timesteps
-def _patched_set_timesteps(num_inference_steps, device=None, **kwargs):
-    _orig_set_timesteps(num_inference_steps, device=device, **kwargs)
-    _dev = device or pipe.scheduler.sigmas.device
-    pipe.scheduler.sigmas = torch.linspace(1.0, 0.0, num_inference_steps + 1,
-                                            device=_dev, dtype=pipe.scheduler.sigmas.dtype)
-    pipe.scheduler.timesteps = pipe.scheduler.sigmas * pipe.scheduler.config.num_train_timesteps
-pipe.scheduler.set_timesteps = _patched_set_timesteps
+# Scheduler fix: disable dynamic shifting for Klein model
+pipe.scheduler.config.use_dynamic_shifting = False
+pipe.scheduler.config.shift = 1.0
 
 # VAE precision fix
 pipe.vae.to(dtype=torch.float32)
