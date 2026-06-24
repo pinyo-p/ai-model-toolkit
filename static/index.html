@@ -1027,7 +1027,11 @@ a bird on a tree</textarea>
             var genModel = genModelSelect.value === '__custom__'
                 ? document.getElementById('gen-model-custom').value
                 : genModelSelect.value;
-            var modelPath = genModel || 'stabilityai/stable-diffusion-xl-base-1.0';
+            if (!genModel) {
+                showAlert('No Model', 'Please select a model first.');
+                return;
+            }
+            var modelPath = genModel;
 
             var genVaeSelect = document.getElementById('gen-vae');
             var genVae = genVaeSelect.value === '__custom__'
