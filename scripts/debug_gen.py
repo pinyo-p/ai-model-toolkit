@@ -54,7 +54,7 @@ if unexpected:
     for k in unexpected:
         print(f"  {k}")
 
-transformer.to(device)
+transformer.to(device, dtype=dtype)
 transformer.eval()
 
 t1.record()
@@ -66,7 +66,7 @@ pipe = Flux2KleinPipeline(
     scheduler=scheduler, vae=vae, text_encoder=text_encoder,
     tokenizer=tokenizer, transformer=transformer,
 )
-pipe.to(device)
+pipe.to(device, dtype=dtype)
 
 # Run generation with callback to capture latents
 prompt = "a cat, high quality"
