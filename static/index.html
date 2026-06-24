@@ -2808,8 +2808,8 @@ a bird on a tree</textarea>
 
     <!-- Gallery Modal -->
     <div class="modal-overlay" id="gallery-modal" style="display:none;">
-        <div class="modal-box" style="max-width:900px;width:95%;max-height:85vh;display:flex;flex-direction:column;">
-            <button class="modal-close" onclick="closeGallery()">✕</button>
+        <div class="modal-box" style="max-width:900px;width:95%;max-height:85vh;display:flex;flex-direction:column;position:relative;">
+            <button class="modal-close" onclick="closeGallery()" style="position:absolute;top:12px;right:16px;float:none;">✕</button>
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
                 <h3 style="margin:0;flex:1;">🖼️ Generated Images</h3>
                 <span id="gallery-count" style="color:#888;font-size:13px;"></span>

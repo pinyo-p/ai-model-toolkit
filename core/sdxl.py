@@ -160,7 +160,7 @@ def _fallback_load_sdxl_from_file(model_path, dtype):
     return pipe
 
 
-def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None):
+def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None, cancel_event=None):
     """Load base Flux2KleinPipeline from HF, then swap transformer weights from a single checkpoint file."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     import time
@@ -219,6 +219,9 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         dl_base = [0]
 
         for f in files:
+            if cancel_event and cancel_event.is_set():
+                print("[flux2] Cancelled during download")
+                return None
             for attempt in range(3):
                 try:
                     hf_hub.hf_hub_download(repo, f, token=hf_token)
