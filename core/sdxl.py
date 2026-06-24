@@ -267,6 +267,7 @@ def _load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=No
         tokenizer=tokenizer,
         transformer=transformer,
     )
+    pipe.to(dtype=dtype)
     print(f"[flux2] Pipeline assembled in {time.time()-t0:.1f}s")
 
     if on_message:
