@@ -1,6 +1,6 @@
 # AI Toolkit
 
-FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
+FastAPI web UI for image generation (SDXL, FLUX.2[k], z-Image-Turbo), LoRA training, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
 
@@ -8,7 +8,7 @@ FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 
 | Tab | Feature | Description |
 |-----|---------|-------------|
-| Generate | **SDXL Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
+| Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution — supports SDXL, FLUX.2[k], z-Image-Turbo |
 | Batch | **Batch Generate** | Multiple prompts → ZIP download |
 | Train | **Train LoRA** | 5-50 images, auto-caption (BLIP + metadata), select base model from local models |
 | Train | **Image to LoRA** | Quick LoRA from 1-3 images |
@@ -28,6 +28,7 @@ FastAPI web UI for SDXL image generation, LoRA training, captioning, and more.
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
 - ~2GB disk for base SDXL model
+- ~20GB disk for FLUX.2[k] (Klein 9B)
 
 ## Quick Start
 
@@ -103,7 +104,7 @@ Default login: `admin` / `admin` (change in Settings)
 
 - Python 3.10+, FastAPI, Uvicorn
 - PyTorch 2.9.0 + CUDA 12.8
-- Diffusers, Transformers, Accelerate
+- Diffusers (FLUX.2 Klein pipeline, SDXL), Transformers (Qwen3)
 - PEFT, Safetensors
 - OpenCV (upscale), Pillow
 
@@ -113,7 +114,8 @@ Default login: `admin` / `admin` (change in Settings)
 ai-toolkit/
 ├── main.py              # FastAPI app, all endpoints (browse/upload/rename/download)
 ├── core/
-│   ├── sdxl.py          # Image generation
+│   ├── sdxl.py          # SDXL / z-Image-Turbo generation
+│   ├── flux2.py         # FLUX.2[k] generation (Klein pipeline)
 │   ├── lora.py          # LoRA train/merge/extract
 │   ├── caption.py       # BLIP captioning
 │   ├── image.py         # Upscale
