@@ -1,14 +1,23 @@
 # AI Toolkit
 
-FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Turbo), LoRA training, captioning, and more.
+FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), LoRA training, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
+
+## Supported Models
+
+| Model Family | Variants | Default Steps | Default CFG | Notes |
+|---|---|---|---|---|
+| **SDXL** | Base 1.0, Pony, Illustrious | 20 | 7.0 | Full LoRA support |
+| **FLUX.2[k]** | Klein 9B | 4 | 1.0 | Fast, distilled, CFG forced to 1.0 |
+| **FLUX.2[D]** | Dev 32B | 28 | 4.0 | High quality, needs ~64GB VRAM |
+| **z-Image** | Base, Turbo | 9 | 0.0 | Turbo recommended |
 
 ## Features
 
 | Tab | Feature | Description |
 |-----|---------|-------------|
-| Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution — supports SDXL, FLUX.2[k] (Klein 9B), FLUX.2[D] (Dev 32B), z-Image-Turbo |
+| Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
 | Batch | **Batch Generate** | Multiple prompts → ZIP download |
 | Train | **Train LoRA** | 5-50 images, auto-caption (BLIP + metadata), select base model from local models |
 | Train | **Image to LoRA** | Quick LoRA from 1-3 images |
@@ -27,8 +36,7 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Turbo), LoRA t
 
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
-- ~2GB disk for base SDXL model
-- ~20GB disk for FLUX.2[k] (Klein 9B), ~64GB for FLUX.2[D] (Dev 32B)
+- Disk: ~2GB (SDXL) / ~20GB (FLUX.2[k]) / ~64GB (FLUX.2[D]) / ~10GB (z-Image)
 
 ## Quick Start
 
@@ -89,7 +97,7 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/caption` | BLIP captioning |
 | POST | `/api/auto_caption` | Auto caption with metadata fallback |
 | POST | `/api/upscale` | Image upscale |
-| GET | `/api/models` | List local models |
+| GET | `/api/models` | List local models (scans nested subdirs) |
 | DELETE | `/api/models` | Delete model |
 | GET | `/api/models/browse` | Browse directory (name, size, type, modified) |
 | POST | `/api/models/upload` | Upload files (drag & drop, multi-file) |
@@ -104,7 +112,7 @@ Default login: `admin` / `admin` (change in Settings)
 
 - Python 3.10+, FastAPI, Uvicorn
 - PyTorch 2.9.0 + CUDA 12.8
-- Diffusers (FLUX.2 Klein pipeline, SDXL), Transformers (Qwen3)
+- Diffusers (FLUX.2 Klein/Dev pipelines, SDXL), Transformers (Qwen3, Mistral3)
 - PEFT, Safetensors
 - OpenCV (upscale), Pillow
 
@@ -114,8 +122,9 @@ Default login: `admin` / `admin` (change in Settings)
 ai-toolkit/
 ├── main.py              # FastAPI app, all endpoints (browse/upload/rename/download)
 ├── core/
-│   ├── sdxl.py          # SDXL / z-Image-Turbo generation
-│   ├── flux2.py         # FLUX.2[k] generation (Klein pipeline)
+│   ├── sdxl.py          # SDXL / z-Image generation (model detection + dispatch)
+│   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
+│   ├── zimage.py        # z-Image-Base/Turbo generation
 │   ├── lora.py          # LoRA train/merge/extract
 │   ├── caption.py       # BLIP captioning
 │   ├── image.py         # Upscale
