@@ -1165,6 +1165,21 @@ async def list_models(user: str = Depends(get_current_user)):
                         continue
                     if os.path.isdir(f_path):
                         nested_dirs.append(f)
+                        # Scan one more level deep for checkpoint files
+                        for f2 in sorted(os.listdir(f_path)):
+                            f2_path = os.path.join(f_path, f2)
+                            if f2.startswith(".") or os.path.isdir(f2_path):
+                                continue
+                            if os.path.splitext(f2)[1].lower() in allowed_ext:
+                                file_role = _detect_model_role(f2, parent_dir=f)
+                                if f2.endswith('.safetensors'):
+                                    keys, _ = _read_safetensors_meta(f2_path)
+                                    if keys:
+                                        file_role = _detect_role_from_keys(keys)
+                                fe = {"name": f2, "subdir": f, "model_type": file_role}
+                                if file_role == "checkpoint":
+                                    fe["model_family"] = _detect_family(f2_path)
+                                folder_files.append(fe)
                     elif os.path.splitext(f)[1].lower() in allowed_ext:
                         file_role = _detect_model_role(f, parent_dir=item)
                         if f.endswith('.safetensors'):

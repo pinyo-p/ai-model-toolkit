@@ -926,7 +926,8 @@ a bird on a tree</textarea>
                     if (filterType !== 'checkpoint') return;
                     (m.files).forEach(function(f) {
                         var fname = typeof f === 'string' ? f : f.name;
-                        var relPath = m.name + '/' + fname;
+                        var subdir = f.subdir || '';
+                        var relPath = subdir ? m.name + '/' + subdir + '/' + fname : m.name + '/' + fname;
                         var ft = _getFileType(f, m);
                         if (ft !== 'checkpoint') return;
                         var el = document.createElement('option');
