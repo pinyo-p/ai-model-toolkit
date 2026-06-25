@@ -24,7 +24,19 @@ vae.to(device)
 text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=os.environ["HF_TOKEN"])
 text_encoder.to(device)
 tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=os.environ["HF_TOKEN"])
-scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=os.environ["HF_TOKEN"])
+
+# CRITICAL FIX: Create scheduler with CORRECT config from the start
+# The pretrained scheduler has use_dynamic_shifting=True + shift=3.0 which
+# compresses sigmas making denoising impossible. Klein models need linear sigmas.
+if is_klein:
+    scheduler = FlowMatchEulerDiscreteScheduler(
+        num_train_timesteps=1000,
+        shift=1.0,
+        use_dynamic_shifting=False,
+    )
+    print("[debug] Created scheduler with linear sigmas (shift=1.0, no dynamic shifting)")
+else:
+    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=os.environ["HF_TOKEN"])
 
 raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=os.environ["HF_TOKEN"])
 raw_cfg.pop("_class_name", None)
@@ -63,8 +75,6 @@ print(f"  shift: {scheduler.config.shift}")
 print(f"  use_dynamic_shifting: {scheduler.config.use_dynamic_shifting}")
 print(f"  scheduler class: {scheduler.__class__.__name__}")
 print(f"  num_train_timesteps: {scheduler.config.num_train_timesteps}")
-print(f"  use_karras_sigmas: {getattr(scheduler.config, 'use_karras_sigmas', 'N/A')}")
-print(f"  use_lucretine_sigmas: {getattr(scheduler.config, 'use_lucretine_sigmas', 'N/A')}")
 
 # ======== TRANSFORMER DIAGNOSTICS ========
 print("\n" + "="*60)
@@ -76,7 +86,6 @@ for attr in ['inner_dim', 'num_heads', 'head_dim', 'num_layers', 'num_single_lay
     val = getattr(transformer.config, attr, 'N/A')
     if val != 'N/A':
         print(f"  {attr}: {val}")
-# Also dump full config for inspection
 print(f"  [full config keys]: {list(transformer.config.keys())}")
 
 # ======== MONKEY-PATCH TRANSFORMER TO CAPTURE OUTPUT ========
@@ -85,7 +94,6 @@ model_outputs = []
 model_inputs = []
 
 def patched_transformer_forward(*args, **kwargs):
-    # Capture input stats
     hs = kwargs.get('hidden_states', args[0] if len(args) > 0 else None)
     ts = kwargs.get('timestep', args[1] if len(args) > 1 else None)
     enc = kwargs.get('encoder_hidden_states', args[2] if len(args) > 2 else None)
@@ -96,9 +104,7 @@ def patched_transformer_forward(*args, **kwargs):
         'encoder_mean': enc.float().mean().item() if enc is not None else None,
         'encoder_std': enc.float().std().item() if enc is not None else None,
     })
-    # Run original forward
     result = orig_transformer_forward(*args, **kwargs)
-    # Capture output stats
     out = result.sample if hasattr(result, 'sample') else result[0]
     model_outputs.append({
         'output_mean': out.float().mean().item(),
@@ -136,13 +142,6 @@ pipe = Flux2KleinPipeline(
     tokenizer=tokenizer, transformer=transformer,
 )
 pipe.to(device, dtype=dtype)
-
-# Scheduler fix: replace with linear sigmas scheduler for Klein model
-pipe.scheduler = FlowMatchEulerDiscreteScheduler(
-    num_train_timesteps=1000,
-    shift=1.0,
-    use_dynamic_shifting=False,
-)
 
 # VAE precision fix
 pipe.vae.to(dtype=torch.float32)
