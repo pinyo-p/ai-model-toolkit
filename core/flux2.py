@@ -216,17 +216,14 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
 
     if on_message:
         on_message("Loading scheduler + transformer config...")
-    # Klein models: create scheduler with linear sigmas from the start.
-    # The pretrained scheduler has use_dynamic_shifting=True + shift=3.0 which
-    # compresses sigmas making the last step remove >50% noise at once.
-    if is_klein:
-        scheduler = FlowMatchEulerDiscreteScheduler(
-            num_train_timesteps=1000,
-            shift=1.0,
-            use_dynamic_shifting=False,
-        )
-    else:
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=hf_token)
+    # All FLUX.2 models loaded via this path need linear sigmas.
+    # The pretrained scheduler config has use_dynamic_shifting=True + shift=3.0
+    # which compresses sigmas making the last step remove >50% noise at once.
+    scheduler = FlowMatchEulerDiscreteScheduler(
+        num_train_timesteps=1000,
+        shift=1.0,
+        use_dynamic_shifting=False,
+    )
 
     # Load transformer config and ensure correct architecture
     raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token)

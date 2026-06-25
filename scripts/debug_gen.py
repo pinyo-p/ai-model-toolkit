@@ -25,18 +25,15 @@ text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", 
 text_encoder.to(device)
 tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=os.environ["HF_TOKEN"])
 
-# CRITICAL FIX: Create scheduler with CORRECT config from the start
+# Always create scheduler with linear sigmas for FLUX.2 models
 # The pretrained scheduler has use_dynamic_shifting=True + shift=3.0 which
-# compresses sigmas making denoising impossible. Klein models need linear sigmas.
-if is_klein:
-    scheduler = FlowMatchEulerDiscreteScheduler(
-        num_train_timesteps=1000,
-        shift=1.0,
-        use_dynamic_shifting=False,
-    )
-    print("[debug] Created scheduler with linear sigmas (shift=1.0, no dynamic shifting)")
-else:
-    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(repo, subfolder="scheduler", token=os.environ["HF_TOKEN"])
+# compresses sigmas making the last step remove >50% noise at once.
+scheduler = FlowMatchEulerDiscreteScheduler(
+    num_train_timesteps=1000,
+    shift=1.0,
+    use_dynamic_shifting=False,
+)
+print("[debug] Created scheduler with linear sigmas (shift=1.0, no dynamic shifting)")
 
 raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=os.environ["HF_TOKEN"])
 raw_cfg.pop("_class_name", None)
