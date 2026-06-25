@@ -1,6 +1,6 @@
 # AI Toolkit
 
-FastAPI web UI for image generation (SDXL, FLUX.2[k], z-Image-Turbo), LoRA training, captioning, and more.
+FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Turbo), LoRA training, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
 
@@ -8,7 +8,7 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k], z-Image-Turbo), LoRA train
 
 | Tab | Feature | Description |
 |-----|---------|-------------|
-| Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution — supports SDXL, FLUX.2[k], z-Image-Turbo |
+| Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution — supports SDXL, FLUX.2[k] (Klein 9B), FLUX.2[D] (Dev 32B), z-Image-Turbo |
 | Batch | **Batch Generate** | Multiple prompts → ZIP download |
 | Train | **Train LoRA** | 5-50 images, auto-caption (BLIP + metadata), select base model from local models |
 | Train | **Image to LoRA** | Quick LoRA from 1-3 images |
@@ -28,7 +28,7 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k], z-Image-Turbo), LoRA train
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
 - ~2GB disk for base SDXL model
-- ~20GB disk for FLUX.2[k] (Klein 9B)
+- ~20GB disk for FLUX.2[k] (Klein 9B), ~64GB for FLUX.2[D] (Dev 32B)
 
 ## Quick Start
 

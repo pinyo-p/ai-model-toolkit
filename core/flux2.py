@@ -109,17 +109,34 @@ def _remap_flux2_state_dict(ckpt_state, model_sd):
     return mapped
 
 
+def _detect_flux2_variant(model_path):
+    """Detect FLUX.2 variant (dev/klein) from filename.
+    Returns (variant, is_klein) where variant is 'dev' or 'klein'."""
+    name_lower = os.path.basename(model_path).lower()
+    is_klein = "klein" in name_lower or "schnell" in name_lower
+    is_dev = "dev" in name_lower
+    # If neither explicitly Klein nor Dev, treat as Klein (distilled, faster)
+    variant = "dev" if is_dev else "klein"
+    return variant, is_klein
+
+
 def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=None, on_progress=None, cancel_event=None):
     """Load base Flux2 pipeline from HF, then swap transformer weights from a single checkpoint file."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     t0 = time.time()
 
-    # FLUX.2 always uses Flux2KleinPipeline (Qwen3) — the dev variant
-    # (Mistral3) repo does not exist on HF, so Flux2KleinPipeline works for both.
-    name_lower = os.path.basename(model_path).lower()
-    is_klein = "klein" in name_lower or "schnell" in name_lower
-    pipeline_cls = Flux2KleinPipeline
-    pipe_name = "Flux2KleinPipeline"
+    variant, is_klein = _detect_flux2_variant(model_path)
+
+    if variant == "dev":
+        pipeline_cls = Flux2Pipeline
+        pipe_name = "Flux2Pipeline"
+        repo = "black-forest-labs/FLUX.2-dev"
+    else:
+        pipeline_cls = Flux2KleinPipeline
+        pipe_name = "Flux2KleinPipeline"
+        repo = "black-forest-labs/FLUX.2-klein-9B"
+
+    print(f"[flux2] Detected variant: {variant} (is_klein={is_klein}), pipeline={pipe_name}")
 
     # Step 1: Try from_single_file directly
     if on_message:
@@ -149,16 +166,20 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
         except ImportError:
             print("[flux2] _load_state_dict_into_flux2_transformer NOT available")
 
-    # Step 2: Download only config + VAE + text encoder
-    # FLUX.2-dev-9B may not exist yet; always prefer klein repo
-    repo = "black-forest-labs/FLUX.2-klein-9B"
-
-    SKIP_FILES = (
+    # Step 2: Download only config + VAE + text encoder (skip large transformer shards)
+    SKIP_FILES_KLEIN = (
         "flux-2-klein-9b.safetensors",
         "model-00001-of-00002.safetensors",
         "model-00002-of-00002.safetensors",
         "model.fp16.safetensors",
     )
+    SKIP_FILES_DEV = (
+        "model-00001-of-00004.safetensors",
+        "model-00002-of-00004.safetensors",
+        "model-00003-of-00004.safetensors",
+        "model-00004-of-00004.safetensors",
+    )
+    SKIP_FILES = SKIP_FILES_KLEIN if is_klein else SKIP_FILES_DEV
 
     if on_message:
         on_message(f"Checking cache for {repo}...")
@@ -211,11 +232,19 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
 
     if on_message:
         on_message("Loading text encoder...")
-    text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
+    if is_klein:
+        text_encoder = Qwen3ForCausalLM.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
+    else:
+        from transformers import Mistral3ForConditionalGeneration
+        text_encoder = Mistral3ForConditionalGeneration.from_pretrained(repo, subfolder="text_encoder", torch_dtype=dtype, token=hf_token)
 
     if on_message:
         on_message("Loading tokenizer...")
-    tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
+    if is_klein:
+        tokenizer = Qwen2TokenizerFast.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
+    else:
+        from transformers import AutoProcessor
+        tokenizer = AutoProcessor.from_pretrained(repo, subfolder="tokenizer", token=hf_token)
 
     if on_message:
         on_message("Loading scheduler + transformer config...")

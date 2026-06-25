@@ -838,12 +838,18 @@ a bird on a tree</textarea>
                 var label = FAMILY_LABELS[family] || family;
                 familyBadge.textContent = label;
                 familyBadge.style.display = 'inline';
+                // Detect FLUX.2 variant (klein vs dev) from model path
+                var modelLower = (modelName || '').toLowerCase();
+                var isKlein = family === 'flux2' && (modelLower.includes('klein') || modelLower.includes('schnell'));
+                var isDev = family === 'flux2' && modelLower.includes('dev');
                 var cfg = FAMILY_CFG[family];
+                var steps = FAMILY_STEPS[family];
+                if (isKlein) { cfg = 1.0; steps = 4; }
+                else if (isDev) { cfg = 4.0; steps = 28; }
                 if (cfg !== undefined) {
                     document.getElementById('gen-cfg').value = cfg;
                     document.getElementById('batch-cfg').value = cfg;
                 }
-                var steps = FAMILY_STEPS[family];
                 if (steps !== undefined) {
                     document.getElementById('gen-steps').value = steps;
                     document.getElementById('batch-steps').value = steps;
