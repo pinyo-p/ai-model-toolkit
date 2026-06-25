@@ -1,3 +1,7 @@
+## Session Start
+- **ทุก session ใหม่** ให้อ่าน `memory.md` ก่อนเสมอ เพื่อดู architecture, model support, technical decisions, และ known issues ของโปรเจคนี้
+- Hindsight memory bankId: `ai-toolkit`
+
 ## Playwright
 - เวลาใช้ Playwright screenshot ให้ใช้ parameter `fullPage: true` เสมอ เพื่อให้ได้รูปเต็มจอ
 - viewport size ใช้ width 1400, height 900
