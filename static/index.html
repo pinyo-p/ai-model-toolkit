@@ -366,57 +366,141 @@
         </div>
 
         <div id="batch" class="panel">
-            <div class="card">
-                <h2>📦 Batch Generate</h2>
-                <div class="form-group">
-                <textarea id="batch-prompts" placeholder="a cat sitting on a couch&#10;a dog running in a park&#10;a bird on a tree">a cat sitting on a couch
-a dog running in a park
-a bird on a tree</textarea>
-            </div>
-            <div class="row">
-                <div class="col">
-                    <div class="form-group">
-                        <label>Steps</label>
-                        <input type="number" id="batch-steps" value="20" min="1" max="100">
+            <div style="display:flex;gap:16px;">
+                <div style="flex:1;min-width:0;">
+                    <div class="card">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <label style="margin:0;">Model</label>
+                            <button class="btn-small" onclick="loadBatchModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
+                        </div>
+                        <select id="batch-model" class="base-model" onchange="onBatchModelChange()">
+                            <option value="">-- Select local model --</option>
+                            <option value="__custom__">Custom (type manually)...</option>
+                        </select>
+                        <span id="batch-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
+                        <input type="text" id="batch-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
+
+                        <div class="row" style="margin-top:8px;">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>VAE (optional)</label>
+                                    <select id="batch-vae" class="base-model" onchange="onModelSelect(this, 'batch-vae-custom')">
+                                        <option value="">-- Default VAE --</option>
+                                        <option value="__custom__">Custom...</option>
+                                    </select>
+                                    <input type="text" id="batch-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Text Encoder (optional)</label>
+                                    <select id="batch-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'batch-text-encoder-custom')">
+                                        <option value="">-- Default --</option>
+                                        <option value="__custom__">Custom...</option>
+                                    </select>
+                                    <input type="text" id="batch-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>CFG</label>
-                        <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
+
+                    <div class="card">
+                        <div class="row">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Steps</label>
+                                    <input type="number" id="batch-steps" value="20" min="1" max="100">
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>CFG</label>
+                                    <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Seed</label>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <input type="number" id="batch-seed" value="42" class="flex-grow-1">
+                                        <label class="d-flex align-items-center gap-1 mb-0" style="white-space:nowrap;font-size:0.85rem;">
+                                            <input type="checkbox" id="batch-seed-random" checked> Random
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Width</label>
+                                    <input type="number" id="batch-width" value="1024" step="8">
+                                </div>
+                            </div>
+                            <div class="col">
+                                <div class="form-group">
+                                    <label>Height</label>
+                                    <input type="number" id="batch-height" value="1024" step="8">
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="col">
-                    <div class="form-group">
-                        <label>Seed</label>
-                        <div class="d-flex gap-2 align-items-center">
-                            <input type="number" id="batch-seed" value="42" class="flex-grow-1">
-                            <label class="d-flex align-items-center gap-1 mb-0" style="white-space:nowrap;font-size:0.85rem;">
-                                <input type="checkbox" id="batch-seed-random" checked> Random
-                            </label>
+
+                    <div class="card">
+                        <div class="form-group">
+                            <label>LoRAs</label>
+                            <div id="batch-lora-container">
+                                <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                                    <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                                    <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                                    <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                                </div>
+                            </div>
+                            <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="form-group">
-                <label>Negative Prompt</label>
-                <input type="text" id="batch-negative" placeholder="What to avoid...">
-            </div>
-            <div class="form-group">
-                <label>LoRAs</label>
-                <div id="batch-lora-container">
-                    <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                        <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
-                        <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                        <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+
+                <div style="flex:1;min-width:0;">
+                    <div class="card">
+                        <div class="form-group">
+                            <label>Prompts (one per line)</label>
+                            <textarea id="batch-prompts" rows="8" placeholder="a cat sitting on a couch&#10;a dog running in a park&#10;a bird on a tree">a cat sitting on a couch
+a dog running in a park
+a bird on a tree</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Negative Prompt</label>
+                            <textarea id="batch-negative" rows="2" placeholder="What to avoid..."></textarea>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn" id="batch-btn" onclick="batchGenerate()" style="flex:1;">Generate Batch (ZIP)</button>
+                    </div>
+                    <div id="batch-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <span id="batch-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
+                                <span id="batch-progress-count" style="font-size:11px;color:#666;margin-left:6px;"></span>
+                            </div>
+                            <button id="batch-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelBatchGeneration()">✕ Cancel</button>
+                        </div>
+                        <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                            <div id="batch-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                        </div>
+                    </div>
+                    <div style="margin:6px 0;">
+                        <button id="batch-log-toggle" onclick="toggleBatchLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                        <button onclick="copyBatchLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="batch-log-copy">📄 Copy</button>
+                        <div id="batch-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
+                    </div>
+                    <div id="batch-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
+
+                    <div class="output" id="batch-output" style="margin-top:12px;">
+                        <span class="placeholder">Images will appear here</span>
                     </div>
                 </div>
-                <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
-            </div>
-            <button class="btn" onclick="batchGenerate()">Generate Batch (ZIP)</button>
-            <div class="output" id="batch-output">
-                <span class="placeholder">Download will start automatically</span>
-            </div>
             </div>
         </div>
 
@@ -983,6 +1067,7 @@ a bird on a tree</textarea>
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
             if (tab === 'generate') loadGenModels();
+            if (tab === 'batch') loadBatchModels();
             if (tab === 'loadmodel') { browseFiles(); }
         }
 
@@ -1382,9 +1467,84 @@ a bird on a tree</textarea>
         // Start active jobs poll on page load
         startActiveJobsPoll();
 
+        var batchLogEntries = [];
+        var lastBatchMsg = '';
+
+        function appendBatchLog(msg, t0, isStep) {
+            var logEl = document.getElementById('batch-log');
+            var elapsed = t0 ? ((Date.now() - t0) / 1000).toFixed(1) : '0.0';
+            var prefix = isStep ? '  ' : '[' + elapsed + 's] ';
+            batchLogEntries.push(prefix + msg);
+            logEl.textContent = batchLogEntries.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function toggleBatchLog() {
+            var logEl = document.getElementById('batch-log');
+            var isVisible = logEl.style.display !== 'none';
+            logEl.style.display = isVisible ? 'none' : 'block';
+            document.getElementById('batch-log-copy').style.display = isVisible ? 'none' : 'inline-block';
+        }
+
+        function copyBatchLog() {
+            var text = batchLogEntries.join('\n');
+            if (!text) return;
+            var btn = document.getElementById('batch-log-copy');
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function() {
+                    btn.textContent = '✅ Copied';
+                    setTimeout(function() { btn.textContent = '📄 Copy'; }, 2000);
+                });
+            }
+        }
+
         async function batchGenerate() {
             const output = document.getElementById('batch-output');
-            output.innerHTML = '<span class="loading">Generating...</span>';
+            const progress = document.getElementById('batch-progress');
+            const progressBar = document.getElementById('batch-progress-bar');
+            const progressText = document.getElementById('batch-progress-text');
+            const progressCount = document.getElementById('batch-progress-count');
+            const batchBtn = document.getElementById('batch-btn');
+            const cancelBtn = document.getElementById('batch-cancel-btn');
+            const warningsEl = document.getElementById('batch-warnings');
+
+            var batchModelSelect = document.getElementById('batch-model');
+            var batchModel = batchModelSelect.value === '__custom__'
+                ? document.getElementById('batch-model-custom').value
+                : batchModelSelect.value;
+            if (!batchModel) {
+                showAlert('No Model', 'Please select a model first.');
+                return;
+            }
+
+            var batchVaeSelect = document.getElementById('batch-vae');
+            var batchVae = batchVaeSelect.value === '__custom__'
+                ? document.getElementById('batch-vae-custom').value
+                : batchVaeSelect.value;
+
+            var batchTeSelect = document.getElementById('batch-text-encoder');
+            var batchTe = batchTeSelect.value === '__custom__'
+                ? document.getElementById('batch-text-encoder-custom').value
+                : batchTeSelect.value;
+
+            var promptList = document.getElementById('batch-prompts').value.split('\n').filter(function(p) { return p.trim(); });
+            if (promptList.length === 0) {
+                showAlert('No Prompts', 'Please enter at least one prompt.');
+                return;
+            }
+
+            batchBtn.disabled = true;
+            batchBtn.textContent = 'Generating...';
+            progress.style.display = 'block';
+            progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
+            progressBar.style.width = '10%';
+            progressText.textContent = 'Starting...';
+            progressCount.textContent = '0/' + promptList.length + ' images';
+            output.innerHTML = '<span class="loading">Generating batch...</span>';
+            warningsEl.style.display = 'none';
+            batchLogEntries = [];
+            lastBatchMsg = '';
+            document.getElementById('batch-log').textContent = '';
 
             const formData = new FormData();
             formData.append('prompts', document.getElementById('batch-prompts').value);
@@ -1395,39 +1555,211 @@ a bird on a tree</textarea>
             const batchSeedValue = batchSeedRandom ? Math.floor(Math.random() * 2147483647) : parseInt(document.getElementById('batch-seed').value) || 0;
             formData.append('seed', batchSeedValue);
             if (batchSeedRandom) document.getElementById('batch-seed').value = batchSeedValue;
-
-            var batchModelSelect = document.getElementById('gen-model');
-            var batchModel = batchModelSelect.value === '__custom__'
-                ? document.getElementById('gen-model-custom').value
-                : batchModelSelect.value;
-            formData.append('model_path', batchModel || 'stabilityai/stable-diffusion-xl-base-1.0');
-
-            var batchVaeSelect = document.getElementById('gen-vae');
-            var batchVae = batchVaeSelect.value === '__custom__'
-                ? document.getElementById('gen-vae-custom').value
-                : batchVaeSelect.value;
+            formData.append('width', document.getElementById('batch-width').value);
+            formData.append('height', document.getElementById('batch-height').value);
+            formData.append('model_path', batchModel);
             formData.append('vae_path', batchVae || '');
-
-            var batchTeSelect = document.getElementById('gen-text-encoder');
-            var batchTe = batchTeSelect.value === '__custom__'
-                ? document.getElementById('gen-text-encoder-custom').value
-                : batchTeSelect.value;
             formData.append('text_encoder_path', batchTe || '');
-
             _appendLoras(formData, 'batch-lora-container');
 
             try {
+                var t0 = Date.now();
+                appendBatchLog('Starting batch generation...', t0, false);
+                appendBatchLog('Model: ' + batchModel, t0, false);
+                appendBatchLog('Prompts: ' + promptList.length, t0, false);
+
                 const res = await fetch('/api/batch_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
+
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '100%';
+                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                progressText.textContent = '✅ Done ' + promptList.length + ' images in ' + elapsed + 's';
+                appendBatchLog('✅ Done in ' + elapsed + 's', t0, false);
+
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'images.zip';
-                a.click();
-                output.innerHTML = '<span>Download started!</span>';
+
+                output.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+                    + '<a href="' + url + '" download="batch_images.zip" class="btn" style="flex:1;text-align:center;">📥 Download ZIP (' + promptList.length + ' images)</a>'
+                    + '</div>';
+
+                appendBatchLog('Download ready: batch_images.zip', t0, false);
+
+                setTimeout(function() { progress.style.display = 'none'; }, 5000);
             } catch(e) {
-                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '0%';
+                progress.style.display = 'none';
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+                appendBatchLog('❌ Error: ' + e.message, t0, false);
+            }
+
+            batchBtn.disabled = false;
+            batchBtn.textContent = 'Generate Batch (ZIP)';
+        }
+
+        function cancelBatchGeneration() {
+            // Batch generate is synchronous, cannot cancel mid-request
+            // Could add abort controller in future
+        }
+
+        var BATCH_FAMILY_LABELS = {
+            'sd_unet': 'SD UNet', 'sdxl': 'SDXL', 'sd15': 'SD1.5',
+            'sd3': 'SD3', 'flux1': 'Flux.1', 'flux2': 'Flux.2',
+            'zimage': 'Z-Image', 'hunyuan': 'Hunyuan', 'pixart': 'PixArt',
+            'kolors': 'Kolors'
+        };
+
+        var BATCH_FAMILY_CFG = {
+            'sd_unet': 7.0, 'sdxl': 7.0, 'sd15': 7.0,
+            'sd3': 5.0, 'flux1': 3.5, 'flux2': 1.0,
+            'zimage': 0.0, 'hunyuan': 5.0, 'pixart': 5.0,
+            'kolors': 5.0
+        };
+
+        var BATCH_FAMILY_STEPS = {
+            'zimage': 9, 'flux2': 4
+        };
+
+        function _batchGetFileType(f, m) {
+            if (typeof f === 'object' && f.model_type) return f.model_type;
+            return m.model_type || 'checkpoint';
+        }
+
+        function _batchGetFileFamily(f, m) {
+            if (typeof f === 'object' && f.model_family) return f.model_family;
+            if (m.model_family) return m.model_family;
+            return '';
+        }
+
+        function _populateBatchSelect(select, entries, modelsPath, filterType) {
+            if (!select) return;
+            while (select.options.length > 2) select.remove(2);
+            var count = 0;
+            entries.forEach(function(m) {
+                if (m.type === 'folder' && m.name === filterType) {
+                    if (m.subdirs && m.subdirs.length > 0) {
+                        m.subdirs.forEach(function(sub) {
+                            var relPath = m.name + '/' + sub;
+                            var el = document.createElement('option');
+                            el.textContent = relPath;
+                            el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                            select.appendChild(el);
+                            count++;
+                        });
+                    }
+                    if (m.files && m.files.length > 0 && (!m.subdirs || m.subdirs.length === 0)) {
+                        m.files.forEach(function(f) {
+                            var fname = typeof f === 'string' ? f : f.name;
+                            var relPath = m.name + '/' + fname;
+                            var ft = _batchGetFileType(f, m);
+                            var el = document.createElement('option');
+                            el.textContent = relPath;
+                            el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                            var ff = _batchGetFileFamily(f, m);
+                            if (ff) el.setAttribute('data-family', ff);
+                            select.appendChild(el);
+                            count++;
+                        });
+                    }
+                } else if (m.type === 'folder' && m.files && m.files.length > 0) {
+                    if (filterType !== 'checkpoint') return;
+                    (m.files).forEach(function(f) {
+                        var fname = typeof f === 'string' ? f : f.name;
+                        var subdir = f.subdir || '';
+                        var relPath = subdir ? m.name + '/' + subdir + '/' + fname : m.name + '/' + fname;
+                        var ft = _batchGetFileType(f, m);
+                        if (ft !== 'checkpoint') return;
+                        var el = document.createElement('option');
+                        el.textContent = relPath;
+                        el.value = modelsPath ? modelsPath + '/' + relPath : relPath;
+                        var ff = _batchGetFileFamily(f, m);
+                        if (ff) el.setAttribute('data-family', ff);
+                        select.appendChild(el);
+                        count++;
+                    });
+                } else if (m.type === 'file') {
+                    var ft = m.model_type || 'checkpoint';
+                    if (ft !== filterType) return;
+                    var el = document.createElement('option');
+                    el.textContent = m.name;
+                    el.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                    var ff = m.model_family || '';
+                    if (ff) el.setAttribute('data-family', ff);
+                    select.appendChild(el);
+                    count++;
+                }
+            });
+            if (count === 0) {
+                var hint = document.createElement('option');
+                hint.value = '';
+                hint.textContent = '(no ' + filterType + ' found - will auto-download)';
+                hint.disabled = true;
+                hint.style.color = '#888';
+                select.appendChild(hint);
+            }
+        }
+
+        async function loadBatchModels() {
+            try {
+                var auth2 = btoa(localStorage.getItem('username') + ':' + localStorage.getItem('password'));
+                var res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth2 } });
+                var data = await res.json();
+                var modelsPath = data.models_path || '';
+                var localModels = data.models || [];
+                _populateBatchSelect(document.getElementById('batch-model'), localModels, modelsPath, 'checkpoint');
+                _populateBatchSelect(document.getElementById('batch-vae'), localModels, modelsPath, 'vae');
+                _populateBatchSelect(document.getElementById('batch-text-encoder'), localModels, modelsPath, 'text_encoder');
+            } catch(e) {
+                console.error('Failed to load batch models:', e);
+            }
+        }
+
+        function onBatchModelChange() {
+            var sel = document.getElementById('batch-model');
+            var val = sel.value;
+            var customInput = document.getElementById('batch-model-custom');
+            var familyLabel = document.getElementById('batch-model-family');
+            var textEncoderRow = document.getElementById('batch-text-encoder');
+
+            if (val === '__custom__') {
+                customInput.style.display = 'block';
+                customInput.focus();
+                familyLabel.style.display = 'none';
+            } else {
+                customInput.style.display = 'none';
+            }
+
+            var actualVal = val === '__custom__' ? customInput.value : val;
+            var actualLower = actualVal.toLowerCase();
+
+            var selectedOpt = sel.options[sel.selectedIndex];
+            var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
+            var isFluxOrZimage = family === 'flux' || family === 'zimage'
+                || actualLower.indexOf('flux') >= 0 || actualLower.indexOf('z-image') >= 0 || actualLower.indexOf('z_image') >= 0;
+
+            textEncoderRow.style.display = isFluxOrZimage ? 'block' : 'none';
+            if (!isFluxOrZimage) {
+                textEncoderRow.value = '';
+                document.getElementById('batch-text-encoder-custom').style.display = 'none';
+            }
+
+            if (family) {
+                var label = BATCH_FAMILY_LABELS[family] || family;
+                familyLabel.textContent = label;
+                familyLabel.style.display = 'inline-block';
+                var modelLower = actualVal.toLowerCase();
+                var isKlein = family === 'flux2' && (modelLower.includes('klein') || modelLower.includes('schnell'));
+                var isDev = family === 'flux2' && modelLower.includes('dev');
+                var cfg = BATCH_FAMILY_CFG[family];
+                var steps = BATCH_FAMILY_STEPS[family];
+                if (isKlein) { cfg = 1.0; steps = 4; }
+                else if (isDev) { cfg = 4.0; steps = 28; }
+                if (cfg !== undefined) document.getElementById('batch-cfg').value = cfg;
+                if (steps !== undefined) document.getElementById('batch-steps').value = steps;
+            } else {
+                familyLabel.style.display = 'none';
             }
         }
 

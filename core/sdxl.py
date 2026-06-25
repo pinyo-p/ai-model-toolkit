@@ -425,7 +425,9 @@ def batch_generate(
     text_encoder_path: str = None,
     steps: int = 20,
     cfg: float = 7.0,
-    seed: int = 42
+    seed: int = 42,
+    width: int = 1024,
+    height: int = 1024
 ) -> list[Image.Image]:
     images = []
     for i, prompt in enumerate(prompts):
@@ -440,8 +442,8 @@ def batch_generate(
             steps=steps,
             cfg=cfg,
             seed=seed + i,
-            width=1024,
-            height=1024
+            width=width,
+            height=height
         )
         images.append(img)
     return images

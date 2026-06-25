@@ -712,6 +712,8 @@ async def api_batch_generate(
     steps: int = Form(20),
     cfg: float = Form(7.0),
     seed: int = Form(42),
+    width: int = Form(1024),
+    height: int = Form(1024),
 ):
     try:
         prompt_list = [p.strip() for p in prompts.split("\n") if p.strip()]
@@ -735,7 +737,8 @@ async def api_batch_generate(
             model_path=model_path,
             vae_path=vae_path or None,
             text_encoder_path=text_encoder_path or None,
-            steps=steps, cfg=cfg, seed=seed
+            steps=steps, cfg=cfg, seed=seed,
+            width=width, height=height
         )
 
         for p in lora_paths:
