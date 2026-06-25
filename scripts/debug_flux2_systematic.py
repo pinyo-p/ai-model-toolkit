@@ -198,6 +198,8 @@ pipe_official = Flux2KleinPipeline(
 )
 pipe_official.to(device, dtype=dtype)
 pipe_official.vae.to(dtype=torch.float32)
+_orig_decode_off = pipe_official.vae.decode
+pipe_official.vae.decode = lambda z, *a, **kw: _orig_decode_off(z.to(torch.float32), *a, **kw)
 
 prompt = "a cat, high quality"
 gen = torch.Generator(device=device).manual_seed(42)
@@ -224,6 +226,8 @@ pipe_custom = Flux2KleinPipeline(
 )
 pipe_custom.to(device, dtype=dtype)
 pipe_custom.vae.to(dtype=torch.float32)
+_orig_decode_custom = pipe_custom.vae.decode
+pipe_custom.vae.decode = lambda z, *a, **kw: _orig_decode_custom(z.to(torch.float32), *a, **kw)
 
 gen2 = torch.Generator(device=device).manual_seed(42)
 print("  Running custom checkpoint transformer...")
