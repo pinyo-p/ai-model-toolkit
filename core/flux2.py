@@ -31,8 +31,11 @@ def _remap_flux2_state_dict(ckpt_state, model_sd):
         "time_in.out_layer.bias": "time_guidance_embed.timestep_embedder.linear_2.bias",
         "final_layer.linear.weight": "proj_out.weight",
         "final_layer.linear.bias": "proj_out.bias",
-        "final_layer.adaLN_modulation.1.weight": "norm_out.linear.weight",
-        "final_layer.adaLN_modulation.1.bias": "norm_out.linear.bias",
+        # NOTE: final_layer.adaLN_modulation.1 maps to norm_out.linear in the original FLUX,
+        # but cosine similarity with diffusers' norm_out.linear is ~0 (orthogonal).
+        # We skip this mapping and keep the official pretrained weights for norm_out.linear.
+        # "final_layer.adaLN_modulation.1.weight": "norm_out.linear.weight",
+        # "final_layer.adaLN_modulation.1.bias": "norm_out.linear.bias",
         "double_stream_modulation_img.lin.weight": "double_stream_modulation_img.linear.weight",
         "double_stream_modulation_img.lin.bias": "double_stream_modulation_img.linear.bias",
         "double_stream_modulation_txt.lin.weight": "double_stream_modulation_txt.linear.weight",
@@ -228,12 +231,11 @@ def load_base_flux2_and_swap_weights(model_path, dtype, hf_token, on_message=Non
     # Load transformer config and ensure correct architecture
     raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", token=hf_token)
     print(f"[flux2] Transformer raw config: class={raw_cfg.get('_class_name')}, guidance_embeds={raw_cfg.get('guidance_embeds')}, num_layers={raw_cfg.get('num_layers')}, num_single_layers={raw_cfg.get('num_single_layers')}")
-    # Remove _class_name to prevent dispatch to wrong model class (e.g. SD3Transformer2DModel)
-    raw_cfg.pop("_class_name", None)
-    # Klein (distilled) has no guidance embedding
-    if is_klein:
-        raw_cfg["guidance_embeds"] = False
-    transformer = Flux2Transformer2DModel.from_config(raw_cfg, torch_dtype=dtype)
+    # Load from pretrained to get correct official weights (especially norm_out.linear).
+    # Checkpoint blocks will override via load_state_dict(strict=False) below.
+    # from_pretrained also handles guidance_embeds from the repo config.
+    transformer = Flux2Transformer2DModel.from_pretrained(repo, subfolder="transformer", torch_dtype=dtype, token=hf_token)
+    print(f"[flux2] Transformer loaded from pretrained ({sum(p.numel() for p in transformer.parameters())/1e6:.0f}M params)")
 
     # Step 4: Assemble pipeline
     if on_message:

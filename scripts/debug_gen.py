@@ -39,7 +39,7 @@ raw_cfg = Flux2Transformer2DModel.load_config(repo, subfolder="transformer", tok
 raw_cfg.pop("_class_name", None)
 if is_klein:
     raw_cfg["guidance_embeds"] = False
-transformer = Flux2Transformer2DModel.from_config(raw_cfg, torch_dtype=dtype)
+transformer = Flux2Transformer2DModel.from_pretrained(repo, subfolder="transformer", torch_dtype=dtype, token=os.environ["HF_TOKEN"])
 
 # Load checkpoint weights
 from safetensors import safe_open
