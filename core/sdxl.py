@@ -308,6 +308,7 @@ def sdxl_generate(
                     os.path.dirname(lp) or ".",
                     weight_name=os.path.basename(lp),
                     adapter_name=f"lora_{i}",
+                    ignore_mismatched_sizes=True,
                 )
         adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
         adapter_weights = lora_weights or [1.0] * len(lora_paths)
@@ -377,6 +378,7 @@ def sdxl_generate_parallel(
                     os.path.dirname(lp) or ".",
                     weight_name=os.path.basename(lp),
                     adapter_name=f"lora_{i}",
+                    ignore_mismatched_sizes=True,
                 )
         adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
         adapter_weights = lora_weights or [1.0] * len(lora_paths)
