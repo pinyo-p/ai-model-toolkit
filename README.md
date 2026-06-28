@@ -1,5 +1,9 @@
 # AI Toolkit
 
+> ⚠️ **⚠️ WARNING — `scripts/finetune_llm_lora.py` IS UNDER DEVELOPMENT, NOT READY FOR USE ⚠️**  
+> This script is experimental and may contain bugs. Do not use in production.  
+> ⚠️ **⚠️ สคริป `scripts/finetune_llm_lora.py` กำลังพัฒนา ยังไม่พร้อมใช้งาน ⚠️**
+
 FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), LoRA training, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
