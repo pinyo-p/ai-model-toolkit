@@ -328,40 +328,12 @@ def tokenize_function(examples, tokenizer, max_length, format_type):
     return tokenized
 
 
-def load_model_and_tokenizer(model_name, use_lora=False, adapter_path=None, torch_dtype=torch.float16):
-    """Load model and tokenizer."""
-    print(f"\n{'='*60}")
-    print(f"Loading model: {model_name}")
-    print(f"{'='*60}")
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        use_fast=True,
-    )
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch_dtype,
-        device_map="auto",
-        trust_remote_code=True,
-    )
-    model.config.use_cache = False
-
-    if use_lora and adapter_path:
-        print(f"Loading LoRA adapter from: {adapter_path}")
-        model = PeftModel.from_pretrained(model, adapter_path)
-        model = model.merge_and_unload()
-
-    model.eval()
-    return model, tokenizer
-
-
-def load_model_with_lora_peft(model_name, adapter_path, torch_dtype=torch.float16):
+def load_model_with_lora_peft(model_name, adapter_path, torch_dtype="fp16"):
     """Load base model and apply LoRA adapter without merging (for comparison)."""
+    _imports()
+    dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
+    dtype = dtype_map.get(torch_dtype, torch.float16)
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
         trust_remote_code=True,
@@ -372,7 +344,7 @@ def load_model_with_lora_peft(model_name, adapter_path, torch_dtype=torch.float1
 
     base = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch_dtype,
+        torch_dtype=dtype,
         device_map="auto",
         trust_remote_code=True,
     )
@@ -536,7 +508,7 @@ def chat():
     print("\nLoading models (this may take a while)...")
 
     base_model, lora_model, tokenizer = load_model_with_lora_peft(
-        args.model, adapter_path, torch_dtype=torch.float16
+        args.model, adapter_path, torch_dtype="fp16"
     )
 
     print("\n" + "=" * 60)
