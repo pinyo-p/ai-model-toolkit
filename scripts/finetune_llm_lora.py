@@ -72,10 +72,10 @@ parser.add_argument("--lr", type=float, default=2e-4,
                     help="Learning rate (default: 2e-4)")
 parser.add_argument("--epochs", type=int, default=3,
                     help="Number of training epochs (default: 3)")
-parser.add_argument("--batch_size", type=int, default=1,
-                    help="Per-device batch size (default: 1)")
-parser.add_argument("--grad_accum", type=int, default=4,
-                    help="Gradient accumulation steps (default: 4)")
+parser.add_argument("--batch_size", type=int, default=4,
+                    help="Per-device batch size (default: 4)")
+parser.add_argument("--grad_accum", type=int, default=1,
+                    help="Gradient accumulation steps (default: 1)")
 parser.add_argument("--max_length", type=int, default=2048,
                     help="Max sequence length (default: 2048)")
 parser.add_argument("--lora_r", type=int, default=64,
@@ -376,7 +376,7 @@ def train():
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
         torch_dtype=dtype,
-        device_map="auto",
+        device_map="cuda:0" if torch.cuda.is_available() else None,
         trust_remote_code=True,
     )
     model.config.use_cache = False
@@ -434,13 +434,12 @@ def train():
         gradient_accumulation_steps=args.grad_accum,
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
-        fp16=True,
+        bf16=True,
         logging_steps=10,
         save_steps=500,
         save_total_limit=2,
         remove_unused_columns=False,
-        dataloader_num_workers=2,
-        gradient_checkpointing=True,
+        dataloader_num_workers=4,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
         warmup_steps=100,
