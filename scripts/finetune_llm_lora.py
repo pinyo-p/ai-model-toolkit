@@ -442,7 +442,7 @@ def train():
         gradient_checkpointing=True,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_steps=100,
         report_to="none",
         ddp_find_unused_parameters=False,
     )
@@ -459,7 +459,6 @@ def train():
         model=model,
         args=training_args,
         train_dataset=tokenized_dataset,
-        tokenizer=tokenizer,
         data_collator=data_collator,
     )
 
