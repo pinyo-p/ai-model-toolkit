@@ -87,6 +87,10 @@ parser.add_argument("--lora_dropout", type=float, default=0.05,
 parser.add_argument("--target_modules", type=str, default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
                     help="Target modules for LoRA (comma-separated)")
 
+# Data filtering
+parser.add_argument("--filter_refusals", action="store_true",
+                    help="Remove training examples where the assistant refuses to answer (preserves uncensored behavior)")
+
 # Modes
 parser.add_argument("--train", action="store_true", help="Run training")
 parser.add_argument("--chat", action="store_true", help="Chat test mode (compare base model vs LoRA)")
@@ -201,6 +205,81 @@ def format_instruction_to_text(example):
     else:
         text = f"### Instruction:\n{instruction}\n\n### Response:\n{output}"
     return text
+
+
+# Refusal patterns (English + Thai) — messages where assistant refuses to comply
+_REFUSAL_PATTERNS = [
+    "i cannot", "i can't", "i'm sorry", "i apologize", "i am sorry",
+    "i am unable", "i'm not able", "i will not", "i won't",
+    "cannot assist", "cannot provide", "cannot fulfill",
+    "against policy", "against my policy", "against ethical",
+    "not appropriate", "not comfortable",
+    "sorry, but", "sorry, i",
+    "as an ai", "as a language model",
+    "it is not appropriate", "that is not appropriate",
+    "i cannot fulfill", "i cannot complete",
+    "i cannot generate", "i cannot create",
+    "i cannot answer", "i cannot respond",
+    "i cannot help", "i'm unable to",
+    "ไม่สามารถ", "ขอโทษ", "ฉันไม่สามารถ",
+    "ไม่เหมาะสม", "ทำไม่ได้", "ช่วยไม่ได้",
+    "ไม่สามารถตอบ", "ไม่สามารถให้",
+]
+
+def contains_refusal(text: str) -> bool:
+    """Check if text contains refusal/censorship patterns."""
+    text_lower = text.lower()
+    for pattern in _REFUSAL_PATTERNS:
+        if pattern in text_lower:
+            return True
+    return False
+
+def filter_refusal_examples(dataset, format_type: str):
+    """Filter out dataset examples where the assistant refuses to answer."""
+    import json
+    keep_indices = []
+    removed_count = 0
+
+    for i in range(len(dataset)):
+        example = dataset[i]
+        is_refusal = False
+
+        if format_type == "messages":
+            msg_key = None
+            for k in ("messages", "conversations", "conversation"):
+                if k in example:
+                    msg_key = k
+                    break
+            if msg_key:
+                raw = example[msg_key]
+                messages = raw if isinstance(raw, list) else json.loads(raw) if isinstance(raw, str) else []
+                for msg in messages:
+                    if msg.get("role") in ("assistant", "bot", "model"):
+                        if contains_refusal(msg.get("content", "")):
+                            is_refusal = True
+                            break
+        elif format_type == "instruction":
+            output = example.get("output", "")
+            if contains_refusal(output):
+                is_refusal = True
+        else:
+            for col in ("text", "content", "sentence"):
+                if col in example and isinstance(example[col], str) and contains_refusal(example[col]):
+                    is_refusal = True
+                    break
+
+        if is_refusal:
+            removed_count += 1
+        else:
+            keep_indices.append(i)
+
+    if removed_count > 0:
+        print(f"  Filtered out {removed_count} refusal examples ({len(keep_indices)} kept)")
+        dataset = dataset.select(keep_indices)
+    else:
+        print("  No refusal examples found")
+
+    return dataset
 
 
 def tokenize_function(examples, tokenizer, max_length, format_type):
@@ -366,6 +445,16 @@ def train():
     # Auto-detect format
     format_type = auto_detect_dataset_format(dataset)
     print(f"Detected dataset format: {format_type}")
+
+    # Filter refusal/censorship examples (for uncensored models)
+    if args.filter_refusals:
+        print("\nFiltering out assistant refusal examples...")
+        dataset = filter_refusal_examples(dataset, format_type)
+    else:
+        print("\n⚠️  WARNING: --filter_refusals not set — dataset may contain "
+              "refusal/censorship patterns")
+        print("   that could teach the model to refuse answers.")
+        print("   Add --filter_refusals to remove them.\n")
 
     # Tokenize
     tokenized_dataset = dataset.map(
