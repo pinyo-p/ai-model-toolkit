@@ -109,9 +109,7 @@ args = parser.parse_args()
 def _imports():
     global AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, \
         DataCollatorForSeq2Seq, PeftModel, LoraConfig, get_peft_model, \
-        get_peft_model_state_dict, set_peft_model_state_dict, \
-        load_dataset, is_main_process, is_local_main_process, \
-        HfArgumentParser, Conversation, pipeline, torch
+        load_dataset, torch
     import torch
     from transformers import (
         AutoModelForCausalLM,
@@ -119,22 +117,13 @@ def _imports():
         TrainingArguments,
         Trainer,
         DataCollatorForSeq2Seq,
-        is_main_process,
-        is_local_main_process,
-        HfArgumentParser,
-        pipeline as hf_pipeline,
     )
     from peft import (
         PeftModel,
         LoraConfig,
         get_peft_model,
-        get_peft_model_state_dict,
-        set_peft_model_state_dict,
     )
     from datasets import load_dataset
-    from transformers import Conversation as HfConversation
-    pipeline = hf_pipeline
-    Conversation = HfConversation
 
 
 # ============================================================
