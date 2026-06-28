@@ -440,6 +440,7 @@ def train():
         save_total_limit=2,
         remove_unused_columns=False,
         dataloader_num_workers=4,
+        gradient_checkpointing=True,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
         warmup_steps=100,
