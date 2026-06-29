@@ -489,6 +489,88 @@ def train():
 def chat():
     _imports()
 
+    # Multi-LoRA blended chat mode
+    if args.adapters:
+        adapter_paths = [p.strip() for p in args.adapters.split(",")]
+        for p in adapter_paths:
+            if not os.path.exists(p):
+                print(f"ERROR: Adapter not found: {p}")
+                sys.exit(1)
+
+        n = len(adapter_paths)
+        if args.weights:
+            weights = [float(w.strip()) for w in args.weights.split(",")]
+            if len(weights) != n:
+                print(f"ERROR: --weights count ({len(weights)}) != --adapters count ({n})")
+                sys.exit(1)
+        else:
+            weights = [1.0 / n] * n
+
+        print(f"\n{'='*60}")
+        print(f"Blended Multi-LoRA Chat")
+        print(f"Model: {args.model}")
+        for i, (p, w) in enumerate(zip(adapter_paths, weights)):
+            print(f"  LoRA {i+1}: {p}  weight={w}")
+        print(f"{'='*60}")
+        print("\nLoading models...")
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model, trust_remote_code=True, use_fast=True
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        base = AutoModelForCausalLM.from_pretrained(
+            args.model, torch_dtype=torch.float16, device_map="auto", trust_remote_code=True
+        )
+        base.config.use_cache = False
+
+        adapter_names = []
+        for i, path in enumerate(adapter_paths):
+            name = f"lora_{i}"
+            if i == 0:
+                model = PeftModel.from_pretrained(base, path, adapter_name=name)
+            else:
+                model.load_adapter(path, adapter_name=name)
+            adapter_names.append(name)
+
+        print(f"Blending adapters {adapter_names} with weights {weights}...")
+        model.add_weighted_adapter(
+            adapter_names, weights, combination_type="linear", adapter_name="blended"
+        )
+        model.set_adapter("blended")
+        model = model.merge_and_unload()
+        model.eval()
+
+        history = []
+        print("\n" + "=" * 60)
+        print("Blended LoRA chat ready! Type your messages below.")
+        print("Commands: /clear - clear history, /quit - exit")
+        print("=" * 60)
+
+        while True:
+            try:
+                user_input = input("\n\033[92mYou>\033[0m ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nBye!")
+                break
+            if not user_input:
+                continue
+            if user_input == "/quit":
+                break
+            elif user_input == "/clear":
+                history = []
+                print("History cleared!")
+                continue
+
+            print("\033[93mModel generating...\033[0m")
+            response = generate_response(model, tokenizer, user_input, history)
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": response})
+            print(f"\n{response}")
+        return
+
+    # Single LoRA: Base vs LoRA comparison
     adapter_path = args.adapter or args.output
     if not adapter_path or not os.path.exists(adapter_path):
         print(f"ERROR: LoRA adapter not found at: {adapter_path}")
