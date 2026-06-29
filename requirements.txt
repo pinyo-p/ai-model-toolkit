@@ -1,5 +1,6 @@
 torch>=2.9.0
 torchvision>=0.24.0
+numpy>=1.26.0
 fastapi==0.115.0
 uvicorn==0.30.6
 diffusers>=0.30.3
@@ -7,9 +8,15 @@ transformers>=4.44.2
 accelerate>=0.33.0
 safetensors>=0.4.5
 peft>=0.12.0
-bitsandbytes==0.49.2
-Pillow==10.4.0
-python-multipart==0.0.9
-opencv-python==4.10.0.84
-lycoris-lora==2.1.0
+bitsandbytes>=0.43.0
 datasets>=2.14.0
+huggingface-hub>=0.23.0
+requests>=2.31.0
+Pillow>=10.4.0
+python-multipart>=0.0.9
+lycoris-lora>=2.1.0
+
+# Optional — image upscale (try/except in code)
+opencv-python>=4.10.0
+# realesrgan-ncnn-vulkan>=0.1.0
+# basicsr>=1.4.2
