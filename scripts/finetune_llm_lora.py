@@ -95,6 +95,12 @@ parser.add_argument("--filter_refusals", action="store_true",
 parser.add_argument("--train", action="store_true", help="Run training")
 parser.add_argument("--chat", action="store_true", help="Chat test mode (compare base model vs LoRA)")
 parser.add_argument("--merge", action="store_true", help="Merge LoRA weights back into base model")
+parser.add_argument("--merge_multi", action="store_true",
+                    help="Merge multiple LoRAs with weighted blending (use --adapters + --weights)")
+parser.add_argument("--adapters", type=str, default=None,
+                    help="Comma-separated LoRA adapter paths (for --merge_multi)")
+parser.add_argument("--weights", type=str, default=None,
+                    help="Comma-separated blending weights (for --merge_multi, default: equal)")
 parser.add_argument("--all", action="store_true", help="Full pipeline: train -> chat -> merge")
 parser.add_argument("--merge_dtype", type=str, default="fp16",
                     choices=["fp16", "bf16", "fp32"],
@@ -643,6 +649,93 @@ def merge():
 
 
 # ============================================================
+# MERGE MULTI (weighted blending)
+# ============================================================
+def merge_multi():
+    _imports()
+
+    if not args.adapters:
+        print("ERROR: --adapters is required for --merge_multi (comma-separated paths)")
+        sys.exit(1)
+
+    adapter_paths = [p.strip() for p in args.adapters.split(",")]
+    for p in adapter_paths:
+        if not os.path.exists(p):
+            print(f"ERROR: Adapter not found: {p}")
+            sys.exit(1)
+
+    n = len(adapter_paths)
+    if args.weights:
+        weights = [float(w.strip()) for w in args.weights.split(",")]
+        if len(weights) != n:
+            print(f"ERROR: --weights count ({len(weights)}) != --adapters count ({n})")
+            sys.exit(1)
+    else:
+        weights = [1.0 / n] * n  # equal weight
+
+    output_path = args.output if args.output != "./lora_output" else args.output + "-merged-multi"
+
+    dtype_map = {
+        "fp16": torch.float16,
+        "bf16": torch.bfloat16,
+        "fp32": torch.float32,
+    }
+    merge_dtype = dtype_map[args.merge_dtype]
+
+    print(f"\n{'='*60}")
+    print(f"Weighted Multi-LoRA Merge")
+    print(f"Base model: {args.model}")
+    for i, (p, w) in enumerate(zip(adapter_paths, weights)):
+        print(f"  LoRA {i+1}: {p}  weight={w}")
+    print(f"Output: {output_path}")
+    print(f"Dtype: {args.merge_dtype}")
+    print(f"{'='*60}")
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model,
+        trust_remote_code=True,
+        use_fast=True,
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=merge_dtype,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+
+    adapter_names = []
+    for i, path in enumerate(adapter_paths):
+        name = f"lora_{i}"
+        if i == 0:
+            model = PeftModel.from_pretrained(model, path, adapter_name=name)
+        else:
+            model.load_adapter(path, adapter_name=name)
+        adapter_names.append(name)
+        print(f"  Loaded adapter {i+1}: {name} ← {path}")
+
+    print(f"\nBlending adapters {adapter_names} with weights {weights}...")
+    model.add_weighted_adapter(
+        adapter_names,
+        weights,
+        combination_type="linear",
+        adapter_name="merged",
+    )
+    model.set_adapter("merged")
+    model = model.merge_and_unload()
+
+    print(f"\nSaving merged model to: {output_path}")
+    os.makedirs(output_path, exist_ok=True)
+    model.save_pretrained(output_path, safe_serialization=True, max_shard_size="10GB")
+    tokenizer.save_pretrained(output_path)
+
+    print(f"\nDone! Merged model saved to: {output_path}")
+    return output_path
+
+
+# ============================================================
 # MAIN
 # ============================================================
 def main():
@@ -670,8 +763,10 @@ def main():
             chat()
         if args.merge:
             merge()
+        if args.merge_multi:
+            merge_multi()
 
-    if not any([args.train, args.chat, args.merge, args.all]):
+    if not any([args.train, args.chat, args.merge, args.merge_multi, args.all]):
         parser.print_help()
 
 
