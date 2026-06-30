@@ -67,6 +67,14 @@ parser.add_argument("--output", type=str, default="./lora_output",
 parser.add_argument("--adapter", type=str, default=None,
                     help="Path to LoRA adapter (for --chat or --merge)")
 
+# Generation params
+parser.add_argument("--temp", type=float, default=0.7,
+                    help="Temperature (lower = less random, default: 0.7)")
+parser.add_argument("--max_tokens", type=int, default=1024,
+                    help="Max new tokens per response (default: 1024)")
+parser.add_argument("--top_p", type=float, default=0.9,
+                    help="Top-p sampling (default: 0.9)")
+
 # Training hyperparams
 parser.add_argument("--lr", type=float, default=2e-4,
                     help="Learning rate (default: 2e-4)")
@@ -661,10 +669,10 @@ def generate_response(model, tokenizer, prompt, history=None):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=1024,
-            temperature=0.7,
-            top_p=0.9,
-            do_sample=True,
+            max_new_tokens=args.max_tokens,
+            temperature=args.temp,
+            top_p=args.top_p,
+            do_sample=args.temp > 0,
             repetition_penalty=1.05,
             pad_token_id=tokenizer.pad_token_id,
             eos_token_id=tokenizer.eos_token_id,
