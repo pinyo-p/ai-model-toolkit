@@ -82,8 +82,8 @@ parser.add_argument("--epochs", type=int, default=3,
                     help="Number of training epochs (default: 3)")
 parser.add_argument("--batch_size", type=int, default=2,
                     help="Per-device batch size (default: 2)")
-parser.add_argument("--grad_accum", type=int, default=4,
-                    help="Gradient accumulation steps (default: 4)")
+parser.add_argument("--grad_accum", type=int, default=8,
+                    help="Gradient accumulation steps (default: 8)")
 parser.add_argument("--max_length", type=int, default=2048,
                     help="Max sequence length (default: 2048)")
 parser.add_argument("--lora_r", type=int, default=64,
@@ -454,7 +454,7 @@ def train():
         save_total_limit=2,
         remove_unused_columns=False,
         dataloader_num_workers=2,
-        gradient_checkpointing=True,
+        gradient_checkpointing=False,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
         warmup_steps=100,
