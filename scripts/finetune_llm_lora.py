@@ -482,7 +482,12 @@ def train():
     print(f"\n{'='*60}")
     print(f"Starting training...")
     print(f"{'='*60}")
-    trainer.train()
+    import glob
+    checkpoints = sorted(glob.glob(os.path.join(output_dir, "checkpoint-*")))
+    resume = checkpoints[-1] if checkpoints else None
+    if resume:
+        print(f"Resuming from checkpoint: {resume}")
+    trainer.train(resume_from_checkpoint=resume)
 
     # 6. Save adapter
     print(f"\nSaving LoRA adapter to: {output_dir}")
