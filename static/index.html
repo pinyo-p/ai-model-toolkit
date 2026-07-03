@@ -385,6 +385,7 @@
                                 <option value="cfg">CFG Scale</option>
                                 <option value="vae">VAE</option>
                                 <option value="text_encoder">Text Encoder</option>
+                                <option value="prompt_sr">Prompt S/R</option>
                             </select>
                             <textarea id="xyz-x-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;model_a.safetensors&#10;model_b.safetensors&#10;model_c.safetensors">model_a.safetensors
 model_b.safetensors</textarea>
@@ -401,6 +402,7 @@ model_b.safetensors</textarea>
                                 <option value="cfg">CFG Scale</option>
                                 <option value="vae">VAE</option>
                                 <option value="text_encoder">Text Encoder</option>
+                                <option value="prompt_sr">Prompt S/R</option>
                             </select>
                             <textarea id="xyz-y-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;a cat sitting on a couch&#10;a dog running in a park">a cat sitting on a couch
 a dog running in a park</textarea>
@@ -417,6 +419,7 @@ a dog running in a park</textarea>
                                 <option value="model">Model</option>
                                 <option value="vae">VAE</option>
                                 <option value="text_encoder">Text Encoder</option>
+                                <option value="prompt_sr">Prompt S/R</option>
                             </select>
                             <textarea id="xyz-z-values" rows="3" placeholder="Enter values..."></textarea>
                         </div>
@@ -1519,7 +1522,6 @@ a dog running in a park</textarea>
         startActiveJobsPoll();
 
         var batchLogEntries = [];
-        var lastBatchMsg = '';
 
         function appendBatchLog(msg, t0, isStep) {
             var logEl = document.getElementById('batch-log');
@@ -1565,7 +1567,79 @@ a dog running in a park</textarea>
         }
 
         function _parseAxisVals(text) {
-            return text.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+            // Support both comma-separated and newline-separated
+            var parts;
+            if (text.indexOf(',') >= 0) {
+                parts = text.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+            } else {
+                parts = text.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+            }
+            // Expand ranges for each part
+            var result = [];
+            for (var i = 0; i < parts.length; i++) {
+                var expanded = _expandRange(parts[i]);
+                for (var j = 0; j < expanded.length; j++) {
+                    result.push(expanded[j]);
+                }
+            }
+            return result;
+        }
+
+        function _expandRange(s) {
+            // Range syntax: 1-5, 1-5 (+2), 1-5 (-3), 1-3 (+0.5), 1-10 [5]
+            // Also: 1-5 (+2) means start=1, end=5, step=2 → 1,3,5
+            // 1-10 [5] means 5 evenly spaced numbers from 1 to 10
+            var rangeMatch = s.match(/^([\d.]+)\s*-\s*([\d.]+)(?:\s*\(\s*([+-][\d.]+)\s*\))?(?:\s*\[\s*(\d+)\s*\])?$/);
+            if (!rangeMatch) return [s]; // Not a range, return as-is
+
+            var start = parseFloat(rangeMatch[1]);
+            var end = parseFloat(rangeMatch[2]);
+            var explicitStep = rangeMatch[3] ? parseFloat(rangeMatch[3]) : null;
+            var count = rangeMatch[4] ? parseInt(rangeMatch[4]) : null;
+
+            var values = [];
+            if (count) {
+                // Evenly spaced with exact count
+                if (count === 1) return [String(start)];
+                for (var k = 0; k < count; k++) {
+                    var val = start + (end - start) * k / (count - 1);
+                    values.push(_formatNum(val));
+                }
+            } else if (explicitStep) {
+                // Explicit step
+                if (explicitStep > 0) {
+                    for (var v = start; v <= end + 0.0001; v += explicitStep) {
+                        values.push(_formatNum(v));
+                    }
+                } else {
+                    for (var v = start; v >= end - 0.0001; v += explicitStep) {
+                        values.push(_formatNum(v));
+                    }
+                }
+            } else {
+                // Simple range default step 1
+                for (var v = start; v <= end + 0.0001; v += 1) {
+                    values.push(_formatNum(v));
+                }
+            }
+            return values;
+        }
+
+        function _formatNum(n) {
+            if (Number.isInteger(n)) return String(n);
+            return n.toFixed(2).replace(/\.?0+$/, '');
+        }
+
+        function _applyPromptSR(values, basePrompt) {
+            // Prompt S/R: first value = search key, rest = replacements
+            // First value keeps original prompt, subsequent replace search key
+            if (values.length < 2) return values;
+            var search = values[0];
+            var results = [basePrompt];
+            for (var i = 1; i < values.length; i++) {
+                results.push(basePrompt.split(search).join(values[i]));
+            }
+            return results;
         }
 
         async function xyzGenerate() {
@@ -1587,6 +1661,12 @@ a dog running in a park</textarea>
             var xVals = _parseAxisVals(xRaw);
             var yVals = _parseAxisVals(yRaw);
             var zVals = zType ? _parseAxisVals(zRaw) : [];
+
+            // Handle Prompt S/R type — transform values into actual prompt values
+            var basePrompt = document.getElementById('batch-prompt').value;
+            if (xType === 'prompt_sr') { xType = 'prompt'; xVals = _applyPromptSR(xVals, basePrompt); }
+            if (yType === 'prompt_sr') { yType = 'prompt'; yVals = _applyPromptSR(yVals, basePrompt); }
+            if (zType === 'prompt_sr') { zType = 'prompt'; zVals = _applyPromptSR(zVals, basePrompt); }
 
             if (xVals.length < 1 || yVals.length < 1) {
                 showAlert('Missing Axis Values', 'X and Y axes must have at least one value each.');
@@ -1696,6 +1776,19 @@ a dog running in a park</textarea>
             batchBtn.textContent = 'Generate XYZ Plot';
         }
 
+        var AXIS_LABELS = {
+            'prompt': 'Prompt',
+            'negative': 'Neg Prompt',
+            'model': 'Model',
+            'steps': 'Steps',
+            'cfg': 'CFG Scale',
+            'vae': 'VAE',
+            'text_encoder': 'Text Enc.',
+            'prompt_sr': 'Prompt S/R',
+        };
+
+        function _axisLabel(t) { return AXIS_LABELS[t] || capitalize(t); }
+
         function _renderXyzGrid(container, data, xType, yType, zType) {
             var xLabels = data.x_labels || [];
             var yLabels = data.y_labels || [];
@@ -1719,7 +1812,7 @@ a dog running in a park</textarea>
 
             // Header row: corner + X labels
             html += '<tr>';
-            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">' + capitalize(yType) + ' \\ ' + capitalize(xType) + '</th>';
+            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">' + _axisLabel(yType) + ' \\ ' + _axisLabel(xType) + '</th>';
             for (var xi = 0; xi < numCols; xi++) {
                 html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(xLabels[xi])) + '</th>';
             }

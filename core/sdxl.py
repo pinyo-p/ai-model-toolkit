@@ -459,6 +459,7 @@ _AXIS_APPLIERS = {
     'model': lambda p, v: p.update({'model_path': v}),
     'vae': lambda p, v: p.update({'vae_path': v}),
     'text_encoder': lambda p, v: p.update({'text_encoder_path': v}),
+    'prompt_sr': lambda p, v: p.update({'prompt': v}),
 }
 
 
