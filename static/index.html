@@ -377,7 +377,7 @@
                     <div class="col" style="flex:1;">
                         <div class="form-group">
                             <label>X Axis (horizontal)</label>
-                            <select id="xyz-x-type" style="margin-bottom:4px;">
+                            <select id="xyz-x-type" onchange="onXyzTypeChange('x')" style="margin-bottom:4px;">
                                 <option value="model">Model</option>
                                 <option value="prompt">Prompt</option>
                                 <option value="negative">Negative Prompt</option>
@@ -387,14 +387,20 @@
                                 <option value="text_encoder">Text Encoder</option>
                                 <option value="prompt_sr">Prompt S/R</option>
                             </select>
-                            <textarea id="xyz-x-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;model_a.safetensors&#10;model_b.safetensors&#10;model_c.safetensors">model_a.safetensors
+                            <textarea id="xyz-x-values" rows="3" placeholder="model_a.safetensors, model_b.safetensors, model_c.safetensors&#10;or 1-5 (+2) for numeric ranges&#10;or one per line">model_a.safetensors
 model_b.safetensors</textarea>
+                            <div id="xyz-x-picker" style="display:none;margin-top:4px;">
+                                <div style="display:flex;gap:4px;">
+                                    <select id="xyz-x-pick-select" style="flex:1;font-size:12px;"></select>
+                                    <button class="btn-small" onclick="addXyzPick('x')" style="white-space:nowrap;">+ Add</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col" style="flex:1;">
                         <div class="form-group">
                             <label>Y Axis (vertical)</label>
-                            <select id="xyz-y-type" style="margin-bottom:4px;">
+                            <select id="xyz-y-type" onchange="onXyzTypeChange('y')" style="margin-bottom:4px;">
                                 <option value="prompt">Prompt</option>
                                 <option value="model">Model</option>
                                 <option value="negative">Negative Prompt</option>
@@ -404,14 +410,20 @@ model_b.safetensors</textarea>
                                 <option value="text_encoder">Text Encoder</option>
                                 <option value="prompt_sr">Prompt S/R</option>
                             </select>
-                            <textarea id="xyz-y-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;a cat sitting on a couch&#10;a dog running in a park">a cat sitting on a couch
+                            <textarea id="xyz-y-values" rows="3" placeholder="a cat sitting on a couch, a dog running in a park&#10;or 20-30 (+5) for numeric ranges&#10;or one per line">a cat sitting on a couch
 a dog running in a park</textarea>
+                            <div id="xyz-y-picker" style="display:none;margin-top:4px;">
+                                <div style="display:flex;gap:4px;">
+                                    <select id="xyz-y-pick-select" style="flex:1;font-size:12px;"></select>
+                                    <button class="btn-small" onclick="addXyzPick('y')" style="white-space:nowrap;">+ Add</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="col" id="xyz-z-col" style="flex:1;display:none;">
                         <div class="form-group">
                             <label>Z Axis (depth)</label>
-                            <select id="xyz-z-type" style="margin-bottom:4px;">
+                            <select id="xyz-z-type" onchange="onXyzTypeChange('z')" style="margin-bottom:4px;">
                                 <option value="steps">Steps</option>
                                 <option value="cfg">CFG Scale</option>
                                 <option value="prompt">Prompt</option>
@@ -421,7 +433,13 @@ a dog running in a park</textarea>
                                 <option value="text_encoder">Text Encoder</option>
                                 <option value="prompt_sr">Prompt S/R</option>
                             </select>
-                            <textarea id="xyz-z-values" rows="3" placeholder="Enter values..."></textarea>
+                            <textarea id="xyz-z-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;or range syntax (1-5, 1-5 (+2), 1-10 [5])"></textarea>
+                            <div id="xyz-z-picker" style="display:none;margin-top:4px;">
+                                <div style="display:flex;gap:4px;">
+                                    <select id="xyz-z-pick-select" style="flex:1;font-size:12px;"></select>
+                                    <button class="btn-small" onclick="addXyzPick('z')" style="white-space:nowrap;">+ Add</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1559,11 +1577,77 @@ a dog running in a park</textarea>
                 zCol.style.display = 'block';
                 addBtn.style.display = 'none';
                 removeBtn.style.display = 'inline-block';
+                onXyzTypeChange('z');
             } else {
                 zCol.style.display = 'none';
                 addBtn.style.display = 'inline-block';
                 removeBtn.style.display = 'none';
             }
+        }
+
+        function _getBatchModelList(filterType) {
+            var select = document.getElementById('batch-model');
+            if (filterType === 'vae') select = document.getElementById('batch-vae');
+            if (filterType === 'text_encoder') select = document.getElementById('batch-text-encoder');
+            var items = [];
+            for (var i = 0; i < select.options.length; i++) {
+                var opt = select.options[i];
+                if (opt.value && opt.value !== '__custom__') {
+                    items.push({ value: opt.value, label: opt.textContent });
+                }
+            }
+            return items;
+        }
+
+        function onXyzTypeChange(axis) {
+            var type = document.getElementById('xyz-' + axis + '-type').value;
+            var picker = document.getElementById('xyz-' + axis + '-picker');
+            var values = document.getElementById('xyz-' + axis + '-values');
+            var pickSelect = document.getElementById('xyz-' + axis + '-pick-select');
+
+            // Update placeholder
+            var prompts = {
+                'prompt': 'Enter prompts, one per line or comma-separated',
+                'negative': 'Enter negative prompts, one per line or comma-separated',
+                'model': 'Enter model paths, one per line or comma-separated',
+                'steps': 'Steps (supports ranges: 1-5, 20-30 (+5), 1-50 [10])',
+                'cfg': 'CFG values (supports ranges: 7-15, 5-10 (+0.5), 1-10 [5])',
+                'vae': 'Enter VAE paths, one per line or comma-separated',
+                'text_encoder': 'Enter text encoder paths',
+                'prompt_sr': 'First line = search, rest = replacements',
+            };
+            values.placeholder = prompts[type] || 'Enter values';
+
+            // Show/hide picker for model/vae/text_encoder
+            var hasPicker = type === 'model' || type === 'vae' || type === 'text_encoder';
+            picker.style.display = hasPicker ? 'block' : 'none';
+
+            if (hasPicker) {
+                // Populate picker dropdown
+                var filterType = type;
+                if (type === 'text_encoder') filterType = 'text_encoder';
+                var modelList = _getBatchModelList(filterType);
+                pickSelect.innerHTML = '';
+                if (modelList.length === 0) {
+                    pickSelect.innerHTML = '<option value="">(no items loaded - click Refresh)</option>';
+                } else {
+                    modelList.forEach(function(item) {
+                        var opt = document.createElement('option');
+                        opt.value = item.value;
+                        opt.textContent = item.label;
+                        pickSelect.appendChild(opt);
+                    });
+                }
+            }
+        }
+
+        function addXyzPick(axis) {
+            var pickSelect = document.getElementById('xyz-' + axis + '-pick-select');
+            var values = document.getElementById('xyz-' + axis + '-values');
+            if (!pickSelect.value) return;
+            var current = values.value.trim();
+            var separator = current ? '\n' : '';
+            values.value = current + separator + pickSelect.value;
         }
 
         function _parseAxisVals(text) {
@@ -1707,11 +1791,11 @@ a dog running in a park</textarea>
 
             var formData = new FormData();
             formData.append('x_type', xType);
-            formData.append('x_values', xVals.join('\n'));
+            formData.append('x_values', xVals.join(','));
             formData.append('y_type', yType);
-            formData.append('y_values', yVals.join('\n'));
+            formData.append('y_values', yVals.join(','));
             formData.append('z_type', zType);
-            formData.append('z_values', zVals.join('\n'));
+            formData.append('z_values', zVals.join(','));
             formData.append('prompt', document.getElementById('batch-prompt').value);
             formData.append('negative', document.getElementById('batch-negative').value);
             formData.append('steps', document.getElementById('batch-steps').value);
@@ -1997,6 +2081,10 @@ a dog running in a park</textarea>
                 _populateBatchSelect(document.getElementById('batch-model'), localModels, modelsPath, 'checkpoint');
                 _populateBatchSelect(document.getElementById('batch-vae'), localModels, modelsPath, 'vae');
                 _populateBatchSelect(document.getElementById('batch-text-encoder'), localModels, modelsPath, 'text_encoder');
+                // Refresh XYZ pickers
+                onXyzTypeChange('x');
+                onXyzTypeChange('y');
+                if (document.getElementById('xyz-z-col').style.display !== 'none') onXyzTypeChange('z');
             } catch(e) {
                 console.error('Failed to load batch models:', e);
             }
