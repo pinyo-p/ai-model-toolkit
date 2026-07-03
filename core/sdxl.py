@@ -449,3 +449,88 @@ def batch_generate(
         )
         images.append(img)
     return images
+
+
+_AXIS_APPLIERS = {
+    'prompt': lambda p, v: p.update({'prompt': v}),
+    'negative': lambda p, v: p.update({'negative': v}),
+    'steps': lambda p, v: p.update({'steps': int(v)}),
+    'cfg': lambda p, v: p.update({'cfg': float(v)}),
+    'model': lambda p, v: p.update({'model_path': v}),
+    'vae': lambda p, v: p.update({'vae_path': v}),
+    'text_encoder': lambda p, v: p.update({'text_encoder_path': v}),
+}
+
+
+def xyz_generate(
+    base_params: dict,
+    axes: list[tuple[str | None, list]],
+    count: int = 1,
+    lora_paths: list = None,
+    lora_weights: list = None,
+    progress_cb=None,
+    cancel_event=None,
+    on_message=None,
+    on_progress=None,
+) -> tuple[list[dict], list, list, list]:
+    """
+    Generate images for X/Y/Z plot (Cartesian product of axes).
+    axes: [(type, [values]), ...] — up to 3 (X, Y, Z). type=None means single value.
+    base_params: default params to start from before axis overrides.
+    Returns (cells, x_vals, y_vals, z_vals) where each cell is:
+        {'x': xi, 'y': yi, 'z': zi, 'images': [PIL.Image, ...]}
+    """
+    import random as _random
+
+    x_type, x_vals = axes[0] if len(axes) > 0 else (None, [None])
+    y_type, y_vals = axes[1] if len(axes) > 1 else (None, [None])
+    z_type, z_vals = axes[2] if len(axes) > 2 else (None, [None])
+
+    cells = []
+    total = len(x_vals) * len(y_vals) * len(z_vals) * count
+    done = 0
+
+    def _apply(p, t, v):
+        if t and v is not None and t in _AXIS_APPLIERS:
+            _AXIS_APPLIERS[t](p, v)
+
+    for xi, xv in enumerate(x_vals):
+        for yi, yv in enumerate(y_vals):
+            for zi, zv in enumerate(z_vals):
+                params = dict(base_params)
+                _apply(params, x_type, xv)
+                _apply(params, y_type, yv)
+                _apply(params, z_type, zv)
+
+                cell_images = []
+                for _ in range(count):
+                    if cancel_event and cancel_event.is_set():
+                        return cells, x_vals, y_vals, z_vals
+
+                    seed = _random.randint(0, 2147483647)
+                    img = sdxl_generate(
+                        prompt=params.get('prompt', ''),
+                        negative=params.get('negative', ''),
+                        lora_paths=lora_paths,
+                        lora_weights=lora_weights,
+                        model_path=params.get('model_path', base_params.get('model_path', 'stabilityai/stable-diffusion-xl-base-1.0')),
+                        vae_path=params.get('vae_path'),
+                        text_encoder_path=params.get('text_encoder_path'),
+                        steps=int(params.get('steps', 20)),
+                        cfg=float(params.get('cfg', 7.0)),
+                        seed=seed,
+                        width=int(params.get('width', 1024)),
+                        height=int(params.get('height', 1024)),
+                        progress_cb=progress_cb,
+                        cancel_event=cancel_event,
+                        on_message=on_message,
+                        on_progress=on_progress,
+                    )
+                    cell_images.append(img)
+                    done += 1
+                    if progress_cb:
+                        progress_cb(done, total)
+
+                cells.append({'x': xi, 'y': yi, 'z': zi, 'images': cell_images})
+
+    return cells, x_vals, y_vals, z_vals

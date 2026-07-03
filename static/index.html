@@ -102,7 +102,8 @@
 
         /* Output boxes */
         .output { margin-top: 16px; padding: 20px; background: #0d1420; border: 1px solid #1a2a3a; border-radius: 10px; min-height: 120px; display: flex; align-items: center; justify-content: center; }
-        .output img { max-width: 100%; max-height: 400px; border-radius: 8px; }
+        .output img { max-width: 100%; border-radius: 8px; }
+        .output .gen-grid img { max-height: 400px; }
         .output .placeholder { color: #3a5a7a; }
         .loading { color: #00d4ff; }
         .error { color: #ff6b6b; }
@@ -366,141 +367,191 @@
         </div>
 
         <div id="batch" class="panel">
-            <div style="display:flex;gap:16px;">
-                <div style="flex:1;min-width:0;">
-                    <div class="card">
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <label style="margin:0;">Model</label>
+            <div class="card" style="margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+                    <h2 style="margin:0;">📊 X/Y/Z Plot</h2>
+                    <span style="font-size:11px;color:#666;">Cartesian product grid generator</span>
+                </div>
+
+                <div class="row" style="gap:12px;">
+                    <div class="col" style="flex:1;">
+                        <div class="form-group">
+                            <label>X Axis (horizontal)</label>
+                            <select id="xyz-x-type" style="margin-bottom:4px;">
+                                <option value="model">Model</option>
+                                <option value="prompt">Prompt</option>
+                                <option value="negative">Negative Prompt</option>
+                                <option value="steps">Steps</option>
+                                <option value="cfg">CFG Scale</option>
+                                <option value="vae">VAE</option>
+                                <option value="text_encoder">Text Encoder</option>
+                            </select>
+                            <textarea id="xyz-x-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;model_a.safetensors&#10;model_b.safetensors&#10;model_c.safetensors">model_a.safetensors
+model_b.safetensors</textarea>
+                        </div>
+                    </div>
+                    <div class="col" style="flex:1;">
+                        <div class="form-group">
+                            <label>Y Axis (vertical)</label>
+                            <select id="xyz-y-type" style="margin-bottom:4px;">
+                                <option value="prompt">Prompt</option>
+                                <option value="model">Model</option>
+                                <option value="negative">Negative Prompt</option>
+                                <option value="steps">Steps</option>
+                                <option value="cfg">CFG Scale</option>
+                                <option value="vae">VAE</option>
+                                <option value="text_encoder">Text Encoder</option>
+                            </select>
+                            <textarea id="xyz-y-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;e.g.&#10;a cat sitting on a couch&#10;a dog running in a park">a cat sitting on a couch
+a dog running in a park</textarea>
+                        </div>
+                    </div>
+                    <div class="col" id="xyz-z-col" style="flex:1;display:none;">
+                        <div class="form-group">
+                            <label>Z Axis (depth)</label>
+                            <select id="xyz-z-type" style="margin-bottom:4px;">
+                                <option value="steps">Steps</option>
+                                <option value="cfg">CFG Scale</option>
+                                <option value="prompt">Prompt</option>
+                                <option value="negative">Negative Prompt</option>
+                                <option value="model">Model</option>
+                                <option value="vae">VAE</option>
+                                <option value="text_encoder">Text Encoder</option>
+                            </select>
+                            <textarea id="xyz-z-values" rows="3" placeholder="Enter values..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;">
+                    <button class="btn-small" id="xyz-add-z-btn" onclick="toggleZAxis()" style="background:#2a4a4a;">+ Add Z Axis</button>
+                    <button class="btn-small" id="xyz-remove-z-btn" onclick="toggleZAxis()" style="display:none;background:#d32f2f;">✕ Remove Z</button>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:12px;">
+                <h3 style="margin:0 0 10px 0;font-size:14px;color:#ccc;">Base Settings (used as defaults, overridden by axes)</h3>
+                <div class="row" style="gap:8px;">
+                    <div class="col" style="flex:1;">
+                        <div class="form-group">
+                            <label>Model</label>
                             <button class="btn-small" onclick="loadBatchModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
-                        </div>
-                        <select id="batch-model" class="base-model" onchange="onBatchModelChange()">
-                            <option value="">-- Select local model --</option>
-                            <option value="__custom__">Custom (type manually)...</option>
-                        </select>
-                        <span id="batch-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
-                        <input type="text" id="batch-model-custom" placeholder="Model ID or path" style="display:none;margin-top:8px;">
-
-                        <div class="row" style="margin-top:8px;">
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>VAE (optional)</label>
-                                    <select id="batch-vae" class="base-model" onchange="onModelSelect(this, 'batch-vae-custom')">
-                                        <option value="">-- Default VAE --</option>
-                                        <option value="__custom__">Custom...</option>
-                                    </select>
-                                    <input type="text" id="batch-vae-custom" placeholder="VAE path" style="display:none;margin-top:8px;">
-                                </div>
-                            </div>
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>Text Encoder (optional)</label>
-                                    <select id="batch-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'batch-text-encoder-custom')">
-                                        <option value="">-- Default --</option>
-                                        <option value="__custom__">Custom...</option>
-                                    </select>
-                                    <input type="text" id="batch-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:8px;">
-                                </div>
-                            </div>
+                            <select id="batch-model" class="base-model" onchange="onBatchModelChange()">
+                                <option value="">-- Select local model --</option>
+                                <option value="__custom__">Custom (type manually)...</option>
+                            </select>
+                            <span id="batch-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
+                            <input type="text" id="batch-model-custom" placeholder="Model ID or path" style="display:none;margin-top:4px;">
                         </div>
                     </div>
-
-                    <div class="card">
-                        <div class="row">
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>Steps</label>
-                                    <input type="number" id="batch-steps" value="20" min="1" max="100">
-                                </div>
-                            </div>
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>CFG</label>
-                                    <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
-                                </div>
-                            </div>
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>Seed</label>
-                                    <div class="d-flex gap-2 align-items-center">
-                                        <input type="number" id="batch-seed" value="42" class="flex-grow-1">
-                                        <label class="d-flex align-items-center gap-1 mb-0" style="white-space:nowrap;font-size:0.85rem;">
-                                            <input type="checkbox" id="batch-seed-random" checked> Random
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>Width</label>
-                                    <input type="number" id="batch-width" value="1024" step="8">
-                                </div>
-                            </div>
-                            <div class="col">
-                                <div class="form-group">
-                                    <label>Height</label>
-                                    <input type="number" id="batch-height" value="1024" step="8">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="card">
+                    <div class="col" style="flex:1;">
                         <div class="form-group">
-                            <label>LoRAs</label>
-                            <div id="batch-lora-container">
-                                <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                                    <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
-                                    <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                                    <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
-                                </div>
-                            </div>
-                            <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
+                            <label>VAE (optional)</label>
+                            <select id="batch-vae" class="base-model" onchange="onModelSelect(this, 'batch-vae-custom')">
+                                <option value="">-- Default VAE --</option>
+                                <option value="__custom__">Custom...</option>
+                            </select>
+                            <input type="text" id="batch-vae-custom" placeholder="VAE path" style="display:none;margin-top:4px;">
+                        </div>
+                    </div>
+                    <div class="col" style="flex:1;">
+                        <div class="form-group">
+                            <label>Text Encoder (optional)</label>
+                            <select id="batch-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'batch-text-encoder-custom')">
+                                <option value="">-- Default --</option>
+                                <option value="__custom__">Custom...</option>
+                            </select>
+                            <input type="text" id="batch-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:4px;">
                         </div>
                     </div>
                 </div>
 
-                <div style="flex:1;min-width:0;">
-                    <div class="card">
+                <div class="row" style="gap:8px;margin-top:8px;">
+                    <div class="col" style="flex:2;">
                         <div class="form-group">
-                            <label>Prompts (one per line)</label>
-                            <textarea id="batch-prompts" rows="8" placeholder="a cat sitting on a couch&#10;a dog running in a park&#10;a bird on a tree">a cat sitting on a couch
-a dog running in a park
-a bird on a tree</textarea>
+                            <label>Base Prompt</label>
+                            <textarea id="batch-prompt" rows="2" placeholder="Default prompt (overridden if prompt is an axis)">a beautiful landscape</textarea>
                         </div>
+                    </div>
+                    <div class="col" style="flex:1;">
                         <div class="form-group">
-                            <label>Negative Prompt</label>
-                            <textarea id="batch-negative" rows="2" placeholder="What to avoid..."></textarea>
+                            <label>Base Negative</label>
+                            <textarea id="batch-negative" rows="2" placeholder="Default negative prompt"></textarea>
                         </div>
-                    </div>
-
-                    <div style="display:flex;gap:8px;">
-                        <button class="btn" id="batch-btn" onclick="batchGenerate()" style="flex:1;">Generate Batch (ZIP)</button>
-                    </div>
-                    <div id="batch-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <div>
-                                <span id="batch-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
-                                <span id="batch-progress-count" style="font-size:11px;color:#666;margin-left:6px;"></span>
-                            </div>
-                            <button id="batch-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelBatchGeneration()">✕ Cancel</button>
-                        </div>
-                        <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
-                            <div id="batch-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
-                        </div>
-                    </div>
-                    <div style="margin:6px 0;">
-                        <button id="batch-log-toggle" onclick="toggleBatchLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
-                        <button onclick="copyBatchLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="batch-log-copy">📄 Copy</button>
-                        <div id="batch-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
-                    </div>
-                    <div id="batch-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
-
-                    <div class="output" id="batch-output" style="margin-top:12px;">
-                        <span class="placeholder">Images will appear here</span>
                     </div>
                 </div>
+
+                <div class="row" style="gap:8px;margin-top:8px;">
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Steps</label>
+                            <input type="number" id="batch-steps" value="20" min="1" max="100">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>CFG</label>
+                            <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Width</label>
+                            <input type="number" id="batch-width" value="1024" step="8">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Height</label>
+                            <input type="number" id="batch-height" value="1024" step="8">
+                        </div>
+                    </div>
+                    <div class="col">
+                        <div class="form-group">
+                            <label>Count per cell</label>
+                            <input type="number" id="batch-count" value="1" min="1" max="16">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-bottom:12px;">
+                <div class="form-group">
+                    <label>LoRAs (applied to all cells)</label>
+                    <div id="batch-lora-container">
+                        <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+                            <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                            <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
+                            <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                        </div>
+                    </div>
+                    <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;">
+                <button class="btn" id="batch-btn" onclick="xyzGenerate()" style="flex:1;">Generate XYZ Plot</button>
+            </div>
+            <div id="batch-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <span id="batch-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
+                        <span id="batch-progress-count" style="font-size:11px;color:#666;margin-left:6px;"></span>
+                    </div>
+                    <button id="batch-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelBatchGeneration()">✕ Cancel</button>
+                </div>
+                <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
+                    <div id="batch-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
+                </div>
+            </div>
+            <div style="margin:6px 0;">
+                <button id="batch-log-toggle" onclick="toggleBatchLog()" style="background:none;border:none;color:#666;cursor:pointer;font-size:11px;padding:2px 4px;">📋 Log</button>
+                <button onclick="copyBatchLog()" style="background:none;border:none;color:#555;cursor:pointer;font-size:10px;padding:2px 4px;display:none;" id="batch-log-copy">📄 Copy</button>
+                <div id="batch-log" style="display:none;margin-top:4px;padding:6px 8px;background:#1a1a1a;border-radius:4px;max-height:200px;overflow-y:auto;font-size:11px;font-family:monospace;color:#aaa;line-height:1.6;white-space:pre-wrap;"></div>
+            </div>
+            <div id="batch-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
+
+            <div id="batch-output" class="output" style="margin-top:12px;display:block;">
+                <span class="placeholder">Grid output will appear here</span>
             </div>
         </div>
 
@@ -1498,38 +1549,60 @@ a bird on a tree</textarea>
             }
         }
 
-        async function batchGenerate() {
+        function toggleZAxis() {
+            var zCol = document.getElementById('xyz-z-col');
+            var addBtn = document.getElementById('xyz-add-z-btn');
+            var removeBtn = document.getElementById('xyz-remove-z-btn');
+            if (zCol.style.display === 'none') {
+                zCol.style.display = 'block';
+                addBtn.style.display = 'none';
+                removeBtn.style.display = 'inline-block';
+            } else {
+                zCol.style.display = 'none';
+                addBtn.style.display = 'inline-block';
+                removeBtn.style.display = 'none';
+            }
+        }
+
+        function _parseAxisVals(text) {
+            return text.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+        }
+
+        async function xyzGenerate() {
             const output = document.getElementById('batch-output');
             const progress = document.getElementById('batch-progress');
             const progressBar = document.getElementById('batch-progress-bar');
             const progressText = document.getElementById('batch-progress-text');
             const progressCount = document.getElementById('batch-progress-count');
             const batchBtn = document.getElementById('batch-btn');
-            const cancelBtn = document.getElementById('batch-cancel-btn');
             const warningsEl = document.getElementById('batch-warnings');
 
-            var batchModelSelect = document.getElementById('batch-model');
-            var batchModel = batchModelSelect.value === '__custom__'
-                ? document.getElementById('batch-model-custom').value
-                : batchModelSelect.value;
-            if (!batchModel) {
-                showAlert('No Model', 'Please select a model first.');
+            var xType = document.getElementById('xyz-x-type').value;
+            var xRaw = document.getElementById('xyz-x-values').value;
+            var yType = document.getElementById('xyz-y-type').value;
+            var yRaw = document.getElementById('xyz-y-values').value;
+            var zType = document.getElementById('xyz-z-col').style.display !== 'none' ? document.getElementById('xyz-z-type').value : '';
+            var zRaw = zType ? document.getElementById('xyz-z-values').value : '';
+
+            var xVals = _parseAxisVals(xRaw);
+            var yVals = _parseAxisVals(yRaw);
+            var zVals = zType ? _parseAxisVals(zRaw) : [];
+
+            if (xVals.length < 1 || yVals.length < 1) {
+                showAlert('Missing Axis Values', 'X and Y axes must have at least one value each.');
                 return;
             }
 
-            var batchVaeSelect = document.getElementById('batch-vae');
-            var batchVae = batchVaeSelect.value === '__custom__'
-                ? document.getElementById('batch-vae-custom').value
-                : batchVaeSelect.value;
+            if (xVals.length > 100 || yVals.length > 100 || zVals.length > 100) {
+                showAlert('Too Many Values', 'Each axis is limited to 100 values.');
+                return;
+            }
 
-            var batchTeSelect = document.getElementById('batch-text-encoder');
-            var batchTe = batchTeSelect.value === '__custom__'
-                ? document.getElementById('batch-text-encoder-custom').value
-                : batchTeSelect.value;
-
-            var promptList = document.getElementById('batch-prompts').value.split('\n').filter(function(p) { return p.trim(); });
-            if (promptList.length === 0) {
-                showAlert('No Prompts', 'Please enter at least one prompt.');
+            var totalCells = xVals.length * yVals.length * (zVals.length || 1);
+            var count = parseInt(document.getElementById('batch-count').value) || 1;
+            var totalImages = totalCells * count;
+            if (totalImages > 500) {
+                showAlert('Too Many Images', 'Maximum 500 images per batch (currently ' + totalImages + ').');
                 return;
             }
 
@@ -1537,54 +1610,78 @@ a bird on a tree</textarea>
             batchBtn.textContent = 'Generating...';
             progress.style.display = 'block';
             progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
-            progressBar.style.width = '10%';
+            progressBar.style.width = '5%';
             progressText.textContent = 'Starting...';
-            progressCount.textContent = '0/' + promptList.length + ' images';
-            output.innerHTML = '<span class="loading">Generating batch...</span>';
+            progressCount.textContent = '0/' + totalImages + ' images';
+            output.innerHTML = '<span class="loading">Generating grid...</span>';
             warningsEl.style.display = 'none';
             batchLogEntries = [];
-            lastBatchMsg = '';
             document.getElementById('batch-log').textContent = '';
 
-            const formData = new FormData();
-            formData.append('prompts', document.getElementById('batch-prompts').value);
+            var t0 = Date.now();
+            appendBatchLog('Starting XYZ plot generation...', t0, false);
+            appendBatchLog('X axis: ' + xType + ' (' + xVals.length + ' values)', t0, false);
+            appendBatchLog('Y axis: ' + yType + ' (' + yVals.length + ' values)', t0, false);
+            if (zType) appendBatchLog('Z axis: ' + zType + ' (' + zVals.length + ' values)', t0, false);
+            appendBatchLog('Count per cell: ' + count + ', Total images: ' + totalImages, t0, false);
+
+            var formData = new FormData();
+            formData.append('x_type', xType);
+            formData.append('x_values', xVals.join('\n'));
+            formData.append('y_type', yType);
+            formData.append('y_values', yVals.join('\n'));
+            formData.append('z_type', zType);
+            formData.append('z_values', zVals.join('\n'));
+            formData.append('prompt', document.getElementById('batch-prompt').value);
             formData.append('negative', document.getElementById('batch-negative').value);
             formData.append('steps', document.getElementById('batch-steps').value);
             formData.append('cfg', document.getElementById('batch-cfg').value);
-            const batchSeedRandom = document.getElementById('batch-seed-random').checked;
-            const batchSeedValue = batchSeedRandom ? Math.floor(Math.random() * 2147483647) : parseInt(document.getElementById('batch-seed').value) || 0;
-            formData.append('seed', batchSeedValue);
-            if (batchSeedRandom) document.getElementById('batch-seed').value = batchSeedValue;
             formData.append('width', document.getElementById('batch-width').value);
             formData.append('height', document.getElementById('batch-height').value);
-            formData.append('model_path', batchModel);
+            formData.append('count', count);
+
+            var batchModelSelect = document.getElementById('batch-model');
+            var batchModel = batchModelSelect.value === '__custom__'
+                ? document.getElementById('batch-model-custom').value
+                : batchModelSelect.value;
+            formData.append('model_path', batchModel || 'stabilityai/stable-diffusion-xl-base-1.0');
+
+            var batchVaeSelect = document.getElementById('batch-vae');
+            var batchVae = batchVaeSelect.value === '__custom__'
+                ? document.getElementById('batch-vae-custom').value
+                : batchVaeSelect.value;
             formData.append('vae_path', batchVae || '');
+
+            var batchTeSelect = document.getElementById('batch-text-encoder');
+            var batchTe = batchTeSelect.value === '__custom__'
+                ? document.getElementById('batch-text-encoder-custom').value
+                : batchTeSelect.value;
             formData.append('text_encoder_path', batchTe || '');
+
             _appendLoras(formData, 'batch-lora-container');
 
             try {
-                var t0 = Date.now();
-                appendBatchLog('Starting batch generation...', t0, false);
-                appendBatchLog('Model: ' + batchModel, t0, false);
-                appendBatchLog('Prompts: ' + promptList.length, t0, false);
-
-                const res = await fetch('/api/batch_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                var res = await fetch('/api/xyz_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
+                var data = await res.json();
 
                 progressBar.style.animation = 'none';
                 progressBar.style.width = '100%';
                 var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                progressText.textContent = '✅ Done ' + promptList.length + ' images in ' + elapsed + 's';
+                progressText.textContent = '✅ Done ' + totalImages + ' images in ' + elapsed + 's';
                 appendBatchLog('✅ Done in ' + elapsed + 's', t0, false);
 
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
+                _renderXyzGrid(output, data, xType, yType, zType);
 
-                output.innerHTML = '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-                    + '<a href="' + url + '" download="batch_images.zip" class="btn" style="flex:1;text-align:center;">📥 Download ZIP (' + promptList.length + ' images)</a>'
-                    + '</div>';
-
-                appendBatchLog('Download ready: batch_images.zip', t0, false);
+                var downloadHtml = '';
+                for (var ci = 0; ci < data.cells.length; ci++) {
+                    var cell = data.cells[ci];
+                    for (var ii = 0; ii < cell.images.length; ii++) {
+                        downloadHtml += '<a href="' + cell.images[ii] + '" download="xyz_' + cell.x + '_' + cell.y + '_' + cell.z + '_' + ii + '.png" style="display:none;"></a>';
+                    }
+                }
+                output.innerHTML += downloadHtml;
+                appendBatchLog('✅ Grid ready - ' + data.cells.length + ' cells', t0, false);
 
                 setTimeout(function() { progress.style.display = 'none'; }, 5000);
             } catch(e) {
@@ -1596,12 +1693,108 @@ a bird on a tree</textarea>
             }
 
             batchBtn.disabled = false;
-            batchBtn.textContent = 'Generate Batch (ZIP)';
+            batchBtn.textContent = 'Generate XYZ Plot';
+        }
+
+        function _renderXyzGrid(container, data, xType, yType, zType) {
+            var xLabels = data.x_labels || [];
+            var yLabels = data.y_labels || [];
+            var zLabels = data.z_labels || [];
+            var cells = data.cells || [];
+
+            // Build lookup: "x,y,z" -> images
+            var lookup = {};
+            for (var i = 0; i < cells.length; i++) {
+                var c = cells[i];
+                var key = c.x + ',' + c.y + ',' + (c.z !== undefined ? c.z : 0);
+                lookup[key] = c.images;
+            }
+
+            var hasZ = zLabels.length > 0;
+            var numCols = xLabels.length;
+            var numRows = yLabels.length;
+
+            var html = '<div class="xyz-grid" style="overflow-x:auto;">';
+            html += '<table style="border-collapse:collapse;width:100%;font-size:12px;">';
+
+            // Header row: corner + X labels
+            html += '<tr>';
+            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">' + capitalize(yType) + ' \\ ' + capitalize(xType) + '</th>';
+            for (var xi = 0; xi < numCols; xi++) {
+                html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(xLabels[xi])) + '</th>';
+            }
+            html += '</tr>';
+
+            // Data rows
+            for (var yi = 0; yi < numRows; yi++) {
+                html += '<tr>';
+                html += '<td style="padding:6px 10px;background:#1a1a1a;border:1px solid #333;text-align:center;font-weight:bold;color:#aaa;white-space:nowrap;">' + escapeHtml(truncateLabel(yLabels[yi])) + '</td>';
+                for (var xi = 0; xi < numCols; xi++) {
+                    var images = [];
+                    if (hasZ) {
+                        for (var zi = 0; zi < zLabels.length; zi++) {
+                            var k = xi + ',' + yi + ',' + zi;
+                            var imgs = lookup[k] || [];
+                            for (var ii = 0; ii < imgs.length; ii++) {
+                                images.push(imgs[ii]);
+                            }
+                        }
+                    } else {
+                        var k = xi + ',' + yi + ',0';
+                        images = lookup[k] || [];
+                    }
+
+                    html += '<td style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
+                    for (var ii = 0; ii < images.length; ii++) {
+                        html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
+                        html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')">';
+                        html += '<div style="margin-top:2px;font-size:10px;color:#666;">';
+                        html += '<a href="' + images[ii] + '" download="xyz_' + xi + '_' + yi + '_' + ii + '.png" style="color:#4a9eff;">⬇</a>';
+                        html += '</div></div>';
+                    }
+                    if (images.length === 0) {
+                        html += '<span style="color:#555;">—</span>';
+                    }
+                    html += '</td>';
+                }
+                html += '</tr>';
+            }
+
+            html += '</table></div>';
+            html += '<div style="margin-top:8px;text-align:center;">';
+            html += '<button class="btn-small" onclick="downloadAllXyzImages()" style="background:#2a4a4a;">📥 Download All</button>';
+            html += '</div>';
+
+            container.innerHTML = html;
+        }
+
+        var _xyzAllUrls = [];
+
+        function downloadAllXyzImages() {
+            var imgs = document.querySelectorAll('#batch-output img');
+            var urls = [];
+            imgs.forEach(function(img) { urls.push(img.src); });
+            if (urls.length === 0) return;
+            // Trigger sequential downloads
+            urls.forEach(function(url, i) {
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'xyz_image_' + (i + 1) + '.png';
+                setTimeout(function() { a.click(); }, i * 200);
+            });
+        }
+
+        function truncateLabel(s) {
+            if (!s) return '';
+            return s.length > 24 ? s.substring(0, 22) + '..' : s;
+        }
+
+        function capitalize(s) {
+            return s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ');
         }
 
         function cancelBatchGeneration() {
-            // Batch generate is synchronous, cannot cancel mid-request
-            // Could add abort controller in future
+            // XYZ generate is synchronous, cannot cancel mid-request
         }
 
         var BATCH_FAMILY_LABELS = {

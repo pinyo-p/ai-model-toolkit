@@ -757,6 +757,107 @@ async def api_batch_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/xyz_generate")
+async def api_xyz_generate(
+    user: str = Depends(get_current_user),
+    x_type: str = Form(...),
+    x_values: str = Form(...),
+    y_type: str = Form(...),
+    y_values: str = Form(...),
+    z_type: str = Form(""),
+    z_values: str = Form(""),
+    prompt: str = Form(""),
+    negative: str = Form(""),
+    lora_file: List[UploadFile] = File(None),
+    lora_weights: str = Form("[]"),
+    model_path: str = Form(""),
+    vae_path: str = Form(""),
+    text_encoder_path: str = Form(""),
+    steps: int = Form(20),
+    cfg: float = Form(7.0),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    count: int = Form(1),
+):
+    try:
+        axes = []
+        x_list = [v.strip() for v in x_values.split(",") if v.strip()]
+        y_list = [v.strip() for v in y_values.split(",") if v.strip()]
+        z_list = [v.strip() for v in z_values.split(",") if v.strip()] if z_type else []
+
+        if not x_list or not y_list:
+            raise HTTPException(status_code=400, detail="X and Y axes must have at least one value each.")
+
+        axes.append((x_type, x_list))
+        axes.append((y_type, y_list))
+        if z_type and z_list:
+            axes.append((z_type, z_list))
+
+        lora_paths = []
+        weight_list = json.loads(lora_weights) if lora_weights else []
+        if lora_file:
+            for f in lora_file:
+                data = await f.read()
+                path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                lora_paths.append(path)
+        if len(weight_list) < len(lora_paths):
+            weight_list.extend([1.0] * (len(lora_paths) - len(weight_list)))
+
+        base_params = {
+            'prompt': prompt,
+            'negative': negative,
+            'model_path': model_path or "stabilityai/stable-diffusion-xl-base-1.0",
+            'vae_path': vae_path or None,
+            'text_encoder_path': text_encoder_path or None,
+            'steps': steps,
+            'cfg': cfg,
+            'width': width,
+            'height': height,
+        }
+
+        cells, x_vals, y_vals, z_vals = sdxl.xyz_generate(
+            base_params, axes, count=count,
+            lora_paths=lora_paths or None,
+            lora_weights=weight_list or None,
+        )
+
+        for p in lora_paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+        # Save images and build response
+        result_cells = []
+        for cell in cells:
+            urls = []
+            for img_idx, img in enumerate(cell['images']):
+                fname = f"xyz_{uuid.uuid4()}.png"
+                fpath = os.path.join(OUTPUT_DIR, fname)
+                img.save(fpath, format='PNG')
+                urls.append(f"/output/{fname}")
+            result_cells.append({
+                'x': cell['x'],
+                'y': cell['y'],
+                'z': cell['z'],
+                'images': urls,
+            })
+
+        return JSONResponse({
+            'cells': result_cells,
+            'x_labels': x_vals,
+            'y_labels': y_vals,
+            'z_labels': z_vals if z_type else [],
+            'x_type': x_type,
+            'y_type': y_type,
+            'z_type': z_type,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/lora_info")
 async def api_lora_info(file: UploadFile = File(...), user: str = Depends(get_current_user)):
     try:
