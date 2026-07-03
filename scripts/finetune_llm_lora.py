@@ -95,7 +95,9 @@ parser.add_argument("--lora_dropout", type=float, default=0.05,
 parser.add_argument("--target_modules", type=str, default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
                     help="Target modules for LoRA (comma-separated)")
 
-# Data filtering
+# Training flags
+parser.add_argument("--gradient_checkpointing", action="store_true",
+                    help="Enable gradient checkpointing (slower but uses less VRAM)")
 parser.add_argument("--filter_refusals", action="store_true",
                     help="Remove training examples where the assistant refuses to answer (preserves uncensored behavior)")
 
@@ -454,7 +456,7 @@ def train():
         save_total_limit=2,
         remove_unused_columns=False,
         dataloader_num_workers=2,
-        gradient_checkpointing=False,
+        gradient_checkpointing=args.gradient_checkpointing,
         optim="adamw_torch",
         lr_scheduler_type="cosine",
         warmup_steps=100,
