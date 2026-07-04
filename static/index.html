@@ -369,138 +369,47 @@
         <div id="batch" class="panel">
             <div class="card" style="margin-bottom:12px;">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-                    <h2 style="margin:0;">📊 X/Y/Z Plot</h2>
-                    <span style="font-size:11px;color:#666;">Cartesian product grid generator</span>
+                    <h2 style="margin:0;">🔄 Comparison</h2>
+                    <span style="font-size:11px;color:#666;">Prompt × (Model+LoRA) grid</span>
                 </div>
 
                 <div class="row" style="gap:12px;">
                     <div class="col" style="flex:1;">
                         <div class="form-group">
-                            <label>X Axis (horizontal)</label>
-                            <select id="xyz-x-type" onchange="onXyzTypeChange('x')" style="margin-bottom:4px;">
-                                <option value="model">Model</option>
-                                <option value="prompt">Prompt</option>
-                                <option value="negative">Negative Prompt</option>
-                                <option value="steps">Steps</option>
-                                <option value="cfg">CFG Scale</option>
-                                <option value="vae">VAE</option>
-                                <option value="text_encoder">Text Encoder</option>
-                                <option value="prompt_sr">Prompt S/R</option>
-                            </select>
-                            <textarea id="xyz-x-values" rows="3" placeholder="model_a.safetensors, model_b.safetensors, model_c.safetensors&#10;or 1-5 (+2) for numeric ranges&#10;or one per line">model_a.safetensors
-model_b.safetensors</textarea>
-                            <div id="xyz-x-picker" style="display:none;margin-top:4px;">
-                                <div style="display:flex;gap:4px;">
-                                    <select id="xyz-x-pick-select" style="flex:1;font-size:12px;"></select>
-                                    <button class="btn-small" onclick="addXyzPick('x')" style="white-space:nowrap;">+ Add</button>
+                            <label>Prompts (rows)</label>
+                            <div id="cmp-prompts">
+                                <div class="cmp-prompt-row" style="margin-bottom:4px;">
+                                    <div style="display:flex;gap:4px;align-items:center;">
+                                        <span class="cmp-prompt-num" style="font-size:11px;color:#888;white-space:nowrap;min-width:55px;">Prompt 1</span>
+                                        <textarea class="cmp-prompt-ta" rows="2" style="flex:1;" placeholder="Enter prompt...">a beautiful landscape</textarea>
+                                        <button class="btn-small" onclick="removePromptRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>
+                                    </div>
                                 </div>
                             </div>
+                            <button class="btn-small" onclick="addPromptRow()" style="margin-top:4px;background:#2a4a4a;">+ Add Prompt</button>
                         </div>
                     </div>
                     <div class="col" style="flex:1;">
                         <div class="form-group">
-                            <label>Y Axis (vertical)</label>
-                            <select id="xyz-y-type" onchange="onXyzTypeChange('y')" style="margin-bottom:4px;">
-                                <option value="prompt">Prompt</option>
-                                <option value="model">Model</option>
-                                <option value="negative">Negative Prompt</option>
-                                <option value="steps">Steps</option>
-                                <option value="cfg">CFG Scale</option>
-                                <option value="vae">VAE</option>
-                                <option value="text_encoder">Text Encoder</option>
-                                <option value="prompt_sr">Prompt S/R</option>
-                            </select>
-                            <textarea id="xyz-y-values" rows="3" placeholder="a cat sitting on a couch, a dog running in a park&#10;or 20-30 (+5) for numeric ranges&#10;or one per line">a cat sitting on a couch
-a dog running in a park</textarea>
-                            <div id="xyz-y-picker" style="display:none;margin-top:4px;">
-                                <div style="display:flex;gap:4px;">
-                                    <select id="xyz-y-pick-select" style="flex:1;font-size:12px;"></select>
-                                    <button class="btn-small" onclick="addXyzPick('y')" style="white-space:nowrap;">+ Add</button>
-                                </div>
-                            </div>
+                            <label>Model + LoRA (columns)</label>
+                            <div id="cmp-combos"></div>
+                            <button class="btn-small" onclick="addComboRow()" style="margin-top:4px;background:#2a4a4a;margin-bottom:4px;">+ Add Combination</button>
+                            <button class="btn-small" onclick="loadBatchModels()" title="Refresh model list" style="margin-top:4px;padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh models</button>
                         </div>
                     </div>
-                    <div class="col" id="xyz-z-col" style="flex:1;display:none;">
-                        <div class="form-group">
-                            <label>Z Axis (depth)</label>
-                            <select id="xyz-z-type" onchange="onXyzTypeChange('z')" style="margin-bottom:4px;">
-                                <option value="steps">Steps</option>
-                                <option value="cfg">CFG Scale</option>
-                                <option value="prompt">Prompt</option>
-                                <option value="negative">Negative Prompt</option>
-                                <option value="model">Model</option>
-                                <option value="vae">VAE</option>
-                                <option value="text_encoder">Text Encoder</option>
-                                <option value="prompt_sr">Prompt S/R</option>
-                            </select>
-                            <textarea id="xyz-z-values" rows="3" placeholder="Enter values, one per line or comma-separated&#10;or range syntax (1-5, 1-5 (+2), 1-10 [5])"></textarea>
-                            <div id="xyz-z-picker" style="display:none;margin-top:4px;">
-                                <div style="display:flex;gap:4px;">
-                                    <select id="xyz-z-pick-select" style="flex:1;font-size:12px;"></select>
-                                    <button class="btn-small" onclick="addXyzPick('z')" style="white-space:nowrap;">+ Add</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div style="margin-top:8px;">
-                    <button class="btn-small" id="xyz-add-z-btn" onclick="toggleZAxis()" style="background:#2a4a4a;">+ Add Z Axis</button>
-                    <button class="btn-small" id="xyz-remove-z-btn" onclick="toggleZAxis()" style="display:none;background:#d32f2f;">✕ Remove Z</button>
                 </div>
             </div>
 
             <div class="card" style="margin-bottom:12px;">
-                <h3 style="margin:0 0 10px 0;font-size:14px;color:#ccc;">Base Settings (used as defaults, overridden by axes)</h3>
+                <h3 style="margin:0 0 10px 0;font-size:14px;color:#ccc;">Settings</h3>
                 <div class="row" style="gap:8px;">
-                    <div class="col" style="flex:1;">
+                    <div class="col">
                         <div class="form-group">
-                            <label>Model</label>
-                            <button class="btn-small" onclick="loadBatchModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
-                            <select id="batch-model" class="base-model" onchange="onBatchModelChange()">
-                                <option value="">-- Select local model --</option>
-                                <option value="__custom__">Custom (type manually)...</option>
-                            </select>
-                            <span id="batch-model-family" style="display:none;margin-left:8px;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;background:#2a4a2a;color:#4caf50;"></span>
-                            <input type="text" id="batch-model-custom" placeholder="Model ID or path" style="display:none;margin-top:4px;">
-                        </div>
-                    </div>
-                    <div class="col" style="flex:1;">
-                        <div class="form-group">
-                            <label>VAE (optional)</label>
-                            <select id="batch-vae" class="base-model" onchange="onModelSelect(this, 'batch-vae-custom')">
-                                <option value="">-- Default VAE --</option>
-                                <option value="__custom__">Custom...</option>
-                            </select>
-                            <input type="text" id="batch-vae-custom" placeholder="VAE path" style="display:none;margin-top:4px;">
-                        </div>
-                    </div>
-                    <div class="col" style="flex:1;">
-                        <div class="form-group">
-                            <label>Text Encoder (optional)</label>
-                            <select id="batch-text-encoder" class="base-model" style="display:none;" onchange="onModelSelect(this, 'batch-text-encoder-custom')">
-                                <option value="">-- Default --</option>
-                                <option value="__custom__">Custom...</option>
-                            </select>
-                            <input type="text" id="batch-text-encoder-custom" placeholder="Text encoder path" style="display:none;margin-top:4px;">
+                            <label>Negative Prompt</label>
+                            <textarea id="batch-negative" rows="1" placeholder="Default negative prompt"></textarea>
                         </div>
                     </div>
                 </div>
-
-                <div class="row" style="gap:8px;margin-top:8px;">
-                    <div class="col" style="flex:2;">
-                        <div class="form-group">
-                            <label>Base Prompt</label>
-                            <textarea id="batch-prompt" rows="2" placeholder="Default prompt (overridden if prompt is an axis)">a beautiful landscape</textarea>
-                        </div>
-                    </div>
-                    <div class="col" style="flex:1;">
-                        <div class="form-group">
-                            <label>Base Negative</label>
-                            <textarea id="batch-negative" rows="2" placeholder="Default negative prompt"></textarea>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="row" style="gap:8px;margin-top:8px;">
                     <div class="col">
                         <div class="form-group">
@@ -528,30 +437,16 @@ a dog running in a park</textarea>
                     </div>
                     <div class="col">
                         <div class="form-group">
-                            <label>Count per cell</label>
+                            <label>Images per cell</label>
                             <input type="number" id="batch-count" value="1" min="1" max="16">
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="card" style="margin-bottom:12px;">
-                <div class="form-group">
-                    <label>LoRAs (applied to all cells)</label>
-                    <div id="batch-lora-container">
-                        <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                            <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
-                            <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                            <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
-                        </div>
-                    </div>
-                    <button class="btn-small" onclick="addLoraRow('batch-lora-container')">+ Add LoRA</button>
+                <div style="display:flex;gap:8px;margin-top:12px;">
+                    <button class="btn" id="batch-btn" onclick="comparisonGenerate()" style="flex:1;">Generate Comparison</button>
                 </div>
             </div>
 
-            <div style="display:flex;gap:8px;">
-                <button class="btn" id="batch-btn" onclick="xyzGenerate()" style="flex:1;">Generate XYZ Plot</button>
-            </div>
             <div id="batch-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;">
                     <div>
@@ -1569,364 +1464,47 @@ a dog running in a park</textarea>
             }
         }
 
-        function toggleZAxis() {
-            var zCol = document.getElementById('xyz-z-col');
-            var addBtn = document.getElementById('xyz-add-z-btn');
-            var removeBtn = document.getElementById('xyz-remove-z-btn');
-            if (zCol.style.display === 'none') {
-                zCol.style.display = 'block';
-                addBtn.style.display = 'none';
-                removeBtn.style.display = 'inline-block';
-                onXyzTypeChange('z');
-            } else {
-                zCol.style.display = 'none';
-                addBtn.style.display = 'inline-block';
-                removeBtn.style.display = 'none';
-            }
-        }
-
-        function _getBatchModelList(filterType) {
-            var select = document.getElementById('batch-model');
-            if (filterType === 'vae') select = document.getElementById('batch-vae');
-            if (filterType === 'text_encoder') select = document.getElementById('batch-text-encoder');
-            var items = [];
-            for (var i = 0; i < select.options.length; i++) {
-                var opt = select.options[i];
-                if (opt.value && opt.value !== '__custom__') {
-                    items.push({ value: opt.value, label: opt.textContent });
-                }
-            }
-            return items;
-        }
-
-        function onXyzTypeChange(axis) {
-            var type = document.getElementById('xyz-' + axis + '-type').value;
-            var picker = document.getElementById('xyz-' + axis + '-picker');
-            var values = document.getElementById('xyz-' + axis + '-values');
-            var pickSelect = document.getElementById('xyz-' + axis + '-pick-select');
-
-            // Update placeholder
-            var prompts = {
-                'prompt': 'Enter prompts, one per line or comma-separated',
-                'negative': 'Enter negative prompts, one per line or comma-separated',
-                'model': 'Enter model paths, one per line or comma-separated',
-                'steps': 'Steps (supports ranges: 1-5, 20-30 (+5), 1-50 [10])',
-                'cfg': 'CFG values (supports ranges: 7-15, 5-10 (+0.5), 1-10 [5])',
-                'vae': 'Enter VAE paths, one per line or comma-separated',
-                'text_encoder': 'Enter text encoder paths',
-                'prompt_sr': 'First line = search, rest = replacements',
-            };
-            values.placeholder = prompts[type] || 'Enter values';
-
-            // Show/hide picker for model/vae/text_encoder
-            var hasPicker = type === 'model' || type === 'vae' || type === 'text_encoder';
-            picker.style.display = hasPicker ? 'block' : 'none';
-
-            if (hasPicker) {
-                // Populate picker dropdown
-                var filterType = type;
-                if (type === 'text_encoder') filterType = 'text_encoder';
-                var modelList = _getBatchModelList(filterType);
-                pickSelect.innerHTML = '';
-                if (modelList.length === 0) {
-                    pickSelect.innerHTML = '<option value="">(no items loaded - click Refresh)</option>';
-                } else {
-                    modelList.forEach(function(item) {
-                        var opt = document.createElement('option');
-                        opt.value = item.value;
-                        opt.textContent = item.label;
-                        pickSelect.appendChild(opt);
-                    });
-                }
-            }
-        }
-
-        function addXyzPick(axis) {
-            var pickSelect = document.getElementById('xyz-' + axis + '-pick-select');
-            var values = document.getElementById('xyz-' + axis + '-values');
-            if (!pickSelect.value) return;
-            var current = values.value.trim();
-            var separator = current ? '\n' : '';
-            values.value = current + separator + pickSelect.value;
-        }
-
-        function _parseAxisVals(text) {
-            // Support both comma-separated and newline-separated
-            var parts;
-            if (text.indexOf(',') >= 0) {
-                parts = text.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
-            } else {
-                parts = text.split('\n').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
-            }
-            // Expand ranges for each part
-            var result = [];
-            for (var i = 0; i < parts.length; i++) {
-                var expanded = _expandRange(parts[i]);
-                for (var j = 0; j < expanded.length; j++) {
-                    result.push(expanded[j]);
-                }
-            }
-            return result;
-        }
-
-        function _expandRange(s) {
-            // Range syntax: 1-5, 1-5 (+2), 1-5 (-3), 1-3 (+0.5), 1-10 [5]
-            // Also: 1-5 (+2) means start=1, end=5, step=2 → 1,3,5
-            // 1-10 [5] means 5 evenly spaced numbers from 1 to 10
-            var rangeMatch = s.match(/^([\d.]+)\s*-\s*([\d.]+)(?:\s*\(\s*([+-][\d.]+)\s*\))?(?:\s*\[\s*(\d+)\s*\])?$/);
-            if (!rangeMatch) return [s]; // Not a range, return as-is
-
-            var start = parseFloat(rangeMatch[1]);
-            var end = parseFloat(rangeMatch[2]);
-            var explicitStep = rangeMatch[3] ? parseFloat(rangeMatch[3]) : null;
-            var count = rangeMatch[4] ? parseInt(rangeMatch[4]) : null;
-
-            var values = [];
-            if (count) {
-                // Evenly spaced with exact count
-                if (count === 1) return [String(start)];
-                for (var k = 0; k < count; k++) {
-                    var val = start + (end - start) * k / (count - 1);
-                    values.push(_formatNum(val));
-                }
-            } else if (explicitStep) {
-                // Explicit step
-                if (explicitStep > 0) {
-                    for (var v = start; v <= end + 0.0001; v += explicitStep) {
-                        values.push(_formatNum(v));
-                    }
-                } else {
-                    for (var v = start; v >= end - 0.0001; v += explicitStep) {
-                        values.push(_formatNum(v));
-                    }
-                }
-            } else {
-                // Simple range default step 1
-                for (var v = start; v <= end + 0.0001; v += 1) {
-                    values.push(_formatNum(v));
-                }
-            }
-            return values;
-        }
-
-        function _formatNum(n) {
-            if (Number.isInteger(n)) return String(n);
-            return n.toFixed(2).replace(/\.?0+$/, '');
-        }
-
-        function _applyPromptSR(values, basePrompt) {
-            // Prompt S/R: first value = search key, rest = replacements
-            // First value keeps original prompt, subsequent replace search key
-            if (values.length < 2) return values;
-            var search = values[0];
-            var results = [basePrompt];
-            for (var i = 1; i < values.length; i++) {
-                results.push(basePrompt.split(search).join(values[i]));
-            }
-            return results;
-        }
-
-        async function xyzGenerate() {
-            const output = document.getElementById('batch-output');
-            const progress = document.getElementById('batch-progress');
-            const progressBar = document.getElementById('batch-progress-bar');
-            const progressText = document.getElementById('batch-progress-text');
-            const progressCount = document.getElementById('batch-progress-count');
-            const batchBtn = document.getElementById('batch-btn');
-            const warningsEl = document.getElementById('batch-warnings');
-
-            var xType = document.getElementById('xyz-x-type').value;
-            var xRaw = document.getElementById('xyz-x-values').value;
-            var yType = document.getElementById('xyz-y-type').value;
-            var yRaw = document.getElementById('xyz-y-values').value;
-            var zType = document.getElementById('xyz-z-col').style.display !== 'none' ? document.getElementById('xyz-z-type').value : '';
-            var zRaw = zType ? document.getElementById('xyz-z-values').value : '';
-
-            var xVals = _parseAxisVals(xRaw);
-            var yVals = _parseAxisVals(yRaw);
-            var zVals = zType ? _parseAxisVals(zRaw) : [];
-
-            // Handle Prompt S/R type — transform values into actual prompt values
-            var basePrompt = document.getElementById('batch-prompt').value;
-            if (xType === 'prompt_sr') { xType = 'prompt'; xVals = _applyPromptSR(xVals, basePrompt); }
-            if (yType === 'prompt_sr') { yType = 'prompt'; yVals = _applyPromptSR(yVals, basePrompt); }
-            if (zType === 'prompt_sr') { zType = 'prompt'; zVals = _applyPromptSR(zVals, basePrompt); }
-
-            if (xVals.length < 1 || yVals.length < 1) {
-                showAlert('Missing Axis Values', 'X and Y axes must have at least one value each.');
-                return;
-            }
-
-            if (xVals.length > 100 || yVals.length > 100 || zVals.length > 100) {
-                showAlert('Too Many Values', 'Each axis is limited to 100 values.');
-                return;
-            }
-
-            var totalCells = xVals.length * yVals.length * (zVals.length || 1);
-            var count = parseInt(document.getElementById('batch-count').value) || 1;
-            var totalImages = totalCells * count;
-            if (totalImages > 500) {
-                showAlert('Too Many Images', 'Maximum 500 images per batch (currently ' + totalImages + ').');
-                return;
-            }
-
-            batchBtn.disabled = true;
-            batchBtn.textContent = 'Generating...';
-            progress.style.display = 'block';
-            progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
-            progressBar.style.width = '5%';
-            progressText.textContent = 'Starting...';
-            progressCount.textContent = '0/' + totalImages + ' images';
-            output.innerHTML = '<span class="loading">Generating grid...</span>';
-            warningsEl.style.display = 'none';
-            batchLogEntries = [];
-            document.getElementById('batch-log').textContent = '';
-
-            var t0 = Date.now();
-            appendBatchLog('Starting XYZ plot generation...', t0, false);
-            appendBatchLog('X axis: ' + xType + ' (' + xVals.length + ' values)', t0, false);
-            appendBatchLog('Y axis: ' + yType + ' (' + yVals.length + ' values)', t0, false);
-            if (zType) appendBatchLog('Z axis: ' + zType + ' (' + zVals.length + ' values)', t0, false);
-            appendBatchLog('Count per cell: ' + count + ', Total images: ' + totalImages, t0, false);
-
-            var formData = new FormData();
-            formData.append('x_type', xType);
-            formData.append('x_values', xVals.join(','));
-            formData.append('y_type', yType);
-            formData.append('y_values', yVals.join(','));
-            formData.append('z_type', zType);
-            formData.append('z_values', zVals.join(','));
-            formData.append('prompt', document.getElementById('batch-prompt').value);
-            formData.append('negative', document.getElementById('batch-negative').value);
-            formData.append('steps', document.getElementById('batch-steps').value);
-            formData.append('cfg', document.getElementById('batch-cfg').value);
-            formData.append('width', document.getElementById('batch-width').value);
-            formData.append('height', document.getElementById('batch-height').value);
-            formData.append('count', count);
-
-            var batchModelSelect = document.getElementById('batch-model');
-            var batchModel = batchModelSelect.value === '__custom__'
-                ? document.getElementById('batch-model-custom').value
-                : batchModelSelect.value;
-            formData.append('model_path', batchModel || 'stabilityai/stable-diffusion-xl-base-1.0');
-
-            var batchVaeSelect = document.getElementById('batch-vae');
-            var batchVae = batchVaeSelect.value === '__custom__'
-                ? document.getElementById('batch-vae-custom').value
-                : batchVaeSelect.value;
-            formData.append('vae_path', batchVae || '');
-
-            var batchTeSelect = document.getElementById('batch-text-encoder');
-            var batchTe = batchTeSelect.value === '__custom__'
-                ? document.getElementById('batch-text-encoder-custom').value
-                : batchTeSelect.value;
-            formData.append('text_encoder_path', batchTe || '');
-
-            _appendLoras(formData, 'batch-lora-container');
-
-            try {
-                var res = await fetch('/api/xyz_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                var data = await res.json();
-
-                progressBar.style.animation = 'none';
-                progressBar.style.width = '100%';
-                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-                progressText.textContent = '✅ Done ' + totalImages + ' images in ' + elapsed + 's';
-                appendBatchLog('✅ Done in ' + elapsed + 's', t0, false);
-
-                _renderXyzGrid(output, data, xType, yType, zType);
-
-                var downloadHtml = '';
-                for (var ci = 0; ci < data.cells.length; ci++) {
-                    var cell = data.cells[ci];
-                    for (var ii = 0; ii < cell.images.length; ii++) {
-                        downloadHtml += '<a href="' + cell.images[ii] + '" download="xyz_' + cell.x + '_' + cell.y + '_' + cell.z + '_' + ii + '.png" style="display:none;"></a>';
-                    }
-                }
-                output.innerHTML += downloadHtml;
-                appendBatchLog('✅ Grid ready - ' + data.cells.length + ' cells', t0, false);
-
-                setTimeout(function() { progress.style.display = 'none'; }, 5000);
-            } catch(e) {
-                progressBar.style.animation = 'none';
-                progressBar.style.width = '0%';
-                progress.style.display = 'none';
-                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
-                appendBatchLog('❌ Error: ' + e.message, t0, false);
-            }
-
-            batchBtn.disabled = false;
-            batchBtn.textContent = 'Generate XYZ Plot';
-        }
-
-        var AXIS_LABELS = {
-            'prompt': 'Prompt',
-            'negative': 'Neg Prompt',
-            'model': 'Model',
-            'steps': 'Steps',
-            'cfg': 'CFG Scale',
-            'vae': 'VAE',
-            'text_encoder': 'Text Enc.',
-            'prompt_sr': 'Prompt S/R',
-        };
-
-        function _axisLabel(t) { return AXIS_LABELS[t] || capitalize(t); }
-
-        function _renderXyzGrid(container, data, xType, yType, zType) {
-            var xLabels = data.x_labels || [];
-            var yLabels = data.y_labels || [];
-            var zLabels = data.z_labels || [];
+        function _renderComparisonGrid(container, data) {
+            var prompts = data.y_labels || [];
+            var combos = data.x_labels || [];
             var cells = data.cells || [];
 
-            // Build lookup: "x,y,z" -> images
+            // Build lookup: "rowIdx,colIdx" -> images
             var lookup = {};
             for (var i = 0; i < cells.length; i++) {
                 var c = cells[i];
-                var key = c.x + ',' + c.y + ',' + (c.z !== undefined ? c.z : 0);
+                var key = c.y + ',' + c.x;
                 lookup[key] = c.images;
             }
 
-            var hasZ = zLabels.length > 0;
-            var numCols = xLabels.length;
-            var numRows = yLabels.length;
+            var numCols = combos.length;
+            var numRows = prompts.length;
 
-            var html = '<div class="xyz-grid" style="overflow-x:auto;">';
+            var html = '<div style="overflow-x:auto;">';
             html += '<table style="border-collapse:collapse;width:100%;font-size:12px;">';
 
-            // Header row: corner + X labels
+            // Header row
             html += '<tr>';
-            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">' + _axisLabel(yType) + ' \\ ' + _axisLabel(xType) + '</th>';
-            for (var xi = 0; xi < numCols; xi++) {
-                html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(xLabels[xi])) + '</th>';
+            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">Prompt \\ Combo</th>';
+            for (var ci = 0; ci < numCols; ci++) {
+                html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(combos[ci])) + '</th>';
             }
             html += '</tr>';
 
             // Data rows
-            for (var yi = 0; yi < numRows; yi++) {
+            for (var ri = 0; ri < numRows; ri++) {
                 html += '<tr>';
-                html += '<td style="padding:6px 10px;background:#1a1a1a;border:1px solid #333;text-align:center;font-weight:bold;color:#aaa;white-space:nowrap;">' + escapeHtml(truncateLabel(yLabels[yi])) + '</td>';
-                for (var xi = 0; xi < numCols; xi++) {
-                    var images = [];
-                    if (hasZ) {
-                        for (var zi = 0; zi < zLabels.length; zi++) {
-                            var k = xi + ',' + yi + ',' + zi;
-                            var imgs = lookup[k] || [];
-                            for (var ii = 0; ii < imgs.length; ii++) {
-                                images.push(imgs[ii]);
-                            }
-                        }
-                    } else {
-                        var k = xi + ',' + yi + ',0';
-                        images = lookup[k] || [];
-                    }
+                html += '<td style="padding:6px 10px;background:#1a1a1a;border:1px solid #333;text-align:center;font-weight:bold;color:#aaa;white-space:nowrap;">' + escapeHtml(truncateLabel(prompts[ri])) + '</td>';
+                for (var ci = 0; ci < numCols; ci++) {
+                    var key = ri + ',' + ci;
+                    var images = lookup[key] || [];
 
                     html += '<td style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
                     for (var ii = 0; ii < images.length; ii++) {
                         html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
                         html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')">';
                         html += '<div style="margin-top:2px;font-size:10px;color:#666;">';
-                        html += '<a href="' + images[ii] + '" download="xyz_' + xi + '_' + yi + '_' + ii + '.png" style="color:#4a9eff;">⬇</a>';
+                        html += '<a href="' + images[ii] + '" download="cmp_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">⬇</a>';
                         html += '</div></div>';
                     }
                     if (images.length === 0) {
@@ -1943,6 +1521,126 @@ a dog running in a park</textarea>
             html += '</div>';
 
             container.innerHTML = html;
+        }
+
+        async function comparisonGenerate() {
+            const output = document.getElementById('batch-output');
+            const progress = document.getElementById('batch-progress');
+            const progressBar = document.getElementById('batch-progress-bar');
+            const progressText = document.getElementById('batch-progress-text');
+            const progressCount = document.getElementById('batch-progress-count');
+            const batchBtn = document.getElementById('batch-btn');
+            const warningsEl = document.getElementById('batch-warnings');
+
+            // Gather prompts
+            var promptRows = document.querySelectorAll('#cmp-prompts .cmp-prompt-ta');
+            var prompts = [];
+            promptRows.forEach(function(ta) { if (ta.value.trim()) prompts.push(ta.value.trim()); });
+            if (prompts.length === 0) { showAlert('No Prompts', 'Add at least one prompt.'); return; }
+            if (prompts.length > 100) { showAlert('Too Many Prompts', 'Maximum 100 prompts.'); return; }
+
+            // Gather combos
+            var comboRows = document.querySelectorAll('#cmp-combos .cmp-combo-row');
+            var combos = [];
+            var allLoraFiles = []; // flat list of all LoRA files from all combos
+            comboRows.forEach(function(row) {
+                var modelSel = row.querySelector('.cmp-combo-model');
+                var vaeSel = row.querySelector('.cmp-combo-vae');
+                var teSel = row.querySelector('.cmp-combo-te');
+                if (!modelSel.value) return; // skip incomplete combos
+
+                var modelPath = modelSel.value === '__custom__' ? '' : modelSel.value;
+                var vaePath = vaeSel.value;
+                var tePath = teSel.value;
+
+                // Collect LoRA files
+                var loraIndices = [];
+                var loraWeights = [];
+                row.querySelectorAll('.cmp-lora-row').forEach(function(lr) {
+                    var fileInput = lr.querySelector('.cmp-lora-file');
+                    var weight = parseFloat(lr.querySelector('.cmp-lora-weight').value) || 1.0;
+                    if (fileInput && fileInput.files && fileInput.files[0]) {
+                        loraIndices.push(allLoraFiles.length);
+                        loraWeights.push(weight);
+                        allLoraFiles.push(fileInput.files[0]);
+                    }
+                });
+
+                combos.push({
+                    model: modelPath,
+                    vae: vaePath,
+                    te: tePath,
+                    loraIndices: loraIndices,
+                    loraWeights: loraWeights
+                });
+            });
+            if (combos.length === 0) { showAlert('No Combos', 'Add at least one Model+LoRA combination.'); return; }
+            if (combos.length > 100) { showAlert('Too Many Combos', 'Maximum 100 combinations.'); return; }
+
+            var count = parseInt(document.getElementById('batch-count').value) || 1;
+            var totalImages = prompts.length * combos.length * count;
+            if (totalImages > 500) {
+                showAlert('Too Many Images', 'Maximum 500 images (currently ' + totalImages + ').');
+                return;
+            }
+
+            batchBtn.disabled = true;
+            batchBtn.textContent = 'Generating...';
+            progress.style.display = 'block';
+            progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
+            progressBar.style.width = '5%';
+            progressText.textContent = 'Starting...';
+            progressCount.textContent = '0/' + totalImages + ' images';
+            output.innerHTML = '<span class="loading">Generating grid...</span>';
+            warningsEl.style.display = 'none';
+            batchLogEntries = [];
+            document.getElementById('batch-log').textContent = '';
+
+            var t0 = Date.now();
+            appendBatchLog('Starting comparison generation...', t0, false);
+            appendBatchLog('Prompts: ' + prompts.length + ', Combos: ' + combos.length, t0, false);
+            appendBatchLog('Images per cell: ' + count + ', Total: ' + totalImages, t0, false);
+
+            var formData = new FormData();
+            formData.append('prompts', JSON.stringify(prompts));
+            formData.append('combos', JSON.stringify(combos));
+            formData.append('negative', document.getElementById('batch-negative').value);
+            formData.append('steps', document.getElementById('batch-steps').value);
+            formData.append('cfg', document.getElementById('batch-cfg').value);
+            formData.append('width', document.getElementById('batch-width').value);
+            formData.append('height', document.getElementById('batch-height').value);
+            formData.append('count', count);
+
+            // Upload all LoRA files (same key for FastAPI list)
+            allLoraFiles.forEach(function(file) {
+                formData.append('lora_file', file);
+            });
+
+            try {
+                var res = await fetch('/api/comparison_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) throw new Error(await res.text());
+                var data = await res.json();
+
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '100%';
+                var elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+                progressText.textContent = '✅ Done ' + totalImages + ' images in ' + elapsed + 's';
+                appendBatchLog('✅ Done in ' + elapsed + 's', t0, false);
+
+                _renderComparisonGrid(output, data);
+
+                appendBatchLog('✅ Grid ready - ' + data.cells.length + ' cells', t0, false);
+                setTimeout(function() { progress.style.display = 'none'; }, 5000);
+            } catch(e) {
+                progressBar.style.animation = 'none';
+                progressBar.style.width = '0%';
+                progress.style.display = 'none';
+                output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+                appendBatchLog('❌ Error: ' + e.message, t0, false);
+            }
+
+            batchBtn.disabled = false;
+            batchBtn.textContent = 'Generate Comparison';
         }
 
         var _xyzAllUrls = [];
@@ -2078,62 +1776,22 @@ a dog running in a park</textarea>
                 var data = await res.json();
                 var modelsPath = data.models_path || '';
                 var localModels = data.models || [];
+                // Ensure hidden source selects exist
+                ['batch-model', 'batch-vae', 'batch-text-encoder'].forEach(function(id) {
+                    if (!document.getElementById(id)) {
+                        var sel = document.createElement('select');
+                        sel.id = id;
+                        sel.style.display = 'none';
+                        document.body.appendChild(sel);
+                    }
+                });
                 _populateBatchSelect(document.getElementById('batch-model'), localModels, modelsPath, 'checkpoint');
                 _populateBatchSelect(document.getElementById('batch-vae'), localModels, modelsPath, 'vae');
                 _populateBatchSelect(document.getElementById('batch-text-encoder'), localModels, modelsPath, 'text_encoder');
-                // Refresh XYZ pickers
-                onXyzTypeChange('x');
-                onXyzTypeChange('y');
-                if (document.getElementById('xyz-z-col').style.display !== 'none') onXyzTypeChange('z');
+                // Refresh all combo selects
+                document.querySelectorAll('.cmp-combo-row').forEach(function(r) { _populateComboSelects(r); });
             } catch(e) {
                 console.error('Failed to load batch models:', e);
-            }
-        }
-
-        function onBatchModelChange() {
-            var sel = document.getElementById('batch-model');
-            var val = sel.value;
-            var customInput = document.getElementById('batch-model-custom');
-            var familyLabel = document.getElementById('batch-model-family');
-            var textEncoderRow = document.getElementById('batch-text-encoder');
-
-            if (val === '__custom__') {
-                customInput.style.display = 'block';
-                customInput.focus();
-                familyLabel.style.display = 'none';
-            } else {
-                customInput.style.display = 'none';
-            }
-
-            var actualVal = val === '__custom__' ? customInput.value : val;
-            var actualLower = actualVal.toLowerCase();
-
-            var selectedOpt = sel.options[sel.selectedIndex];
-            var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
-            var isFluxOrZimage = family === 'flux' || family === 'zimage'
-                || actualLower.indexOf('flux') >= 0 || actualLower.indexOf('z-image') >= 0 || actualLower.indexOf('z_image') >= 0;
-
-            textEncoderRow.style.display = isFluxOrZimage ? 'block' : 'none';
-            if (!isFluxOrZimage) {
-                textEncoderRow.value = '';
-                document.getElementById('batch-text-encoder-custom').style.display = 'none';
-            }
-
-            if (family) {
-                var label = BATCH_FAMILY_LABELS[family] || family;
-                familyLabel.textContent = label;
-                familyLabel.style.display = 'inline-block';
-                var modelLower = actualVal.toLowerCase();
-                var isKlein = family === 'flux2' && (modelLower.includes('klein') || modelLower.includes('schnell'));
-                var isDev = family === 'flux2' && modelLower.includes('dev');
-                var cfg = BATCH_FAMILY_CFG[family];
-                var steps = BATCH_FAMILY_STEPS[family];
-                if (isKlein) { cfg = 1.0; steps = 4; }
-                else if (isDev) { cfg = 4.0; steps = 28; }
-                if (cfg !== undefined) document.getElementById('batch-cfg').value = cfg;
-                if (steps !== undefined) document.getElementById('batch-steps').value = steps;
-            } else {
-                familyLabel.style.display = 'none';
             }
         }
 

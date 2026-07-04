@@ -858,6 +858,98 @@ async def api_xyz_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/comparison_generate")
+async def api_comparison_generate(
+    user: str = Depends(get_current_user),
+    prompts: str = Form(...),
+    combos: str = Form(...),
+    lora_file: List[UploadFile] = File(None),
+    negative: str = Form(""),
+    steps: int = Form(20),
+    cfg: float = Form(7.0),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    count: int = Form(1),
+):
+    try:
+        prompts_list = json.loads(prompts)
+        combos_list = json.loads(combos)
+
+        if not prompts_list:
+            raise HTTPException(status_code=400, detail="At least one prompt required.")
+        if not combos_list:
+            raise HTTPException(status_code=400, detail="At least one combo required.")
+
+        # Save uploaded LoRA files to temp
+        temp_lora_dir = os.path.join(temp_dir, f"cmp_{uuid.uuid4()}")
+        os.makedirs(temp_lora_dir, exist_ok=True)
+        saved_lora_paths = []
+        if lora_file:
+            for f in lora_file:
+                data = await f.read()
+                path = os.path.join(temp_lora_dir, f"{uuid.uuid4()}.safetensors")
+                with open(path, "wb") as fh:
+                    fh.write(data)
+                saved_lora_paths.append(path)
+
+        # Resolve combos with actual LoRA file paths
+        resolved_combos = []
+        for i, combo in enumerate(combos_list):
+            lora_paths = []
+            lora_weights = []
+            for idx in combo.get("loraIndices", []):
+                if idx < len(saved_lora_paths):
+                    lora_paths.append(saved_lora_paths[idx])
+            for w in combo.get("loraWeights", []):
+                lora_weights.append(float(w))
+            # Pad weights if needed
+            while len(lora_weights) < len(lora_paths):
+                lora_weights.append(1.0)
+            resolved_combos.append({
+                'model_path': combo.get('model', '') or "stabilityai/stable-diffusion-xl-base-1.0",
+                'vae_path': combo.get('vae', '') or None,
+                'text_encoder_path': combo.get('te', '') or None,
+                'lora_paths': lora_paths or None,
+                'lora_weights': lora_weights or None,
+            })
+
+        cells, combo_labels = sdxl.comparison_generate(
+            prompts_list, resolved_combos,
+            negative=negative, steps=steps, cfg=cfg,
+            width=width, height=height, count=count,
+        )
+
+        # Clean up temp LoRA files
+        if os.path.exists(temp_lora_dir):
+            shutil.rmtree(temp_lora_dir, ignore_errors=True)
+
+        # Save images and build response
+        result_cells = []
+        for cell in cells:
+            urls = []
+            for img in cell['images']:
+                fname = f"cmp_{uuid.uuid4()}.png"
+                fpath = os.path.join(OUTPUT_DIR, fname)
+                img.save(fpath, format='PNG')
+                urls.append(f"/output/{fname}")
+            result_cells.append({
+                'x': cell['x'],
+                'y': cell['y'],
+                'images': urls,
+            })
+
+        return JSONResponse({
+            'cells': result_cells,
+            'x_labels': combo_labels,
+            'y_labels': prompts_list,
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/lora_info")
 async def api_lora_info(file: UploadFile = File(...), user: str = Depends(get_current_user)):
     try:

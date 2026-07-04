@@ -535,3 +535,63 @@ def xyz_generate(
                 cells.append({'x': xi, 'y': yi, 'z': zi, 'images': cell_images})
 
     return cells, x_vals, y_vals, z_vals
+
+
+def comparison_generate(
+    prompts: list[str],
+    combos: list[dict],
+    negative: str = "",
+    steps: int = 20,
+    cfg: float = 7.0,
+    width: int = 1024,
+    height: int = 1024,
+    count: int = 1,
+    progress_cb=None,
+    cancel_event=None,
+) -> tuple[list[dict], list[str]]:
+    import random as _random
+
+    cells = []
+    total = len(prompts) * len(combos) * count
+    done = 0
+
+    combo_labels = []
+    for c in combos:
+        parts = [os.path.basename(c['model_path'])]
+        if c.get('lora_paths'):
+            for lp in c['lora_paths']:
+                parts.append(os.path.basename(lp).replace('.safetensors', ''))
+        combo_labels.append(' + '.join(parts))
+
+    for ci, combo in enumerate(combos):
+        for pi, prompt in enumerate(prompts):
+            cell_images = []
+            for _ in range(count):
+                if cancel_event and cancel_event.is_set():
+                    return cells, combo_labels
+
+                seed = _random.randint(0, 2147483647)
+                img = sdxl_generate(
+                    prompt=prompt,
+                    negative=negative,
+                    lora_paths=combo.get('lora_paths'),
+                    lora_weights=combo.get('lora_weights'),
+                    model_path=combo['model_path'],
+                    vae_path=combo.get('vae_path'),
+                    text_encoder_path=combo.get('text_encoder_path'),
+                    steps=steps,
+                    cfg=cfg,
+                    seed=seed,
+                    width=width,
+                    height=height,
+                    progress_cb=progress_cb,
+                    cancel_event=cancel_event,
+                )
+                cell_images.append(img)
+                done += 1
+                if progress_cb:
+                    progress_cb(done, total)
+
+            cells.append({'x': ci, 'y': pi, 'images': cell_images})
+
+    return cells, combo_labels
