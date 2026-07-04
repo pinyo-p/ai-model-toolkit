@@ -1464,6 +1464,103 @@
             }
         }
 
+        function addPromptRow() {
+            var container = document.getElementById('cmp-prompts');
+            var nums = container.querySelectorAll('.cmp-prompt-row').length + 1;
+            var div = document.createElement('div');
+            div.className = 'cmp-prompt-row';
+            div.style.marginBottom = '4px';
+            div.innerHTML = '<div style="display:flex;gap:4px;align-items:center;">' +
+                '<span class="cmp-prompt-num" style="font-size:11px;color:#888;white-space:nowrap;min-width:55px;">Prompt ' + nums + '</span>' +
+                '<textarea class="cmp-prompt-ta" rows="2" style="flex:1;" placeholder="Enter prompt..."></textarea>' +
+                '<button class="btn-small" onclick="removePromptRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>' +
+                '</div>';
+            container.appendChild(div);
+        }
+
+        function removePromptRow(btn) {
+            var row = btn.closest('.cmp-prompt-row');
+            row.parentElement.removeChild(row);
+            var rows = document.querySelectorAll('#cmp-prompts .cmp-prompt-row');
+            rows.forEach(function(r, i) { r.querySelector('.cmp-prompt-num').textContent = 'Prompt ' + (i + 1); });
+        }
+
+        function addComboRow() {
+            var container = document.getElementById('cmp-combos');
+            var nums = container.querySelectorAll('.cmp-combo-row').length + 1;
+            var div = document.createElement('div');
+            div.className = 'cmp-combo-row';
+            div.style.cssText = 'border:1px solid #333;padding:8px;border-radius:4px;margin-bottom:8px;background:#1a1a1a;';
+            div.innerHTML = '' +
+                '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;">' +
+                    '<span style="font-size:11px;color:#888;white-space:nowrap;min-width:60px;">Combo ' + nums + '</span>' +
+                    '<select class="cmp-combo-model" style="flex:1;" onchange="onCmpModelChange(this)">' +
+                        '<option value="">-- Model --</option>' +
+                        '<option value="__custom__">Custom...</option>' +
+                    '</select>' +
+                    '<button class="btn-small" onclick="removeComboRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>' +
+                '</div>' +
+                '<div style="display:flex;gap:4px;margin-bottom:4px;">' +
+                    '<select class="cmp-combo-vae" style="flex:1;font-size:11px;">' +
+                        '<option value="">-- VAE (default) --</option>' +
+                    '</select>' +
+                    '<input type="text" class="cmp-combo-vae-custom" placeholder="VAE path" style="display:none;flex:1;font-size:11px;">' +
+                    '<select class="cmp-combo-te" style="flex:1;font-size:11px;display:none;">' +
+                        '<option value="">-- Text Enc (default) --</option>' +
+                    '</select>' +
+                    '<input type="text" class="cmp-combo-te-custom" placeholder="TE path" style="display:none;flex:1;font-size:11px;">' +
+                '</div>' +
+                '<div class="cmp-combo-loras"></div>' +
+                '<button class="btn-small" onclick="addComboLora(this)" style="margin-top:4px;font-size:11px;padding:2px 6px;background:#2a4a4a;">+ LoRA</button>';
+            container.appendChild(div);
+            _populateComboSelects(div);
+        }
+
+        function removeComboRow(btn) {
+            var row = btn.closest('.cmp-combo-row');
+            row.parentElement.removeChild(row);
+            var rows = document.querySelectorAll('#cmp-combos .cmp-combo-row');
+            rows.forEach(function(r, i) { r.querySelector('span').textContent = 'Combo ' + (i + 1); });
+        }
+
+        function addComboLora(btn) {
+            var container = btn.closest('.cmp-combo-row').querySelector('.cmp-combo-loras');
+            var div = document.createElement('div');
+            div.className = 'cmp-lora-row';
+            div.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:4px;';
+            div.innerHTML = '' +
+                '<input type="file" accept=".safetensors,.pt" class="cmp-lora-file" style="flex:1;font-size:11px;">' +
+                '<input type="number" class="cmp-lora-weight" value="1.0" step="0.05" min="-2" max="2" style="width:60px;font-size:11px;">' +
+                '<button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>';
+            container.appendChild(div);
+        }
+
+        function onCmpModelChange(sel) {
+            // Placeholder for model change handling
+        }
+
+        function _populateComboSelects(comboRow) {
+            var modelSelect = comboRow.querySelector('.cmp-combo-model');
+            var vaeSelect = comboRow.querySelector('.cmp-combo-vae');
+            var teSelect = comboRow.querySelector('.cmp-combo-te');
+            ['batch-model', 'batch-vae', 'batch-text-encoder'].forEach(function(id) {
+                var src = document.getElementById(id);
+                if (!src) return;
+                var isVae = id === 'batch-vae';
+                var isTe = id === 'batch-text-encoder';
+                var target = isVae ? vaeSelect : (isTe ? teSelect : modelSelect);
+                for (var i = 0; i < src.options.length; i++) {
+                    var o = src.options[i];
+                    if (o.value && o.value !== '__custom__') {
+                        var opt = document.createElement('option');
+                        opt.value = o.value;
+                        opt.textContent = o.text;
+                        target.appendChild(opt);
+                    }
+                }
+            });
+        }
+
         function _renderComparisonGrid(container, data) {
             var prompts = data.y_labels || [];
             var combos = data.x_labels || [];
