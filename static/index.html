@@ -50,16 +50,27 @@
         select option { background: #111822; }
 
         /* Buttons */
-        .btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #00d4ff, #0088cc); border: none; border-radius: 8px; color: #000; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,212,255,0.3); }
+        .btn { width: 100%; padding: 12px; background: linear-gradient(135deg, #00d4ff, #0088cc); border: none; border-radius: 8px; color: #000; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; letter-spacing: 0.3px; }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,212,255,0.35); }
         .btn:active { transform: translateY(0); }
         .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        .btn-sm { padding: 8px 14px; font-size: 12px; width: auto; display: inline-flex; align-items: center; gap: 4px; }
+        .btn-sm { padding: 8px 16px; font-size: 12px; width: auto; display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; font-weight: 500; letter-spacing: 0.2px; }
         .btn-ghost { background: transparent; border: 1px solid #1e2d3d; color: #7aa2c0; }
-        .btn-ghost:hover { border-color: #00d4ff; color: #00d4ff; box-shadow: none; transform: none; }
+        .btn-ghost:hover { border-color: #00d4ff; color: #00d4ff; box-shadow: 0 0 12px rgba(0,212,255,0.15); transform: none; }
         .btn-danger { background: linear-gradient(135deg, #ff4444, #cc0000); }
-        .btn-danger:hover { box-shadow: 0 4px 12px rgba(255,68,68,0.3); }
+        .btn-danger:hover { box-shadow: 0 4px 16px rgba(255,68,68,0.35); }
+        .btn-success { background: linear-gradient(135deg, #4caf50, #2e7d32); }
+        .btn-success:hover { box-shadow: 0 4px 16px rgba(76,175,80,0.35); }
+        .btn-gallery { background: linear-gradient(135deg, #3a3a4a, #2a2a3a); color: #c0c0c0; border: 1px solid #3a3a5a; }
+        .btn-gallery:hover { background: linear-gradient(135deg, #4a4a5a, #3a3a4a); color: #fff; border-color: #5a5a7a; box-shadow: 0 4px 16px rgba(100,100,140,0.25); }
+        .btn-icon { width: auto; padding: 8px 10px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; }
+        .btn-small { padding: 6px 12px; font-size: 12px; width: auto; display: inline-flex; align-items: center; gap: 5px; border-radius: 6px; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; color: #e0e0e0; background: #1e2d3d; }
+        .btn-small:hover { background: #2a4a5a; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+        .btn-small.btn-del { background: #d32f2f; }
+        .btn-small.btn-del:hover { background: #f44336; box-shadow: 0 2px 8px rgba(211,47,47,0.3); }
+        .btn-small.btn-add { background: #1e3d3d; color: #4cafaf; }
+        .btn-small.btn-add:hover { background: #2a5a5a; }
 
         /* Action bar (file manager) */
         .action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -218,7 +229,7 @@
                     <div class="card">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <label style="margin:0;">Model</label>
-                            <button class="btn-small" onclick="loadGenModels()" title="Refresh model list" style="padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh</button>
+                            <button class="btn-small btn-add" onclick="loadGenModels()" title="Refresh model list">↻ Refresh</button>
                         </div>
                         <select id="gen-model" class="base-model" onchange="onGenModelChange()">
                             <option value="">-- Select local model --</option>
@@ -310,15 +321,20 @@
 
                     <div class="card">
                         <div class="form-group">
-                            <label>LoRAs</label>
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                                <label style="margin:0;">LoRAs</label>
+                                <button class="btn-small btn-add" onclick="refreshLoraList()" title="Refresh LoRA list" style="padding:3px 8px;font-size:10px;">↻</button>
+                            </div>
                             <div id="lora-container">
                                 <div class="lora-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
-                                    <input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">
+                                    <select class="lora-select" style="flex:1;">
+                                        <option value="">— None —</option>
+                                    </select>
                                     <input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">
-                                    <button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">✕</button>
+                                    <button class="btn-small btn-del" onclick="this.parentElement.remove()">✕</button>
                                 </div>
                             </div>
-                            <button class="btn-small" onclick="addLoraRow('lora-container')">+ Add LoRA</button>
+                            <button class="btn-small btn-add" onclick="addLoraRow('lora-container')" style="margin-top:4px;">+ Add LoRA</button>
                         </div>
                     </div>
                 </div>
@@ -336,8 +352,8 @@
                     </div>
 
                     <div style="display:flex;gap:8px;">
-                        <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">Generate Image</button>
-                        <button class="btn" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;background:linear-gradient(135deg,#333,#222);color:#e0e0e0;">🖼️ All Images</button>
+                        <button class="btn" id="gen-btn" onclick="generate()" style="flex:1;">🚀 Generate</button>
+                        <button class="btn btn-gallery" onclick="openGallery()" style="flex:0 0 auto;width:auto;padding:12px 20px;">🖼️ Gallery</button>
                     </div>
                     <div id="gen-progress" style="display:none;margin:10px 0;padding:8px;background:#252525;border-radius:5px;">
                         <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -345,7 +361,7 @@
                                 <span id="gen-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
                                 <span id="gen-dev-label" style="font-size:10px;color:#666;margin-left:6px;"></span>
                             </div>
-                            <button id="gen-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelGeneration()">✕ Cancel</button>
+                            <button id="gen-cancel-btn" class="btn-small btn-del" style="display:none;" onclick="cancelGeneration()">✕ Cancel</button>
                         </div>
                         <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
                             <div id="gen-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
@@ -382,19 +398,19 @@
                                     <div style="display:flex;gap:4px;align-items:center;">
                                         <span class="cmp-prompt-num" style="font-size:11px;color:#888;white-space:nowrap;min-width:55px;">Prompt 1</span>
                                         <textarea class="cmp-prompt-ta" rows="2" style="flex:1;" placeholder="Enter prompt...">a beautiful landscape</textarea>
-                                        <button class="btn-small" onclick="removePromptRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>
+                                        <button class="btn-small btn-del" onclick="removePromptRow(this)" style="padding:2px 6px;font-size:11px;">✕</button>
                                     </div>
                                 </div>
                             </div>
-                            <button class="btn-small" onclick="addPromptRow()" style="margin-top:4px;background:#2a4a4a;">+ Add Prompt</button>
+                            <button class="btn-small btn-add" onclick="addPromptRow()" style="margin-top:4px;">+ Add Prompt</button>
                         </div>
                     </div>
                     <div class="col" style="flex:1;">
                         <div class="form-group">
                             <label>Model + LoRA (columns)</label>
                             <div id="cmp-combos"></div>
-                            <button class="btn-small" onclick="addComboRow()" style="margin-top:4px;background:#2a4a4a;margin-bottom:4px;">+ Add Combination</button>
-                            <button class="btn-small" onclick="loadBatchModels()" title="Refresh model list" style="margin-top:4px;padding:2px 8px;font-size:11px;background:#1e2d3d;border:1px solid #2a4a4a;color:#7aa2c0;">↻ Refresh models</button>
+                            <button class="btn-small btn-add" onclick="addComboRow()" style="margin-top:4px;margin-bottom:4px;">+ Add Combination</button>
+                            <button class="btn-small btn-add" onclick="loadBatchModels()" title="Refresh model list" style="margin-top:4px;">↻ Refresh models</button>
                         </div>
                     </div>
                 </div>
@@ -453,7 +469,7 @@
                         <span id="batch-progress-text" style="font-size:13px;color:#00d4ff;">Preparing...</span>
                         <span id="batch-progress-count" style="font-size:11px;color:#666;margin-left:6px;"></span>
                     </div>
-                    <button id="batch-cancel-btn" style="display:none;background:#d32f2f;color:#fff;border:none;padding:4px 12px;border-radius:3px;cursor:pointer;font-size:12px;" onclick="cancelBatchGeneration()">✕ Cancel</button>
+                    <button id="batch-cancel-btn" class="btn-small btn-del" style="display:none;" onclick="cancelBatchGeneration()">✕ Cancel</button>
                 </div>
                 <div style="height:3px;background:#333;border-radius:2px;margin-top:4px;overflow:hidden;">
                     <div id="batch-progress-bar" style="height:100%;width:0%;background:#00d4ff;border-radius:2px;animation:progressPulse 1s ease-in-out infinite;"></div>
@@ -793,6 +809,7 @@
                     loadSettings();
                     loadTrainModels();
                     loadGenModels();
+                    refreshLoraList();
                     browseFiles();
                 } else {
                     document.getElementById('login-modal').style.display = 'flex';
@@ -1033,7 +1050,7 @@
             document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
-            if (tab === 'generate') loadGenModels();
+            if (tab === 'generate') { loadGenModels(); refreshLoraList(); }
             if (tab === 'batch') loadBatchModels();
             if (tab === 'loadmodel') { browseFiles(); }
         }
@@ -1053,29 +1070,64 @@
             else el.style.color = '';
         }
 
-        function addLoraRow(containerId) {
+        function addLoraRow(containerId, selectedPath) {
             var container = document.getElementById(containerId);
             var row = document.createElement('div');
             row.className = 'lora-row';
             row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center;';
-            row.innerHTML = '<input type="file" class="lora-file" accept=".safetensors,.pt" style="flex:1;">' +
+            row.innerHTML = '<select class="lora-select" style="flex:1;">' +
+                '<option value="">— None —</option>' +
+                '</select>' +
                 '<input type="number" class="lora-weight" value="1.0" min="0" max="2" step="0.05" style="width:70px;" title="Weight">' +
-                '<button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;">\u2715</button>';
+                '<button class="btn-small btn-del" onclick="this.parentElement.remove()">\u2715</button>';
             container.appendChild(row);
+            var sel = row.querySelector('.lora-select');
+            _loraList.forEach(function(l) {
+                var opt = document.createElement('option');
+                opt.value = l.path;
+                opt.textContent = l.name;
+                sel.appendChild(opt);
+            });
+            if (selectedPath) sel.value = selectedPath;
+        }
+
+        var _loraList = [];
+
+        async function refreshLoraList() {
+            try {
+                var res = await fetch('/api/lora_files', { headers: { 'Authorization': 'Basic ' + auth } });
+                if (!res.ok) return;
+                var data = await res.json();
+                _loraList = data.lora_files || [];
+                var selects = document.querySelectorAll('.lora-select');
+                selects.forEach(function(sel) {
+                    var val = sel.value;
+                    sel.innerHTML = '<option value="">— None —</option>';
+                    _loraList.forEach(function(l) {
+                        var opt = document.createElement('option');
+                        opt.value = l.path;
+                        opt.textContent = l.name;
+                        sel.appendChild(opt);
+                    });
+                    if (val && _loraList.some(function(l) { return l.path === val; })) sel.value = val;
+                });
+            } catch(e) {}
         }
 
         function _appendLoras(formData, containerId) {
             var rows = document.getElementById(containerId).querySelectorAll('.lora-row');
+            var paths = [];
             var weights = [];
             rows.forEach(function(row) {
-                var file = row.querySelector('.lora-file').files[0];
+                var sel = row.querySelector('.lora-select');
                 var weight = row.querySelector('.lora-weight').value;
-                if (file) {
-                    formData.append('lora_file', file);
+                if (sel && sel.value) {
+                    paths.push(sel.value);
                     weights.push(parseFloat(weight) || 1.0);
                 }
             });
-            if (weights.length > 0) {
+            if (paths.length > 0) {
+                formData.append('lora_paths_json', JSON.stringify(paths));
                 formData.append('lora_weights', JSON.stringify(weights));
             }
         }
@@ -1240,7 +1292,7 @@
                                 + '<div class="gen-img-actions">'
                                 + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
                                 + '<a href="' + imgUrl + '" download="image_' + (idx+1) + '.png" class="btn-small">Download</a>'
-                                + '<button class="btn-small" style="background:#d32f2f;" onclick="deleteGenImage(this)">Delete</button>'
+                                + '<button class="btn-small btn-del" onclick="deleteGenImage(this)">Delete</button>'
                                 + '</div>';
                             grid.appendChild(wrap);
                             shownCount++;
@@ -1408,7 +1460,7 @@
                         container.innerHTML = '<div style="font-size:12px;color:#888;margin-bottom:4px;">⚙️ Active Jobs:</div>'
                             + jobs.map(function(j) {
                                 var cancelBtn = j.type === 'generate'
-                                    ? '<button class="btn-small" style="background:#d32f2f;margin-left:8px;" onclick="cancelJob(\'' + j.id + '\')">✕</button>'
+                                    ? '<button class="btn-small btn-del" style="margin-left:8px;" onclick="cancelJob(\'' + j.id + '\')">✕</button>'
                                     : '';
                                 return '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1e1e1e;border-radius:3px;margin-bottom:3px;font-size:12px;">'
                                     + '<span style="color:' + (j.type === 'generate' ? '#00d4ff' : '#ffaa00') + ';">' + j.type + '</span>'
@@ -1473,7 +1525,7 @@
             div.innerHTML = '<div style="display:flex;gap:4px;align-items:center;">' +
                 '<span class="cmp-prompt-num" style="font-size:11px;color:#888;white-space:nowrap;min-width:55px;">Prompt ' + nums + '</span>' +
                 '<textarea class="cmp-prompt-ta" rows="2" style="flex:1;" placeholder="Enter prompt..."></textarea>' +
-                '<button class="btn-small" onclick="removePromptRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>' +
+                '<button class="btn-small btn-del" onclick="removePromptRow(this)" style="padding:2px 6px;font-size:11px;">✕</button>' +
                 '</div>';
             container.appendChild(div);
         }
@@ -1498,7 +1550,7 @@
                         '<option value="">-- Model --</option>' +
                         '<option value="__custom__">Custom...</option>' +
                     '</select>' +
-                    '<button class="btn-small" onclick="removeComboRow(this)" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>' +
+                    '<button class="btn-small btn-del" onclick="removeComboRow(this)" style="padding:2px 6px;font-size:11px;">✕</button>' +
                 '</div>' +
                 '<div style="display:flex;gap:4px;margin-bottom:4px;">' +
                     '<select class="cmp-combo-vae" style="flex:1;font-size:11px;">' +
@@ -1511,7 +1563,7 @@
                     '<input type="text" class="cmp-combo-te-custom" placeholder="TE path" style="display:none;flex:1;font-size:11px;">' +
                 '</div>' +
                 '<div class="cmp-combo-loras"></div>' +
-                '<button class="btn-small" onclick="addComboLora(this)" style="margin-top:4px;font-size:11px;padding:2px 6px;background:#2a4a4a;">+ LoRA</button>';
+                '<button class="btn-small btn-add" onclick="addComboLora(this)" style="margin-top:4px;">+ LoRA</button>';
             container.appendChild(div);
             _populateComboSelects(div);
         }
@@ -1529,10 +1581,19 @@
             div.className = 'cmp-lora-row';
             div.style.cssText = 'display:flex;gap:4px;align-items:center;margin-bottom:4px;';
             div.innerHTML = '' +
-                '<input type="file" accept=".safetensors,.pt" class="cmp-lora-file" style="flex:1;font-size:11px;">' +
+                '<select class="cmp-lora-file" style="flex:1;font-size:11px;">' +
+                    '<option value="">— None —</option>' +
+                '</select>' +
                 '<input type="number" class="cmp-lora-weight" value="1.0" step="0.05" min="-2" max="2" style="width:60px;font-size:11px;">' +
-                '<button class="btn-small" onclick="this.parentElement.remove()" style="background:#d32f2f;padding:2px 6px;font-size:11px;">✕</button>';
+                '<button class="btn-small btn-del" onclick="this.parentElement.remove()" style="padding:2px 6px;font-size:11px;">✕</button>';
             container.appendChild(div);
+            var sel = div.querySelector('.cmp-lora-file');
+            _loraList.forEach(function(l) {
+                var opt = document.createElement('option');
+                opt.value = l.path;
+                opt.textContent = l.name;
+                sel.appendChild(opt);
+            });
         }
 
         function onCmpModelChange(sel) {
@@ -1654,12 +1715,12 @@
                 var loraIndices = [];
                 var loraWeights = [];
                 row.querySelectorAll('.cmp-lora-row').forEach(function(lr) {
-                    var fileInput = lr.querySelector('.cmp-lora-file');
+                    var sel = lr.querySelector('.cmp-lora-file');
                     var weight = parseFloat(lr.querySelector('.cmp-lora-weight').value) || 1.0;
-                    if (fileInput && fileInput.files && fileInput.files[0]) {
+                    if (sel && sel.value) {
                         loraIndices.push(allLoraFiles.length);
                         loraWeights.push(weight);
-                        allLoraFiles.push(fileInput.files[0]);
+                        allLoraFiles.push(sel.value); // now stores path string, not File
                     }
                 });
 
@@ -1708,10 +1769,10 @@
             formData.append('height', document.getElementById('batch-height').value);
             formData.append('count', count);
 
-            // Upload all LoRA files (same key for FastAPI list)
-            allLoraFiles.forEach(function(file) {
-                formData.append('lora_file', file);
-            });
+            // Send LoRA paths as JSON (from dropdown)
+            if (allLoraFiles.length > 0) {
+                formData.append('lora_paths_json', JSON.stringify(allLoraFiles));
+            }
 
             try {
                 var res = await fetch('/api/comparison_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
@@ -3254,7 +3315,7 @@
                         + '<button class="btn-small" onclick="openLightbox(this.parentElement.previousElementSibling.src)">View</button>'
                         + '<a href="' + img.url + '" download="' + img.name + '" class="btn-small">Download</a>'
                         + '<button class="btn-small" onclick="showGenDetails(this)">Details</button>'
-                        + '<button class="btn-small" style="background:#d32f2f;" onclick="deleteGalleryImage(this)">Delete</button>'
+                        + '<button class="btn-small btn-del" onclick="deleteGalleryImage(this)">Delete</button>'
                         + '</div></div>';
                 });
                 grid.innerHTML = html;
@@ -3370,8 +3431,8 @@
                 <span id="gallery-count" style="color:#888;font-size:13px;"></span>
             </div>
             <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <button class="btn-small" onclick="downloadAllImages()" style="background:#1e3d1e;color:#4caf50;">⬇ Download All</button>
-                <button class="btn-small" onclick="deleteAllImages()" style="background:#3d1e1e;color:#ff6666;">🗑 Delete All</button>
+                <button class="btn-small" style="background:linear-gradient(135deg,#1e3d1e,#2a5a2a);color:#4caf50;" onclick="downloadAllImages()">⬇ Download All</button>
+                <button class="btn-small btn-del" onclick="deleteAllImages()">🗑 Delete All</button>
             </div>
             <div class="gen-grid" id="gallery-grid" style="flex:1;overflow-y:auto;"></div>
         </div>

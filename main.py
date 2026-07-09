@@ -365,12 +365,61 @@ async def api_check_model(
     }
 
 
+def _resolve_lora_paths(lora_paths_json, weight_list):
+    """Resolve LoRA paths from dropdown (JSON array of absolute paths)."""
+    dropdown_paths = json.loads(lora_paths_json) if lora_paths_json else []
+    valid = [p for p in dropdown_paths if os.path.exists(p)]
+    if len(valid) < len(weight_list):
+        weight_list[:] = weight_list[:len(valid)]
+    return valid
+
+
+def _cleanup_temp_loras(lora_paths, base_dir):
+    """Remove only temp LoRA files (those in base_dir)."""
+    absp = os.path.abspath(base_dir)
+    for p in lora_paths or []:
+        if os.path.dirname(os.path.abspath(p)) == absp and os.path.exists(p):
+            os.remove(p)
+
+
+@app.get("/api/lora_files")
+async def api_lora_files(user: str = Depends(get_current_user)):
+    models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+    loras = []
+    seen = set()
+    if not os.path.exists(models_path):
+        return {"lora_files": []}
+    for root, dirs, files in os.walk(models_path):
+        for fname in sorted(files):
+            if not fname.endswith(".safetensors"):
+                continue
+            fpath = os.path.join(root, fname)
+            if fpath in seen:
+                continue
+            seen.add(fpath)
+            try:
+                keys, _ = _read_safetensors_meta(fpath)
+                if keys:
+                    role = _detect_role_from_keys(keys)
+                    if role == "lora":
+                        rel = os.path.relpath(fpath, models_path)
+                        loras.append({
+                            "name": rel,
+                            "path": fpath,
+                            "size": os.path.getsize(fpath),
+                        })
+            except Exception:
+                pass
+    return {"lora_files": loras}
+
+
 @app.post("/api/generate")
 async def api_generate(
     user: str = Depends(get_current_user),
     prompt: str = Form(...),
     negative: str = Form(""),
     lora_file: List[UploadFile] = File(None),
+    lora_paths_json: str = Form("[]"),
     lora_weights: str = Form("[]"),
     model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
     vae_path: str = Form(""),
@@ -382,17 +431,15 @@ async def api_generate(
     height: int = Form(1024),
 ):
     try:
-        lora_paths = []
         weight_list = json.loads(lora_weights) if lora_weights else []
-        if lora_file:
-            for i, f in enumerate(lora_file):
+        lora_paths = _resolve_lora_paths(lora_paths_json, weight_list)
+        if not lora_paths and lora_file:
+            for f in lora_file:
                 data = await f.read()
                 path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
                 with open(path, "wb") as fh:
                     fh.write(data)
                 lora_paths.append(path)
-        if len(weight_list) < len(lora_paths):
-            weight_list.extend([1.0] * (len(lora_paths) - len(weight_list)))
 
         utils.set_seed(seed)
 
@@ -411,9 +458,7 @@ async def api_generate(
             height=height
         )
 
-        for p in lora_paths:
-            if os.path.exists(p):
-                os.remove(p)
+        _cleanup_temp_loras(lora_paths, temp_dir)
 
         img_bytes = io.BytesIO()
         img.save(img_bytes, format='PNG')
@@ -659,6 +704,7 @@ async def api_generate_async(
     prompt: str = Form(...),
     negative: str = Form(""),
     lora_file: List[UploadFile] = File(None),
+    lora_paths_json: str = Form("[]"),
     lora_weights: str = Form("[]"),
     model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
     vae_path: str = Form(""),
@@ -673,10 +719,10 @@ async def api_generate_async(
 ):
     gen_id = str(uuid.uuid4())
     count = max(1, min(16, count))
-    lora_paths = []
     weight_list = json.loads(lora_weights) if lora_weights else []
-    if lora_file:
-        for i, f in enumerate(lora_file):
+    lora_paths = _resolve_lora_paths(lora_paths_json, weight_list)
+    if not lora_paths and lora_file:
+        for f in lora_file:
             data = await f.read()
             path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
             with open(path, "wb") as fh:
@@ -705,6 +751,7 @@ async def api_batch_generate(
     prompts: str = Form(...),
     negative: str = Form(""),
     lora_file: List[UploadFile] = File(None),
+    lora_paths_json: str = Form("[]"),
     lora_weights: str = Form("[]"),
     model_path: str = Form("stabilityai/stable-diffusion-xl-base-1.0"),
     vae_path: str = Form(""),
@@ -718,10 +765,10 @@ async def api_batch_generate(
     try:
         prompt_list = [p.strip() for p in prompts.split("\n") if p.strip()]
 
-        lora_paths = []
         weight_list = json.loads(lora_weights) if lora_weights else []
-        if lora_file:
-            for i, f in enumerate(lora_file):
+        lora_paths = _resolve_lora_paths(lora_paths_json, weight_list)
+        if not lora_paths and lora_file:
+            for f in lora_file:
                 data = await f.read()
                 path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
                 with open(path, "wb") as fh:
@@ -741,9 +788,7 @@ async def api_batch_generate(
             width=width, height=height
         )
 
-        for p in lora_paths:
-            if os.path.exists(p):
-                os.remove(p)
+        _cleanup_temp_loras(lora_paths, temp_dir)
 
         filenames = [f"image_{i+1}.png" for i in range(len(images))]
         zip_data = utils.create_zip_from_images(images, filenames)
@@ -864,6 +909,7 @@ async def api_comparison_generate(
     prompts: str = Form(...),
     combos: str = Form(...),
     lora_file: List[UploadFile] = File(None),
+    lora_paths_json: str = Form("[]"),
     negative: str = Form(""),
     steps: int = Form(20),
     cfg: float = Form(7.0),
@@ -880,14 +926,13 @@ async def api_comparison_generate(
         if not combos_list:
             raise HTTPException(status_code=400, detail="At least one combo required.")
 
-        # Save uploaded LoRA files to temp
-        temp_lora_dir = os.path.join(temp_dir, f"cmp_{uuid.uuid4()}")
-        os.makedirs(temp_lora_dir, exist_ok=True)
-        saved_lora_paths = []
-        if lora_file:
+        # Resolve LoRA paths from dropdown or uploads
+        weight_list_dummy = []
+        saved_lora_paths = _resolve_lora_paths(lora_paths_json, weight_list_dummy)
+        if not saved_lora_paths and lora_file:
             for f in lora_file:
                 data = await f.read()
-                path = os.path.join(temp_lora_dir, f"{uuid.uuid4()}.safetensors")
+                path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
                 with open(path, "wb") as fh:
                     fh.write(data)
                 saved_lora_paths.append(path)
@@ -920,8 +965,7 @@ async def api_comparison_generate(
         )
 
         # Clean up temp LoRA files
-        if os.path.exists(temp_lora_dir):
-            shutil.rmtree(temp_lora_dir, ignore_errors=True)
+        _cleanup_temp_loras(saved_lora_paths, temp_dir)
 
         # Save images and build response
         result_cells = []

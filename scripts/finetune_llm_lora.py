@@ -685,7 +685,9 @@ def generate_response(model, tokenizer, prompt, history=None):
             eos_token_id=tokenizer.eos_token_id,
         )
 
+    import re
     response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+    response = re.sub(r'</?think>', '', response)
     return response.strip()
 
 
