@@ -74,6 +74,8 @@ parser.add_argument("--max_tokens", type=int, default=1024,
                     help="Max new tokens per response (default: 1024)")
 parser.add_argument("--top_p", type=float, default=0.9,
                     help="Top-p sampling (default: 0.9)")
+parser.add_argument("--sys", type=str, default="",
+                    help="System prompt (e.g. 'ตอบเป็นภาษาไทยเท่านั้น')")
 
 # Training hyperparams
 parser.add_argument("--lr", type=float, default=2e-4,
@@ -659,10 +661,14 @@ def chat():
 
 def generate_response(model, tokenizer, prompt, history=None):
     """Generate a response from the model."""
-    if history:
-        messages = history + [{"role": "user", "content": prompt}]
+    if args.sys:
+        messages = [{"role": "system", "content": args.sys}]
     else:
-        messages = [{"role": "user", "content": prompt}]
+        messages = []
+    if history:
+        messages += history + [{"role": "user", "content": prompt}]
+    else:
+        messages += [{"role": "user", "content": prompt}]
 
     text = tokenizer.apply_chat_template(
         messages,
