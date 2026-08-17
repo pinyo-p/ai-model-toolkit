@@ -57,6 +57,52 @@ class DatasetWorkspaceTests(unittest.TestCase):
             self.assertEqual(updated["analysis"]["captioned_count"], 1)
             self.assertEqual(updated["analysis"]["status"], "needs_expansion")
 
+    def test_add_images_appends_unique_files_and_skips_duplicates(self):
+        with tempfile.TemporaryDirectory() as root:
+            first = _image_file("red")
+            created = datasets.create_dataset(
+                root, "Growing set", "object", "object_x", [("first.png", first)]
+            )
+            duplicate = _image_file("red")
+            second = _image_file("blue")
+
+            updated = datasets.add_images(
+                root,
+                created["id"],
+                [("duplicate.png", duplicate), ("second.png", second)],
+            )
+
+            self.assertEqual(updated["import_result"], {"added": 1, "duplicates": 1})
+            self.assertEqual([item["id"] for item in updated["images"]], [
+                "image-00001", "image-00002",
+            ])
+            self.assertEqual(updated["analysis"]["image_count"], 2)
+            self.assertTrue(
+                (Path(root) / created["id"] / "images" / "image-00002.png").is_file()
+            )
+
+    def test_add_images_rolls_back_when_any_upload_is_invalid(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root, "Stable set", "style", "style_x", [("first.png", _image_file("red"))]
+            )
+            dataset_dir = Path(root) / created["id"]
+
+            with self.assertRaisesRegex(datasets.DatasetError, "Invalid image"):
+                datasets.add_images(
+                    root,
+                    created["id"],
+                    [("valid.png", _image_file("blue")), ("broken.png", io.BytesIO(b"bad"))],
+                )
+
+            stored = datasets.get_dataset(root, created["id"])
+            self.assertEqual(len(stored["images"]), 1)
+            self.assertEqual(
+                sorted(path.name for path in (dataset_dir / "images").iterdir()),
+                ["image-00001.png"],
+            )
+            self.assertFalse(any(path.name.startswith(".staging-add-") for path in dataset_dir.iterdir()))
+
     def test_rejects_non_image_uploads_without_leaving_staging_data(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaisesRegex(datasets.DatasetError, "Invalid image"):
@@ -131,6 +177,20 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     )
                     self.assertEqual(image_response.status_code, 200)
                     self.assertTrue(image_response.headers["content-type"].startswith("image/"))
+
+                    add_response = client.post(
+                        f"/api/datasets/{created['id']}/images",
+                        files=[
+                            ("files", ("duplicate.png", _image_file("navy"), "image/png")),
+                            ("files", ("new.png", _image_file("white"), "image/png")),
+                        ],
+                    )
+                    self.assertEqual(add_response.status_code, 200, add_response.text)
+                    self.assertEqual(
+                        add_response.json()["import_result"],
+                        {"added": 1, "duplicates": 1},
+                    )
+                    self.assertEqual(add_response.json()["analysis"]["image_count"], 2)
             finally:
                 main.app.dependency_overrides.clear()
 

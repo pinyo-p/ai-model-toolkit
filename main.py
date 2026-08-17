@@ -297,6 +297,21 @@ async def api_get_dataset(dataset_id: str, user: str = Depends(get_current_user)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/api/datasets/{dataset_id}/images")
+async def api_add_dataset_images(
+    dataset_id: str,
+    files: list[UploadFile] = File(...),
+    user: str = Depends(get_current_user),
+):
+    try:
+        uploads = [(file.filename or "image", file.file) for file in files]
+        return dataset_module.add_images(_datasets_root(), dataset_id, uploads)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/datasets/{dataset_id}/images/{image_id}")
 async def api_get_dataset_image(
     dataset_id: str,

@@ -162,6 +162,49 @@ def _with_analysis(manifest: dict) -> dict:
     return result
 
 
+def _inspect_upload(original_name: str, source: object) -> dict:
+    source.seek(0, os.SEEK_END)
+    size = source.tell()
+    source.seek(0)
+    if size <= 0:
+        raise DatasetError(f"Empty image: {original_name}")
+    if size > MAX_IMAGE_BYTES:
+        raise DatasetError(f"Image exceeds 100 MB: {original_name}")
+
+    try:
+        with Image.open(source) as image:
+            width, height = image.size
+            image_format = (image.format or "").upper()
+            mode = image.mode
+            if width * height > MAX_IMAGE_PIXELS:
+                raise DatasetError(f"Image is too large: {original_name}")
+            if image_format not in _FORMAT_EXTENSIONS:
+                raise DatasetError(f"Unsupported image format: {original_name}")
+            image.verify()
+    except DatasetError:
+        raise
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise DatasetError(f"Invalid image: {original_name}") from exc
+
+    source.seek(0)
+    digest = hashlib.sha256()
+    while True:
+        chunk = source.read(1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+    source.seek(0)
+    return {
+        "original_filename": Path(original_name or "image").name[:255],
+        "width": width,
+        "height": height,
+        "format": image_format,
+        "mode": mode,
+        "bytes": size,
+        "sha256": digest.hexdigest(),
+    }
+
+
 def create_dataset(
     root: str | os.PathLike,
     name: str,
@@ -204,37 +247,8 @@ def create_dataset(
 
     try:
         for original_name, source in uploads:
-            source.seek(0, os.SEEK_END)
-            size = source.tell()
-            source.seek(0)
-            if size <= 0:
-                raise DatasetError(f"Empty image: {original_name}")
-            if size > MAX_IMAGE_BYTES:
-                raise DatasetError(f"Image exceeds 100 MB: {original_name}")
-
-            try:
-                with Image.open(source) as image:
-                    width, height = image.size
-                    image_format = (image.format or "").upper()
-                    mode = image.mode
-                    if width * height > MAX_IMAGE_PIXELS:
-                        raise DatasetError(f"Image is too large: {original_name}")
-                    if image_format not in _FORMAT_EXTENSIONS:
-                        raise DatasetError(f"Unsupported image format: {original_name}")
-                    image.verify()
-            except DatasetError:
-                raise
-            except (UnidentifiedImageError, OSError, ValueError) as exc:
-                raise DatasetError(f"Invalid image: {original_name}") from exc
-
-            source.seek(0)
-            digest = hashlib.sha256()
-            while True:
-                chunk = source.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-            sha256 = digest.hexdigest()
+            metadata = _inspect_upload(original_name, source)
+            sha256 = metadata["sha256"]
             if sha256 in seen_hashes:
                 manifest["duplicates"].append({
                     "original_filename": original_name,
@@ -244,9 +258,8 @@ def create_dataset(
                 continue
 
             image_id = f"image-{len(manifest['images']) + 1:05d}"
-            extension = _FORMAT_EXTENSIONS[image_format]
+            extension = _FORMAT_EXTENSIONS[metadata["format"]]
             stored_name = f"{image_id}{extension}"
-            source.seek(0)
             with open(images_dir / stored_name, "wb") as target:
                 shutil.copyfileobj(source, target, length=1024 * 1024)
 
@@ -254,13 +267,7 @@ def create_dataset(
             manifest["images"].append({
                 "id": image_id,
                 "filename": stored_name,
-                "original_filename": Path(original_name or stored_name).name[:255],
-                "width": width,
-                "height": height,
-                "format": image_format,
-                "mode": mode,
-                "bytes": size,
-                "sha256": sha256,
+                **metadata,
                 "caption": "",
                 "caption_source": "none",
             })
@@ -274,6 +281,91 @@ def create_dataset(
         raise
 
     return _with_analysis(manifest)
+
+
+def add_images(
+    root: str | os.PathLike,
+    dataset_id: str,
+    uploads: list[tuple[str, object]],
+) -> dict:
+    if not 1 <= len(uploads) <= MAX_IMAGES:
+        raise DatasetError(f"Upload between 1 and {MAX_IMAGES} images")
+    manifest_path = _manifest_path(root, dataset_id)
+    stage_dir = manifest_path.parent / f".staging-add-{uuid.uuid4().hex}"
+    stage_dir.mkdir(parents=True)
+    try:
+        with _manifest_lock:
+            manifest = _load_manifest(manifest_path)
+            images = manifest.setdefault("images", [])
+            seen_hashes = {
+                item.get("sha256"): item.get("id")
+                for item in images
+                if item.get("sha256")
+            }
+            image_numbers = [
+                int(match.group(1))
+                for item in images
+                if (match := re.fullmatch(r"image-(\d+)", str(item.get("id", ""))))
+            ]
+            next_number = max(image_numbers, default=0) + 1
+            staged_images = []
+            duplicates = []
+
+            for original_name, source in uploads:
+                metadata = _inspect_upload(original_name, source)
+                sha256 = metadata["sha256"]
+                if sha256 in seen_hashes:
+                    duplicates.append({
+                        "original_filename": original_name,
+                        "duplicate_of": seen_hashes[sha256],
+                        "sha256": sha256,
+                    })
+                    continue
+                if len(images) + len(staged_images) >= MAX_IMAGES:
+                    raise DatasetError(f"Dataset cannot contain more than {MAX_IMAGES} images")
+
+                image_id = f"image-{next_number:05d}"
+                next_number += 1
+                stored_name = f"{image_id}{_FORMAT_EXTENSIONS[metadata['format']]}"
+                with open(stage_dir / stored_name, "wb") as target:
+                    shutil.copyfileobj(source, target, length=1024 * 1024)
+                seen_hashes[sha256] = image_id
+                staged_images.append({
+                    "id": image_id,
+                    "filename": stored_name,
+                    **metadata,
+                    "caption": "",
+                    "caption_source": "none",
+                })
+
+            images_dir = manifest_path.parent / "images"
+            images_dir.mkdir(parents=True, exist_ok=True)
+            moved_paths = []
+            try:
+                for item in staged_images:
+                    target = images_dir / item["filename"]
+                    os.replace(stage_dir / item["filename"], target)
+                    moved_paths.append(target)
+                images.extend(staged_images)
+                manifest.setdefault("duplicates", []).extend(duplicates)
+                manifest["duplicates"] = manifest["duplicates"][-MAX_IMAGES:]
+                _save_manifest(manifest_path, manifest)
+            except Exception:
+                for path in moved_paths:
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                raise
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+
+    result = _with_analysis(manifest)
+    result["import_result"] = {
+        "added": len(staged_images),
+        "duplicates": len(duplicates),
+    }
+    return result
 
 
 def list_datasets(root: str | os.PathLike) -> list[dict]:

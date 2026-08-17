@@ -48,7 +48,7 @@ expanded and reviewed.
 | Test LoRA | **LoRA Evaluation** | Deterministic Prompt × Variant grid with matched seeds, per-variant settings, progress/cancel, and a downloadable test manifest |
 | Test LoRA | **Dataset handoff** | One click prepares six concept-aware prompts and Base/LoRA 0.7/LoRA 1.0 Krea 2 Turbo variants from the latest completed training run |
 | Test LoRA | **Human verdict** | Pick one winner per prompt; validated summaries are saved to the originating dataset without synthetic image scoring |
-| Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
+| Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images, with later image imports |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
@@ -132,6 +132,7 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/train_lora` | Legacy experimental LoRA endpoint (not production-ready) |
 | GET/POST | `/api/datasets` | List or create persistent dataset workspaces |
 | GET | `/api/datasets/{id}` | Dataset manifest, image metadata, readiness, and captions |
+| POST | `/api/datasets/{id}/images` | Add validated images to an existing dataset and skip exact duplicates |
 | PUT | `/api/datasets/{id}/captions` | Save caption edits and matching `.txt` sidecars |
 | POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
 | GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |

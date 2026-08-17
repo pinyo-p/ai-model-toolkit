@@ -621,6 +621,8 @@
                 <div id="dataset-metrics" class="dataset-metrics"></div>
                 <div id="dataset-issues" style="margin-bottom:14px;"></div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+                    <button id="dataset-add-images-btn" class="btn btn-sm btn-ghost" onclick="document.getElementById('dataset-add-files').click()">Add images</button>
+                    <input id="dataset-add-files" type="file" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple style="display:none;" onchange="addImagesToDataset()">
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
@@ -2433,6 +2435,40 @@
                 });
             } catch (e) {
                 showAlert('Dataset error', e.message);
+            }
+        }
+
+        async function addImagesToDataset() {
+            var input = document.getElementById('dataset-add-files');
+            var files = Array.from(input.files || []);
+            if (!activeDatasetId || !files.length) return;
+            if (files.length > 2000) {
+                input.value = '';
+                showAlert('Too many images', 'Add at most 2,000 files at a time.');
+                return;
+            }
+            var datasetId = activeDatasetId;
+            var button = document.getElementById('dataset-add-images-btn');
+            var formData = new FormData();
+            files.forEach(function(file) { formData.append('files', file); });
+            button.disabled = true;
+            button.textContent = 'Adding ' + files.length + '…';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/images', {
+                    method:'POST', body:formData, headers:{ 'Authorization':'Basic ' + auth }
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var dataset = await response.json();
+                var imported = dataset.import_result || {};
+                if (activeDatasetId === datasetId) renderDatasetDetail(dataset);
+                await loadDatasets(activeDatasetId);
+                showToast((imported.added || 0) + ' images added · ' + (imported.duplicates || 0) + ' duplicates skipped');
+            } catch (e) {
+                showAlert('Could not add images', e.message);
+            } finally {
+                input.value = '';
+                button.disabled = false;
+                button.textContent = 'Add images';
             }
         }
 
