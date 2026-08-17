@@ -119,6 +119,49 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 issue["code"] for issue in changed["analysis"]["issues"]
             })
 
+    def test_remove_images_deletes_image_and_sidecar_and_advances_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Curated set",
+                "style",
+                "style_x",
+                [("first.png", _image_file("red")), ("second.png", _image_file("blue"))],
+            )
+            first_id = created["images"][0]["id"]
+            datasets.update_captions(root, created["id"], {first_id: "remove me"})
+            removed = datasets.remove_images(root, created["id"], [first_id])
+
+            self.assertEqual(removed["remove_result"], {"removed": 1})
+            self.assertEqual(removed["dataset_revision"], 3)
+            self.assertEqual([item["id"] for item in removed["images"]], ["image-00002"])
+            images_dir = Path(root) / created["id"] / "images"
+            self.assertFalse((images_dir / "image-00001.png").exists())
+            self.assertFalse((images_dir / "image-00001.txt").exists())
+
+    def test_remove_images_keeps_one_and_rolls_back_on_manifest_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Safe curation",
+                "object",
+                "object_x",
+                [("first.png", _image_file("red")), ("second.png", _image_file("blue"))],
+            )
+            first_id = created["images"][0]["id"]
+            with patch.object(datasets, "_save_manifest", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    datasets.remove_images(root, created["id"], [first_id])
+            stored = datasets.get_dataset(root, created["id"])
+            self.assertEqual(len(stored["images"]), 2)
+            self.assertTrue(
+                (Path(root) / created["id"] / "images" / "image-00001.png").is_file()
+            )
+            with self.assertRaisesRegex(datasets.DatasetError, "Keep at least one"):
+                datasets.remove_images(
+                    root, created["id"], [item["id"] for item in created["images"]]
+                )
+
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:
             created = datasets.create_dataset(
@@ -229,6 +272,15 @@ class DatasetWorkspaceTests(unittest.TestCase):
                         {"added": 1, "duplicates": 1},
                     )
                     self.assertEqual(add_response.json()["analysis"]["image_count"], 2)
+
+                    remove_response = client.request(
+                        "DELETE",
+                        f"/api/datasets/{created['id']}/images",
+                        json={"image_ids": [image_id]},
+                    )
+                    self.assertEqual(remove_response.status_code, 200, remove_response.text)
+                    self.assertEqual(remove_response.json()["remove_result"], {"removed": 1})
+                    self.assertEqual(remove_response.json()["analysis"]["image_count"], 1)
             finally:
                 main.app.dependency_overrides.clear()
 

@@ -623,6 +623,7 @@
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
                     <button id="dataset-add-images-btn" class="btn btn-sm btn-ghost" onclick="document.getElementById('dataset-add-files').click()">Add images</button>
                     <input id="dataset-add-files" type="file" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple style="display:none;" onchange="addImagesToDataset()">
+                    <button id="dataset-remove-images-btn" class="btn btn-sm btn-danger" onclick="removeSelectedDatasetImages()" disabled>Remove selected</button>
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
@@ -695,7 +696,7 @@
                 <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
                 <div class="dataset-table-wrap">
                     <table class="dataset-table">
-                        <thead><tr><th style="width:78px;">Image</th><th style="width:190px;">File</th><th>Caption</th></tr></thead>
+                        <thead><tr><th style="width:34px;"><input id="dataset-select-all-images" type="checkbox" onchange="toggleAllDatasetImages(this.checked)" aria-label="Select all visible images"></th><th style="width:78px;">Image</th><th style="width:190px;">File</th><th>Caption</th></tr></thead>
                         <tbody id="dataset-image-rows"></tbody>
                     </table>
                 </div>
@@ -2347,6 +2348,7 @@
         var activeDatasetExpansionDataset = '';
         var activeDatasetExpansionRun = '';
         var datasetThumbUrls = [];
+        var datasetSelectedImageIds = new Set();
         var datasetCandidateUrls = [];
         var renderedExpansionKey = '';
 
@@ -2472,8 +2474,63 @@
             }
         }
 
+        function updateDatasetImageSelection() {
+            var button = document.getElementById('dataset-remove-images-btn');
+            var count = datasetSelectedImageIds.size;
+            button.disabled = count === 0;
+            button.textContent = count ? 'Remove selected (' + count + ')' : 'Remove selected';
+            var boxes = Array.from(document.querySelectorAll('.dataset-image-select'));
+            var all = document.getElementById('dataset-select-all-images');
+            all.checked = boxes.length > 0 && boxes.every(function(box) { return box.checked; });
+            all.indeterminate = boxes.some(function(box) { return box.checked; }) && !all.checked;
+        }
+
+        function toggleDatasetImageSelection(checkbox) {
+            var imageId = checkbox.getAttribute('data-image-id');
+            var checked = checkbox.checked;
+            if (checked) datasetSelectedImageIds.add(imageId);
+            else datasetSelectedImageIds.delete(imageId);
+            updateDatasetImageSelection();
+        }
+
+        function toggleAllDatasetImages(checked) {
+            document.querySelectorAll('.dataset-image-select').forEach(function(box) {
+                box.checked = checked;
+                if (checked) datasetSelectedImageIds.add(box.getAttribute('data-image-id'));
+                else datasetSelectedImageIds.delete(box.getAttribute('data-image-id'));
+            });
+            updateDatasetImageSelection();
+        }
+
+        async function removeSelectedDatasetImages() {
+            var imageIds = Array.from(datasetSelectedImageIds);
+            if (!activeDatasetId || !imageIds.length) return;
+            if (!confirm('Remove ' + imageIds.length + ' selected image' + (imageIds.length === 1 ? '' : 's') + ' and their captions from this dataset?')) return;
+            var datasetId = activeDatasetId;
+            var button = document.getElementById('dataset-remove-images-btn');
+            button.disabled = true;
+            button.textContent = 'Removing…';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/images', {
+                    method:'DELETE',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({ image_ids:imageIds })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var dataset = await response.json();
+                datasetSelectedImageIds.clear();
+                if (activeDatasetId === datasetId) renderDatasetDetail(dataset);
+                await loadDatasets(activeDatasetId);
+                showToast((dataset.remove_result || {}).removed + ' images removed');
+            } catch (e) {
+                showAlert('Could not remove images', e.message);
+                updateDatasetImageSelection();
+            }
+        }
+
         function renderDatasetDetail(dataset) {
             activeDatasetData = dataset;
+            datasetSelectedImageIds.clear();
             var analysis = dataset.analysis || {};
             var trainingRuns = dataset.training_runs || [];
             var completedTraining = trainingRuns.filter(function(run) { return run.status === 'done' && run.lora_path; });
@@ -2525,11 +2582,13 @@
                 ? 'Showing the first 200 images. Auto-caption processes the complete dataset.'
                 : 'Captions are saved as both manifest data and .txt sidecars.';
             document.getElementById('dataset-image-rows').innerHTML = visibleImages.map(function(image) {
-                return '<tr><td><img class="dataset-thumb" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
+                return '<tr><td><input class="dataset-image-select" type="checkbox" data-image-id="' + escapeHtml(image.id) + '" onchange="toggleDatasetImageSelection(this)" aria-label="Select ' + escapeHtml(image.original_filename) + '"></td>' +
+                    '<td><img class="dataset-thumb" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
                     '<td><div style="color:#dcecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(image.original_filename) + '">' + escapeHtml(image.original_filename) + '</div>' +
                     '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div></td>' +
                     '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" placeholder="Describe what should remain variable…">' + escapeHtml(image.caption || '') + '</textarea></td></tr>';
             }).join('');
+            updateDatasetImageSelection();
             loadDatasetThumbnails(dataset.id);
         }
 

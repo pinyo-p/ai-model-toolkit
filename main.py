@@ -192,6 +192,10 @@ class DatasetCaptionPayload(BaseModel):
     captions: dict[str, str]
 
 
+class DatasetImageRemovePayload(BaseModel):
+    image_ids: list[str]
+
+
 class TrainingStartPayload(BaseModel):
     profile: str = "balanced"
     seed: int = 42
@@ -306,6 +310,44 @@ async def api_add_dataset_images(
     try:
         uploads = [(file.filename or "image", file.file) for file in files]
         return dataset_module.add_images(_datasets_root(), dataset_id, uploads)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/datasets/{dataset_id}/images")
+async def api_remove_dataset_images(
+    dataset_id: str,
+    payload: DatasetImageRemovePayload,
+    user: str = Depends(get_current_user),
+):
+    with _dataset_caption_lock:
+        captioning = any(
+            job.get("dataset_id") == dataset_id and job.get("status") in {"queued", "running"}
+            for job in _dataset_caption_jobs.values()
+        )
+    with _expansion_lock:
+        expanding = any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "loading", "running", "cancelling"}
+            for job in _expansion_jobs.values()
+        )
+    with _training_lock:
+        training_active = any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "preparing", "running", "cancelling"}
+            for job in _training_jobs.values()
+        )
+    if captioning or expanding or training_active:
+        raise HTTPException(
+            status_code=409,
+            detail="Wait for active dataset jobs to finish before removing images",
+        )
+    try:
+        return dataset_module.remove_images(
+            _datasets_root(), dataset_id, payload.image_ids
+        )
     except dataset_module.DatasetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except dataset_module.DatasetError as exc:

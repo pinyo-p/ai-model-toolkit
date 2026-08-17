@@ -50,6 +50,7 @@ expanded and reviewed.
 | Test LoRA | **Human verdict** | Pick one winner per prompt; validated summaries are saved to the originating dataset without synthetic image scoring |
 | Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images, with later image imports |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
+| Dataset | **Dataset curation** | Add images later or remove selected images and caption sidecars with rollback-safe manifest updates |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
@@ -134,6 +135,7 @@ Default login: `admin` / `admin` (change in Settings)
 | GET/POST | `/api/datasets` | List or create persistent dataset workspaces |
 | GET | `/api/datasets/{id}` | Dataset manifest, image metadata, readiness, and captions |
 | POST | `/api/datasets/{id}/images` | Add validated images to an existing dataset and skip exact duplicates |
+| DELETE | `/api/datasets/{id}/images` | Remove selected images and caption sidecars while keeping at least one source image |
 | PUT | `/api/datasets/{id}/captions` | Save caption edits and matching `.txt` sidecars |
 | POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
 | GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |

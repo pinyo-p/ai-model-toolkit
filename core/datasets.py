@@ -427,6 +427,70 @@ def add_images(
     return result
 
 
+def remove_images(
+    root: str | os.PathLike,
+    dataset_id: str,
+    image_ids: list[str],
+) -> dict:
+    selected = {str(image_id) for image_id in image_ids if str(image_id)}
+    if not selected:
+        raise DatasetError("Select at least one image")
+    if len(selected) > MAX_IMAGES:
+        raise DatasetError(f"Select at most {MAX_IMAGES} images")
+
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        images = manifest.get("images", [])
+        known_ids = {item.get("id") for item in images}
+        unknown = selected - known_ids
+        if unknown:
+            raise DatasetError(f"Unknown image id: {sorted(unknown)[0]}")
+        if len(selected) >= len(images):
+            raise DatasetError("Keep at least one image in the dataset")
+
+        images_dir = manifest_path.parent / "images"
+        stage_dir = manifest_path.parent / f".staging-remove-{uuid.uuid4().hex}"
+        stage_dir.mkdir(parents=True)
+        moved_paths: list[tuple[Path, Path]] = []
+        try:
+            for item in images:
+                if item.get("id") not in selected:
+                    continue
+                filename = str(item.get("filename", ""))
+                if Path(filename).name != filename:
+                    raise DatasetError("Dataset image path is invalid")
+                image_path = images_dir / filename
+                sidecar_path = images_dir / f"{Path(filename).stem}.txt"
+                for source in (image_path, sidecar_path):
+                    if not source.exists():
+                        continue
+                    if not source.is_file() or source.is_symlink():
+                        raise DatasetError("Dataset image path is invalid")
+                    target = stage_dir / source.name
+                    os.replace(source, target)
+                    moved_paths.append((target, source))
+
+            manifest["images"] = [
+                item for item in images if item.get("id") not in selected
+            ]
+            _advance_dataset_revision(manifest)
+            _save_manifest(manifest_path, manifest)
+        except Exception:
+            for staged, original in reversed(moved_paths):
+                try:
+                    os.replace(staged, original)
+                except OSError:
+                    pass
+            raise
+        finally:
+            shutil.rmtree(stage_dir, ignore_errors=True)
+
+    result = _with_analysis(manifest)
+    result["remove_result"] = {"removed": len(selected)}
+    return result
+
+
 def list_datasets(root: str | os.PathLike) -> list[dict]:
     root_path = Path(root).resolve()
     if not root_path.exists():
