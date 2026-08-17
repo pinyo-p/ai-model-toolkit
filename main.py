@@ -352,6 +352,17 @@ async def api_create_dataset(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/datasets/import")
+async def api_import_dataset(
+    file: UploadFile = File(...),
+    user: str = Depends(get_current_user),
+):
+    try:
+        return dataset_module.import_dataset_export(_datasets_root(), file.file)
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/datasets/{dataset_id}")
 async def api_get_dataset(dataset_id: str, user: str = Depends(get_current_user)):
     try:

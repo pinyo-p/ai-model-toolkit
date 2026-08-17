@@ -8,8 +8,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import shutil
+import stat
 import threading
 import uuid
 import zipfile
@@ -21,6 +23,7 @@ SCHEMA_VERSION = 2
 MAX_IMAGES = 2000
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
+MAX_EXPORT_MANIFEST_BYTES = 16 * 1024 * 1024
 DATASET_TYPES = {"person", "style", "clothing", "environment", "vehicle", "object"}
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
 _EVALUATION_IMAGE_PATTERN = re.compile(r"^eval_[a-f0-9-]{32,40}\.png$")
@@ -268,6 +271,7 @@ def create_dataset(
     dataset_type: str,
     trigger_word: str,
     uploads: list[tuple[str, object]],
+    initial_captions: list[str] | None = None,
 ) -> dict:
     name = name.strip()
     dataset_type = dataset_type.strip().lower()
@@ -278,6 +282,8 @@ def create_dataset(
         raise DatasetError(f"Unsupported dataset type: {dataset_type}")
     if not 1 <= len(uploads) <= MAX_IMAGES:
         raise DatasetError(f"Upload between 1 and {MAX_IMAGES} images")
+    if initial_captions is not None and len(initial_captions) != len(uploads):
+        raise DatasetError("Initial captions must match the uploaded images")
 
     root_path = Path(root).resolve()
     root_path.mkdir(parents=True, exist_ok=True)
@@ -304,7 +310,7 @@ def create_dataset(
     seen_hashes = {}
 
     try:
-        for original_name, source in uploads:
+        for upload_index, (original_name, source) in enumerate(uploads):
             metadata = _inspect_upload(original_name, source)
             sha256 = metadata["sha256"]
             if sha256 in seen_hashes:
@@ -321,14 +327,20 @@ def create_dataset(
             with open(images_dir / stored_name, "wb") as target:
                 shutil.copyfileobj(source, target, length=1024 * 1024)
 
+            caption_value = ""
+            if initial_captions is not None:
+                caption_value = str(initial_captions[upload_index]).strip()[:4000]
             seen_hashes[sha256] = image_id
             manifest["images"].append({
                 "id": image_id,
                 "filename": stored_name,
                 **metadata,
-                "caption": "",
-                "caption_source": "none",
+                "caption": caption_value,
+                "caption_source": "import" if caption_value else "none",
             })
+            if caption_value:
+                with open(images_dir / f"{Path(stored_name).stem}.txt", "w", encoding="utf-8") as file:
+                    file.write(caption_value + "\n")
 
         if not manifest["images"]:
             raise DatasetError("No unique valid images were uploaded")
@@ -614,6 +626,105 @@ def create_dataset_export(
             pass
         raise
     return export_manifest
+
+
+def import_dataset_export(
+    root: str | os.PathLike,
+    archive_source: object,
+) -> dict:
+    try:
+        archive_source.seek(0)
+        archive = zipfile.ZipFile(archive_source)
+    except (AttributeError, OSError, zipfile.BadZipFile) as exc:
+        raise DatasetError("Invalid dataset ZIP") from exc
+
+    opened_members = []
+    try:
+        infos = archive.infolist()
+        names = [info.filename for info in infos]
+        if len(names) != len(set(names)):
+            raise DatasetError("Dataset ZIP contains duplicate paths")
+        for name in names:
+            path = PurePosixPath(name)
+            if path.is_absolute() or ".." in path.parts or "\\" in name:
+                raise DatasetError("Dataset ZIP contains an unsafe path")
+
+        try:
+            manifest_info = archive.getinfo("dataset-export.json")
+        except KeyError as exc:
+            raise DatasetError("Dataset ZIP is missing dataset-export.json") from exc
+        if manifest_info.file_size > MAX_EXPORT_MANIFEST_BYTES:
+            raise DatasetError("Dataset export manifest is too large")
+        try:
+            exported = json.loads(archive.read(manifest_info))
+        except (json.JSONDecodeError, UnicodeDecodeError, RuntimeError, zipfile.BadZipFile) as exc:
+            raise DatasetError("Dataset export manifest is invalid") from exc
+        if not isinstance(exported, dict):
+            raise DatasetError("Dataset export manifest is invalid")
+        if exported.get("schema_version") != 1:
+            raise DatasetError("Unsupported dataset export version")
+        if not isinstance(exported.get("name"), str) or not exported["name"].strip():
+            raise DatasetError("Dataset export name is invalid")
+
+        exported_images = exported.get("images")
+        if not isinstance(exported_images, list) or not 1 <= len(exported_images) <= MAX_IMAGES:
+            raise DatasetError(f"Dataset ZIP must contain 1-{MAX_IMAGES} images")
+        uploads = []
+        captions = []
+        exported_filenames = set()
+        for record in exported_images:
+            if not isinstance(record, dict):
+                raise DatasetError("Dataset export image metadata is invalid")
+            filename = str(record.get("filename", ""))
+            if not filename or Path(filename).name != filename:
+                raise DatasetError("Dataset export image path is invalid")
+            if filename in exported_filenames:
+                raise DatasetError("Dataset export contains duplicate image records")
+            exported_filenames.add(filename)
+            member_name = f"images/{filename}"
+            try:
+                image_info = archive.getinfo(member_name)
+            except KeyError as exc:
+                raise DatasetError(f"Dataset ZIP is missing image: {filename}") from exc
+            file_type = (image_info.external_attr >> 16) & 0o170000
+            if image_info.is_dir() or file_type == stat.S_IFLNK:
+                raise DatasetError(f"Dataset ZIP image is invalid: {filename}")
+            if image_info.flag_bits & 0x1:
+                raise DatasetError("Encrypted dataset ZIP files are not supported")
+            if image_info.file_size <= 0 or image_info.file_size > MAX_IMAGE_BYTES:
+                raise DatasetError(f"Dataset ZIP image has an invalid size: {filename}")
+            try:
+                member = archive.open(image_info)
+            except (RuntimeError, zipfile.BadZipFile) as exc:
+                raise DatasetError(f"Cannot read dataset ZIP image: {filename}") from exc
+            opened_members.append(member)
+            original_name = Path(str(record.get("original_filename") or filename)).name[:255]
+            uploads.append((original_name, member))
+            captions.append(str(record.get("caption", "")))
+
+        result = create_dataset(
+            root,
+            exported["name"],
+            str(exported.get("type", "")),
+            str(exported.get("trigger_word", "")),
+            uploads,
+            initial_captions=captions,
+        )
+    except DatasetError:
+        raise
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise DatasetError(f"Cannot import dataset ZIP: {exc}") from exc
+    finally:
+        for member in opened_members:
+            member.close()
+        archive.close()
+
+    result["import_result"] = {
+        "imported": result["analysis"]["image_count"],
+        "source_dataset_id": exported.get("source_dataset_id"),
+        "source_revision": exported.get("dataset_revision"),
+    }
+    return result
 
 
 def list_datasets(root: str | os.PathLike) -> list[dict]:

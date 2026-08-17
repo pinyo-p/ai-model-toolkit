@@ -597,6 +597,11 @@
                     </div>
                     <button id="dataset-create-btn" class="btn" onclick="createDatasetWorkspace()">Create workspace</button>
                     <div id="dataset-create-status" style="font-size:12px;margin-top:10px;color:#5a7a9a;"></div>
+                    <div style="border-top:1px solid #1a2a3a;margin:16px 0 13px;padding-top:13px;">
+                        <label style="color:#8aa8bf;font-size:12px;">Restore portable dataset ZIP</label>
+                        <input id="dataset-import-file" type="file" accept=".zip,application/zip" style="margin:7px 0;">
+                        <button id="dataset-import-btn" class="btn btn-sm btn-ghost" onclick="importDatasetWorkspace()">Import ZIP</button>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -2435,6 +2440,35 @@
                 status.innerHTML = '<span class="error">' + escapeHtml(e.message) + '</span>';
             } finally {
                 button.disabled = false;
+            }
+        }
+
+        async function importDatasetWorkspace() {
+            var input = document.getElementById('dataset-import-file');
+            var file = input.files && input.files[0];
+            if (!file) { showAlert('Select an export', 'Choose a portable dataset ZIP first.'); return; }
+            var button = document.getElementById('dataset-import-btn');
+            var status = document.getElementById('dataset-create-status');
+            var formData = new FormData();
+            formData.append('file', file);
+            button.disabled = true;
+            button.textContent = 'Importing…';
+            status.innerHTML = '<span class="loading">Validating and restoring dataset…</span>';
+            try {
+                var response = await fetch('/api/datasets/import', {
+                    method:'POST', body:formData, headers:{ 'Authorization':'Basic ' + auth }
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var dataset = await response.json();
+                input.value = '';
+                status.innerHTML = '<span style="color:#69d47c;">Dataset restored with ' + dataset.analysis.image_count + ' images.</span>';
+                await loadDatasets(dataset.id);
+                await openDataset(dataset.id);
+            } catch (e) {
+                status.innerHTML = '<span class="error">' + escapeHtml(e.message) + '</span>';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Import ZIP';
             }
         }
 

@@ -230,6 +230,42 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 self.assertEqual(portable["dataset_revision"], 2)
                 self.assertNotIn("training_runs", portable)
 
+            with archive_path.open("rb") as source:
+                restored = datasets.import_dataset_export(root, source)
+            self.assertNotEqual(restored["id"], created["id"])
+            self.assertEqual(restored["name"], "Portable set")
+            self.assertEqual(restored["type"], "environment")
+            self.assertEqual(restored["trigger_word"], "room_x")
+            self.assertEqual(restored["dataset_revision"], 1)
+            self.assertEqual(restored["analysis"]["captioned_count"], 1)
+            self.assertEqual(
+                [item["sha256"] for item in restored["images"]],
+                [item["sha256"] for item in created["images"]],
+            )
+            self.assertEqual(restored["import_result"]["source_revision"], 2)
+
+    def test_dataset_import_rejects_unsafe_or_incomplete_archives(self):
+        with tempfile.TemporaryDirectory() as root:
+            unsafe = io.BytesIO()
+            with zipfile.ZipFile(unsafe, "w") as archive:
+                archive.writestr("../dataset-export.json", "{}")
+            unsafe.seek(0)
+            with self.assertRaisesRegex(datasets.DatasetError, "unsafe path"):
+                datasets.import_dataset_export(root, unsafe)
+
+            incomplete = io.BytesIO()
+            with zipfile.ZipFile(incomplete, "w") as archive:
+                archive.writestr("dataset-export.json", json.dumps({
+                    "schema_version": 1,
+                    "name": "Broken",
+                    "type": "object",
+                    "trigger_word": "broken_x",
+                    "images": [{"filename": "missing.png", "caption": ""}],
+                }))
+            incomplete.seek(0)
+            with self.assertRaisesRegex(datasets.DatasetError, "missing image"):
+                datasets.import_dataset_export(root, incomplete)
+
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:
             created = datasets.create_dataset(
@@ -335,6 +371,20 @@ class DatasetWorkspaceTests(unittest.TestCase):
 
                     listed = client.get("/api/datasets").json()["datasets"]
                     self.assertEqual([item["id"] for item in listed], [created["id"]])
+
+                    import_response = client.post(
+                        "/api/datasets/import",
+                        files={
+                            "file": (
+                                "jacket-export.zip",
+                                download_response.content,
+                                "application/zip",
+                            )
+                        },
+                    )
+                    self.assertEqual(import_response.status_code, 200, import_response.text)
+                    self.assertNotEqual(import_response.json()["id"], created["id"])
+                    self.assertEqual(import_response.json()["type"], "clothing")
 
                     image_id = created["images"][0]["id"]
                     update = client.put(
