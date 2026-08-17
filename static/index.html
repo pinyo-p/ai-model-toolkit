@@ -213,7 +213,7 @@
 
         <div class="tabs">
             <button class="tab active" onclick="showTab('generate')">🎨 Generate</button>
-            <button class="tab" onclick="showTab('batch')">⚡ Batch</button>
+            <button class="tab" onclick="showTab('batch')">🧪 Test LoRA</button>
             <button class="tab" onclick="showTab('train')">🏋️ Train LoRA</button>
             <button class="tab" onclick="showTab('merge')">🔗 Merge/Extract</button>
             <button class="tab" onclick="showTab('tools')">🔧 Tools</button>
@@ -385,8 +385,8 @@
         <div id="batch" class="panel">
             <div class="card" style="margin-bottom:12px;">
                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-                    <h2 style="margin:0;">🔄 Comparison</h2>
-                    <span style="font-size:11px;color:#666;">Prompt × (Model+LoRA) grid</span>
+                    <h2 style="margin:0;">🧪 LoRA Evaluation</h2>
+                    <span style="font-size:11px;color:#666;">Same prompt + same seed across every variant</span>
                 </div>
 
                 <div class="row" style="gap:12px;">
@@ -407,9 +407,9 @@
                     </div>
                     <div class="col" style="flex:1;">
                         <div class="form-group">
-                            <label>Model + LoRA (columns)</label>
+                            <label>Variants (columns)</label>
                             <div id="cmp-combos"></div>
-                            <button class="btn-small btn-add" onclick="addComboRow()" style="margin-top:4px;margin-bottom:4px;">+ Add Combination</button>
+                            <button class="btn-small btn-add" onclick="addComboRow()" style="margin-top:4px;margin-bottom:4px;">+ Add Variant</button>
                             <button class="btn-small btn-add" onclick="loadBatchModels()" title="Refresh model list" style="margin-top:4px;">↻ Refresh models</button>
                         </div>
                     </div>
@@ -417,7 +417,7 @@
             </div>
 
             <div class="card" style="margin-bottom:12px;">
-                <h3 style="margin:0 0 10px 0;font-size:14px;color:#ccc;">Settings</h3>
+                <h3 style="margin:0 0 10px 0;font-size:14px;color:#ccc;">Shared test settings</h3>
                 <div class="row" style="gap:8px;">
                     <div class="col">
                         <div class="form-group">
@@ -427,16 +427,12 @@
                     </div>
                 </div>
                 <div class="row" style="gap:8px;margin-top:8px;">
+                    <input type="hidden" id="batch-steps" value="20">
+                    <input type="hidden" id="batch-cfg" value="7.0">
                     <div class="col">
                         <div class="form-group">
-                            <label>Steps</label>
-                            <input type="number" id="batch-steps" value="20" min="1" max="100">
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="form-group">
-                            <label>CFG</label>
-                            <input type="number" id="batch-cfg" value="7.0" min="0" max="30" step="0.5">
+                            <label>Base Seed</label>
+                            <input type="number" id="batch-seed" value="42" min="0" max="2147483647">
                         </div>
                     </div>
                     <div class="col">
@@ -459,7 +455,7 @@
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;margin-top:12px;">
-                    <button class="btn" id="batch-btn" onclick="comparisonGenerate()" style="flex:1;">Generate Comparison</button>
+                    <button class="btn" id="batch-btn" onclick="comparisonGenerate()" style="flex:1;">Run LoRA Evaluation</button>
                 </div>
             </div>
 
@@ -483,7 +479,7 @@
             <div id="batch-warnings" style="display:none;margin:8px 0;padding:8px;background:#332200;border:1px solid #554400;border-radius:5px;font-size:12px;color:#ffaa00;"></div>
 
             <div id="batch-output" class="output" style="margin-top:12px;display:block;">
-                <span class="placeholder">Grid output will appear here</span>
+                <span class="placeholder">Evaluation results will appear here</span>
             </div>
         </div>
 
@@ -1051,7 +1047,11 @@
             document.getElementById(tab).classList.add('active');
             if (tab === 'train') loadTrainModels();
             if (tab === 'generate') { loadGenModels(); refreshLoraList(); }
-            if (tab === 'batch') loadBatchModels();
+            if (tab === 'batch') {
+                if (!document.querySelector('#cmp-combos .cmp-combo-row')) addComboRow('Base');
+                refreshLoraList();
+                loadBatchModels();
+            }
             if (tab === 'loadmodel') { browseFiles(); }
         }
 
@@ -1099,7 +1099,7 @@
                 if (!res.ok) return;
                 var data = await res.json();
                 _loraList = data.lora_files || [];
-                var selects = document.querySelectorAll('.lora-select');
+                var selects = document.querySelectorAll('.lora-select, .cmp-lora-file');
                 selects.forEach(function(sel) {
                     var val = sel.value;
                     sel.innerHTML = '<option value="">— None —</option>';
@@ -1537,33 +1537,40 @@
             rows.forEach(function(r, i) { r.querySelector('.cmp-prompt-num').textContent = 'Prompt ' + (i + 1); });
         }
 
-        function addComboRow() {
+        function addComboRow(initialLabel) {
             var container = document.getElementById('cmp-combos');
             var nums = container.querySelectorAll('.cmp-combo-row').length + 1;
             var div = document.createElement('div');
             div.className = 'cmp-combo-row';
-            div.style.cssText = 'border:1px solid #333;padding:8px;border-radius:4px;margin-bottom:8px;background:#1a1a1a;';
+            div.style.cssText = 'border:1px solid #1e3a5f;padding:10px;border-radius:8px;margin-bottom:8px;background:#0d1420;';
             div.innerHTML = '' +
                 '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;">' +
-                    '<span style="font-size:11px;color:#888;white-space:nowrap;min-width:60px;">Combo ' + nums + '</span>' +
+                    '<span class="cmp-combo-num" style="font-size:11px;color:#00d4ff;white-space:nowrap;min-width:65px;">Variant ' + nums + '</span>' +
+                    '<input class="cmp-combo-label" value="' + escapeHtml(initialLabel || (nums === 1 ? 'Base' : '')) + '" placeholder="Label (e.g. LoRA 0.8)" style="flex:1;font-size:11px;">' +
+                    '<button class="btn-small btn-del" onclick="removeComboRow(this)" style="padding:2px 6px;font-size:11px;">✕</button>' +
+                '</div>' +
+                '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px;">' +
                     '<select class="cmp-combo-model" style="flex:1;" onchange="onCmpModelChange(this)">' +
                         '<option value="">-- Model --</option>' +
                         '<option value="__custom__">Custom...</option>' +
                     '</select>' +
-                    '<button class="btn-small btn-del" onclick="removeComboRow(this)" style="padding:2px 6px;font-size:11px;">✕</button>' +
                 '</div>' +
-                '<div style="display:flex;gap:4px;margin-bottom:4px;">' +
-                    '<select class="cmp-combo-vae" style="flex:1;font-size:11px;">' +
-                        '<option value="">-- VAE (default) --</option>' +
-                    '</select>' +
-                    '<input type="text" class="cmp-combo-vae-custom" placeholder="VAE path" style="display:none;flex:1;font-size:11px;">' +
-                    '<select class="cmp-combo-te" style="flex:1;font-size:11px;display:none;">' +
-                        '<option value="">-- Text Enc (default) --</option>' +
-                    '</select>' +
-                    '<input type="text" class="cmp-combo-te-custom" placeholder="TE path" style="display:none;flex:1;font-size:11px;">' +
-                '</div>' +
+                '<input type="text" class="cmp-combo-model-custom" placeholder="Model ID or path" style="display:none;margin-bottom:4px;font-size:11px;">' +
                 '<div class="cmp-combo-loras"></div>' +
-                '<button class="btn-small btn-add" onclick="addComboLora(this)" style="margin-top:4px;">+ LoRA</button>';
+                '<div style="display:flex;gap:6px;align-items:center;margin-top:4px;">' +
+                    '<button class="btn-small btn-add" onclick="addComboLora(this)">+ LoRA</button>' +
+                    '<details style="flex:1;font-size:11px;color:#5a7a9a;">' +
+                        '<summary style="cursor:pointer;">Advanced</summary>' +
+                        '<div style="display:flex;gap:4px;margin-top:6px;">' +
+                            '<select class="cmp-combo-vae" style="flex:1;font-size:11px;"><option value="">Default VAE</option></select>' +
+                            '<select class="cmp-combo-te" style="flex:1;font-size:11px;"><option value="">Default text encoder</option></select>' +
+                        '</div>' +
+                        '<div style="display:flex;gap:4px;margin-top:4px;">' +
+                            '<label style="flex:1;font-size:10px;">Steps<input type="number" class="cmp-combo-steps" value="20" min="1" max="100" style="font-size:11px;"></label>' +
+                            '<label style="flex:1;font-size:10px;">CFG<input type="number" class="cmp-combo-cfg" value="7" min="0" max="30" step="0.5" style="font-size:11px;"></label>' +
+                        '</div>' +
+                    '</details>' +
+                '</div>';
             container.appendChild(div);
             _populateComboSelects(div);
         }
@@ -1572,7 +1579,7 @@
             var row = btn.closest('.cmp-combo-row');
             row.parentElement.removeChild(row);
             var rows = document.querySelectorAll('#cmp-combos .cmp-combo-row');
-            rows.forEach(function(r, i) { r.querySelector('span').textContent = 'Combo ' + (i + 1); });
+            rows.forEach(function(r, i) { r.querySelector('.cmp-combo-num').textContent = 'Variant ' + (i + 1); });
         }
 
         function addComboLora(btn) {
@@ -1597,13 +1604,36 @@
         }
 
         function onCmpModelChange(sel) {
-            // Placeholder for model change handling
+            var row = sel.closest('.cmp-combo-row');
+            var custom = row.querySelector('.cmp-combo-model-custom');
+            custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+
+            var selected = sel.options[sel.selectedIndex];
+            var family = (selected && selected.getAttribute('data-family')) || '';
+            var name = (sel.value || '').toLowerCase();
+            var steps = 20;
+            var cfg = 7;
+            if (name.indexOf('klein') >= 0 || name.indexOf('schnell') >= 0) {
+                steps = 4; cfg = 1;
+            } else if (family === 'zimage' || name.indexOf('z-image') >= 0 || name.indexOf('z_image') >= 0) {
+                steps = 9; cfg = 0;
+            } else if (family === 'flux2' || name.indexOf('flux.2') >= 0 || name.indexOf('flux2') >= 0) {
+                steps = 28; cfg = 4;
+            }
+            row.querySelector('.cmp-combo-steps').value = steps;
+            row.querySelector('.cmp-combo-cfg').value = cfg;
         }
 
         function _populateComboSelects(comboRow) {
             var modelSelect = comboRow.querySelector('.cmp-combo-model');
             var vaeSelect = comboRow.querySelector('.cmp-combo-vae');
             var teSelect = comboRow.querySelector('.cmp-combo-te');
+            var currentModel = modelSelect.value;
+            var currentVae = vaeSelect.value;
+            var currentTe = teSelect.value;
+            modelSelect.innerHTML = '<option value="">-- Model --</option><option value="__custom__">Custom...</option>';
+            vaeSelect.innerHTML = '<option value="">Default VAE</option>';
+            teSelect.innerHTML = '<option value="">Default text encoder</option>';
             ['batch-model', 'batch-vae', 'batch-text-encoder'].forEach(function(id) {
                 var src = document.getElementById(id);
                 if (!src) return;
@@ -1616,23 +1646,29 @@
                         var opt = document.createElement('option');
                         opt.value = o.value;
                         opt.textContent = o.text;
+                        var family = o.getAttribute('data-family');
+                        if (family) opt.setAttribute('data-family', family);
                         target.appendChild(opt);
                     }
                 }
             });
+            modelSelect.value = currentModel;
+            vaeSelect.value = currentVae;
+            teSelect.value = currentTe;
         }
 
         function _renderComparisonGrid(container, data) {
             var prompts = data.y_labels || [];
             var combos = data.x_labels || [];
             var cells = data.cells || [];
+            lastEvaluationManifest = data.experiment || null;
 
-            // Build lookup: "rowIdx,colIdx" -> images
+            // Build lookup: "rowIdx,colIdx" -> cell metadata and images
             var lookup = {};
             for (var i = 0; i < cells.length; i++) {
                 var c = cells[i];
                 var key = c.y + ',' + c.x;
-                lookup[key] = c.images;
+                lookup[key] = c;
             }
 
             var numCols = combos.length;
@@ -1643,9 +1679,12 @@
 
             // Header row
             html += '<tr>';
-            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">Prompt \\ Combo</th>';
+            html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;white-space:nowrap;">Test prompt</th>';
             for (var ci = 0; ci < numCols; ci++) {
-                html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(combos[ci])) + '</th>';
+                var variant = data.experiment && data.experiment.variants ? data.experiment.variants[ci] : null;
+                html += '<th style="padding:6px 10px;background:#1e2d3d;border:1px solid #333;text-align:center;font-weight:bold;color:#7aa2c0;">' + escapeHtml(truncateLabel(combos[ci]));
+                if (variant) html += '<div style="font-size:9px;color:#5a7a9a;margin-top:3px;">' + variant.steps + ' steps · CFG ' + variant.cfg + '</div>';
+                html += '</th>';
             }
             html += '</tr>';
 
@@ -1655,14 +1694,17 @@
                 html += '<td style="padding:6px 10px;background:#1a1a1a;border:1px solid #333;text-align:center;font-weight:bold;color:#aaa;white-space:nowrap;">' + escapeHtml(truncateLabel(prompts[ri])) + '</td>';
                 for (var ci = 0; ci < numCols; ci++) {
                     var key = ri + ',' + ci;
-                    var images = lookup[key] || [];
+                    var cell = lookup[key] || {};
+                    var images = cell.images || [];
+                    var seeds = cell.seeds || [];
 
                     html += '<td style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
                     for (var ii = 0; ii < images.length; ii++) {
                         html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
                         html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')">';
                         html += '<div style="margin-top:2px;font-size:10px;color:#666;">';
-                        html += '<a href="' + images[ii] + '" download="cmp_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">⬇</a>';
+                        html += 'seed ' + escapeHtml(String(seeds[ii] !== undefined ? seeds[ii] : '—')) + ' · ';
+                        html += '<a href="' + images[ii] + '" download="eval_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">download</a>';
                         html += '</div></div>';
                     }
                     if (images.length === 0) {
@@ -1674,11 +1716,19 @@
             }
 
             html += '</table></div>';
-            html += '<div style="margin-top:8px;text-align:center;">';
-            html += '<button class="btn-small" onclick="downloadAllXyzImages()" style="background:#2a4a4a;">📥 Download All</button>';
+            html += '<div style="margin-top:10px;text-align:center;display:flex;gap:8px;justify-content:center;">';
+            html += '<button class="btn-small" onclick="downloadAllXyzImages()" style="background:#2a4a4a;">📥 Download images</button>';
+            html += '<button class="btn-small" onclick="downloadEvaluationManifest()" style="background:#1e3a5f;">📋 Download test config</button>';
             html += '</div>';
 
             container.innerHTML = html;
+        }
+
+        var currentEvaluationId = null;
+        var lastEvaluationManifest = null;
+
+        function wait(ms) {
+            return new Promise(function(resolve) { setTimeout(resolve, ms); });
         }
 
         async function comparisonGenerate() {
@@ -1707,7 +1757,8 @@
                 var teSel = row.querySelector('.cmp-combo-te');
                 if (!modelSel.value) return; // skip incomplete combos
 
-                var modelPath = modelSel.value === '__custom__' ? '' : modelSel.value;
+                var modelPath = modelSel.value === '__custom__' ? row.querySelector('.cmp-combo-model-custom').value.trim() : modelSel.value;
+                if (!modelPath) return;
                 var vaePath = vaeSel.value;
                 var tePath = teSel.value;
 
@@ -1725,11 +1776,14 @@
                 });
 
                 combos.push({
+                    label: row.querySelector('.cmp-combo-label').value.trim(),
                     model: modelPath,
                     vae: vaePath,
                     te: tePath,
                     loraIndices: loraIndices,
-                    loraWeights: loraWeights
+                    loraWeights: loraWeights,
+                    steps: parseInt(row.querySelector('.cmp-combo-steps').value) || 20,
+                    cfg: parseFloat(row.querySelector('.cmp-combo-cfg').value)
                 });
             });
             if (combos.length === 0) { showAlert('No Combos', 'Add at least one Model+LoRA combination.'); return; }
@@ -1745,10 +1799,12 @@
             batchBtn.disabled = true;
             batchBtn.textContent = 'Generating...';
             progress.style.display = 'block';
-            progressBar.style.animation = 'progressPulse 1.5s ease-in-out infinite';
-            progressBar.style.width = '5%';
+            progressBar.style.animation = 'none';
+            progressBar.style.width = '0%';
             progressText.textContent = 'Starting...';
             progressCount.textContent = '0/' + totalImages + ' images';
+            document.getElementById('batch-cancel-btn').style.display = 'inline-block';
+            document.getElementById('batch-cancel-btn').disabled = false;
             output.innerHTML = '<span class="loading">Generating grid...</span>';
             warningsEl.style.display = 'none';
             batchLogEntries = [];
@@ -1768,6 +1824,7 @@
             formData.append('width', document.getElementById('batch-width').value);
             formData.append('height', document.getElementById('batch-height').value);
             formData.append('count', count);
+            formData.append('seed', document.getElementById('batch-seed').value || '42');
 
             // Send LoRA paths as JSON (from dropdown)
             if (allLoraFiles.length > 0) {
@@ -1775,9 +1832,34 @@
             }
 
             try {
-                var res = await fetch('/api/comparison_generate', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
+                var res = await fetch('/api/comparison_generate_async', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
                 if (!res.ok) throw new Error(await res.text());
-                var data = await res.json();
+                var started = await res.json();
+                currentEvaluationId = started.evaluation_id;
+
+                var status;
+                while (true) {
+                    await wait(500);
+                    var progressRes = await fetch('/api/comparison_progress?evaluation_id=' + encodeURIComponent(currentEvaluationId), {
+                        headers: { 'Authorization': 'Basic ' + auth }
+                    });
+                    if (!progressRes.ok) throw new Error(await progressRes.text());
+                    status = await progressRes.json();
+                    var completed = status.completed || 0;
+                    var amount = status.total || totalImages;
+                    progressBar.style.width = Math.round((completed / Math.max(amount, 1)) * 100) + '%';
+                    progressText.textContent = status.message || 'Running evaluation...';
+                    progressCount.textContent = completed + '/' + amount + ' images';
+                    if (status.status === 'done') break;
+                    if (status.status === 'cancelled') throw new Error('Evaluation cancelled');
+                    if (status.status === 'error') throw new Error(status.message || 'Evaluation failed');
+                }
+
+                var resultRes = await fetch('/api/comparison_result?evaluation_id=' + encodeURIComponent(currentEvaluationId), {
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                if (!resultRes.ok) throw new Error(await resultRes.text());
+                var data = await resultRes.json();
 
                 progressBar.style.animation = 'none';
                 progressBar.style.width = '100%';
@@ -1797,8 +1879,22 @@
                 appendBatchLog('❌ Error: ' + e.message, t0, false);
             }
 
+            currentEvaluationId = null;
+            document.getElementById('batch-cancel-btn').style.display = 'none';
+            document.getElementById('batch-cancel-btn').disabled = false;
             batchBtn.disabled = false;
-            batchBtn.textContent = 'Generate Comparison';
+            batchBtn.textContent = 'Run LoRA Evaluation';
+        }
+
+        function downloadEvaluationManifest() {
+            if (!lastEvaluationManifest) return;
+            var blob = new Blob([JSON.stringify(lastEvaluationManifest, null, 2)], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement('a');
+            link.href = url;
+            link.download = 'lora-evaluation.json';
+            link.click();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
         }
 
         var _xyzAllUrls = [];
@@ -1826,8 +1922,21 @@
             return s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ');
         }
 
-        function cancelBatchGeneration() {
-            // XYZ generate is synchronous, cannot cancel mid-request
+        async function cancelBatchGeneration() {
+            if (!currentEvaluationId) return;
+            var formData = new FormData();
+            formData.append('evaluation_id', currentEvaluationId);
+            try {
+                await fetch('/api/comparison_cancel', {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'Authorization': 'Basic ' + auth }
+                });
+                document.getElementById('batch-progress-text').textContent = 'Cancelling...';
+                document.getElementById('batch-cancel-btn').disabled = true;
+            } catch (e) {
+                appendBatchLog('Cancel failed: ' + e.message, Date.now(), false);
+            }
         }
 
         var BATCH_FAMILY_LABELS = {

@@ -35,6 +35,11 @@ _gen_lock = threading.Lock()
 _gen_cancel_events: dict = {}
 _gen_cancel_lock = threading.Lock()
 
+_evaluation_progress: dict = {}
+_evaluation_lock = threading.Lock()
+_evaluation_cancel_events: dict = {}
+_evaluation_cancel_lock = threading.Lock()
+
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
 def init_db():
@@ -656,6 +661,15 @@ async def api_active_jobs(user: str = Depends(get_current_user)):
                     "status": data.get("status"),
                     "message": data.get("message", ""),
                 })
+    with _evaluation_lock:
+        for evaluation_id, data in _evaluation_progress.items():
+            if data.get("status") in {"pending", "running", "cancelling"}:
+                jobs.append({
+                    "type": "evaluation",
+                    "id": evaluation_id,
+                    "status": data.get("status"),
+                    "message": data.get("message", ""),
+                })
     return {"jobs": jobs}
 
 
@@ -903,12 +917,183 @@ async def api_xyz_generate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _resolve_comparison_config(prompts_json, combos_json, lora_paths_json, steps, cfg, count):
+    try:
+        prompts_list = json.loads(prompts_json)
+        combos_list = json.loads(combos_json)
+        available_loras = json.loads(lora_paths_json) if lora_paths_json else []
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid evaluation configuration: {exc}")
+
+    prompts_list = [str(prompt).strip() for prompt in prompts_list if str(prompt).strip()]
+    if not prompts_list:
+        raise HTTPException(status_code=400, detail="At least one prompt required.")
+    if not combos_list:
+        raise HTTPException(status_code=400, detail="At least one variant required.")
+    if len(prompts_list) > 100 or len(combos_list) > 100:
+        raise HTTPException(status_code=400, detail="Maximum 100 prompts and 100 variants.")
+    if count < 1 or count > 16:
+        raise HTTPException(status_code=400, detail="Images per cell must be between 1 and 16.")
+    if len(prompts_list) * len(combos_list) * count > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 images per evaluation.")
+
+    resolved_combos = []
+    for combo in combos_list:
+        model_path = str(combo.get("model", "")).strip()
+        if not model_path:
+            raise HTTPException(status_code=400, detail="Every variant must select a model.")
+
+        lora_paths = []
+        lora_weights = []
+        indices = combo.get("loraIndices", [])
+        weights = combo.get("loraWeights", [])
+        for position, raw_index in enumerate(indices):
+            index = int(raw_index)
+            if index < 0 or index >= len(available_loras):
+                raise HTTPException(status_code=400, detail="A variant references an unknown LoRA.")
+            path = str(available_loras[index])
+            if not os.path.isfile(path):
+                raise HTTPException(status_code=400, detail=f"LoRA file not found: {path}")
+            lora_paths.append(path)
+            lora_weights.append(float(weights[position]) if position < len(weights) else 1.0)
+
+        combo_steps = int(combo.get("steps") or steps)
+        combo_cfg = float(combo.get("cfg") if combo.get("cfg") is not None else cfg)
+        if combo_steps < 1 or combo_steps > 100:
+            raise HTTPException(status_code=400, detail="Variant steps must be between 1 and 100.")
+
+        resolved_combos.append({
+            "label": str(combo.get("label", "")).strip(),
+            "model_path": model_path,
+            "vae_path": str(combo.get("vae", "")).strip() or None,
+            "text_encoder_path": str(combo.get("te", "")).strip() or None,
+            "lora_paths": lora_paths or None,
+            "lora_weights": lora_weights or None,
+            "steps": combo_steps,
+            "cfg": combo_cfg,
+        })
+
+    return prompts_list, resolved_combos
+
+
+def _comparison_manifest(prompts, combos, negative, width, height, count, seed):
+    return {
+        "version": 1,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "base_seed": seed,
+        "images_per_cell": count,
+        "width": width,
+        "height": height,
+        "negative_prompt": negative,
+        "prompts": prompts,
+        "seeds_by_prompt": [
+            [seed + (prompt_index * count) + repeat for repeat in range(count)]
+            for prompt_index in range(len(prompts))
+        ],
+        "variants": [
+            {
+                "label": combo.get("label", ""),
+                "model": combo["model_path"],
+                "vae": combo.get("vae_path"),
+                "text_encoder": combo.get("text_encoder_path"),
+                "loras": [
+                    {"path": path, "weight": weight}
+                    for path, weight in zip(combo.get("lora_paths") or [], combo.get("lora_weights") or [])
+                ],
+                "steps": combo["steps"],
+                "cfg": combo["cfg"],
+            }
+            for combo in combos
+        ],
+    }
+
+
+def _serialize_comparison_cells(cells):
+    result_cells = []
+    for cell in cells:
+        urls = []
+        for image in cell["images"]:
+            filename = f"eval_{uuid.uuid4()}.png"
+            image.save(os.path.join(OUTPUT_DIR, filename), format="PNG")
+            urls.append(f"/output/{filename}")
+        result_cells.append({
+            "x": cell["x"],
+            "y": cell["y"],
+            "images": urls,
+            "seeds": cell.get("seeds", []),
+            "steps": cell.get("steps"),
+            "cfg": cell.get("cfg"),
+        })
+    return result_cells
+
+
+def _set_evaluation_progress(evaluation_id, **updates):
+    with _evaluation_lock:
+        _evaluation_progress.setdefault(evaluation_id, {}).update(updates)
+
+
+def _run_comparison_evaluation(
+    evaluation_id, prompts, combos, negative, width, height, count, seed, manifest
+):
+    with _evaluation_cancel_lock:
+        cancel_event = _evaluation_cancel_events.setdefault(evaluation_id, threading.Event())
+    started_at = time.time()
+    total = len(prompts) * len(combos) * count
+    _set_evaluation_progress(
+        evaluation_id, status="running", message="Loading first variant...",
+        completed=0, total=total, started_at=started_at,
+    )
+    try:
+        cells, labels = sdxl.comparison_generate(
+            prompts,
+            combos,
+            negative=negative,
+            width=width,
+            height=height,
+            count=count,
+            seed=seed,
+            progress_cb=lambda done, amount: _set_evaluation_progress(
+                evaluation_id,
+                status="running",
+                message=f"Generated {done}/{amount} images",
+                completed=done,
+                total=amount,
+            ),
+            cancel_event=cancel_event,
+        )
+        if cancel_event.is_set():
+            _set_evaluation_progress(evaluation_id, status="cancelled", message="Evaluation cancelled")
+            return
+
+        result = {
+            "cells": _serialize_comparison_cells(cells),
+            "x_labels": labels,
+            "y_labels": prompts,
+            "experiment": manifest,
+        }
+        _set_evaluation_progress(
+            evaluation_id,
+            status="done",
+            message="Evaluation complete",
+            completed=total,
+            total=total,
+            elapsed=time.time() - started_at,
+            result=result,
+        )
+    except sdxl.CancelGeneration:
+        _set_evaluation_progress(evaluation_id, status="cancelled", message="Evaluation cancelled")
+    except Exception as exc:
+        _set_evaluation_progress(evaluation_id, status="error", message=str(exc))
+    finally:
+        with _evaluation_cancel_lock:
+            _evaluation_cancel_events.pop(evaluation_id, None)
+
+
 @app.post("/api/comparison_generate")
 async def api_comparison_generate(
     user: str = Depends(get_current_user),
     prompts: str = Form(...),
     combos: str = Form(...),
-    lora_file: List[UploadFile] = File(None),
     lora_paths_json: str = Form("[]"),
     negative: str = Form(""),
     steps: int = Form(20),
@@ -916,82 +1101,107 @@ async def api_comparison_generate(
     width: int = Form(1024),
     height: int = Form(1024),
     count: int = Form(1),
+    seed: int = Form(42),
 ):
-    try:
-        prompts_list = json.loads(prompts)
-        combos_list = json.loads(combos)
+    prompts_list, resolved_combos = _resolve_comparison_config(
+        prompts, combos, lora_paths_json, steps, cfg, count
+    )
+    cells, combo_labels = sdxl.comparison_generate(
+        prompts_list,
+        resolved_combos,
+        negative=negative,
+        width=width,
+        height=height,
+        count=count,
+        seed=seed,
+    )
+    return JSONResponse({
+        "cells": _serialize_comparison_cells(cells),
+        "x_labels": combo_labels,
+        "y_labels": prompts_list,
+        "experiment": _comparison_manifest(
+            prompts_list, resolved_combos, negative, width, height, count, seed
+        ),
+    })
 
-        if not prompts_list:
-            raise HTTPException(status_code=400, detail="At least one prompt required.")
-        if not combos_list:
-            raise HTTPException(status_code=400, detail="At least one combo required.")
 
-        # Resolve LoRA paths from dropdown or uploads
-        weight_list_dummy = []
-        saved_lora_paths = _resolve_lora_paths(lora_paths_json, weight_list_dummy)
-        if not saved_lora_paths and lora_file:
-            for f in lora_file:
-                data = await f.read()
-                path = os.path.join(temp_dir, f"{uuid.uuid4()}.safetensors")
-                with open(path, "wb") as fh:
-                    fh.write(data)
-                saved_lora_paths.append(path)
+@app.post("/api/comparison_generate_async")
+async def api_comparison_generate_async(
+    user: str = Depends(get_current_user),
+    prompts: str = Form(...),
+    combos: str = Form(...),
+    lora_paths_json: str = Form("[]"),
+    negative: str = Form(""),
+    steps: int = Form(20),
+    cfg: float = Form(7.0),
+    width: int = Form(1024),
+    height: int = Form(1024),
+    count: int = Form(1),
+    seed: int = Form(42),
+):
+    prompts_list, resolved_combos = _resolve_comparison_config(
+        prompts, combos, lora_paths_json, steps, cfg, count
+    )
+    if width < 64 or height < 64 or width > 4096 or height > 4096:
+        raise HTTPException(status_code=400, detail="Width and height must be between 64 and 4096.")
 
-        # Resolve combos with actual LoRA file paths
-        resolved_combos = []
-        for i, combo in enumerate(combos_list):
-            lora_paths = []
-            lora_weights = []
-            for idx in combo.get("loraIndices", []):
-                if idx < len(saved_lora_paths):
-                    lora_paths.append(saved_lora_paths[idx])
-            for w in combo.get("loraWeights", []):
-                lora_weights.append(float(w))
-            # Pad weights if needed
-            while len(lora_weights) < len(lora_paths):
-                lora_weights.append(1.0)
-            resolved_combos.append({
-                'model_path': combo.get('model', '') or "stabilityai/stable-diffusion-xl-base-1.0",
-                'vae_path': combo.get('vae', '') or None,
-                'text_encoder_path': combo.get('te', '') or None,
-                'lora_paths': lora_paths or None,
-                'lora_weights': lora_weights or None,
-            })
+    evaluation_id = str(uuid.uuid4())
+    manifest = _comparison_manifest(
+        prompts_list, resolved_combos, negative, width, height, count, seed
+    )
+    _set_evaluation_progress(
+        evaluation_id, status="pending", message="Queued", completed=0,
+        total=len(prompts_list) * len(resolved_combos) * count,
+    )
+    with _evaluation_cancel_lock:
+        _evaluation_cancel_events[evaluation_id] = threading.Event()
+    thread = threading.Thread(
+        target=_run_comparison_evaluation,
+        args=(
+            evaluation_id, prompts_list, resolved_combos, negative,
+            width, height, count, seed, manifest,
+        ),
+        daemon=True,
+    )
+    thread.start()
+    return {"evaluation_id": evaluation_id, "status": "started"}
 
-        cells, combo_labels = sdxl.comparison_generate(
-            prompts_list, resolved_combos,
-            negative=negative, steps=steps, cfg=cfg,
-            width=width, height=height, count=count,
-        )
 
-        # Clean up temp LoRA files
-        _cleanup_temp_loras(saved_lora_paths, temp_dir)
+@app.get("/api/comparison_progress")
+async def api_comparison_progress(
+    evaluation_id: str = Query(...), user: str = Depends(get_current_user)
+):
+    with _evaluation_lock:
+        data = _evaluation_progress.get(evaluation_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+        return {key: value for key, value in data.items() if key != "result"}
 
-        # Save images and build response
-        result_cells = []
-        for cell in cells:
-            urls = []
-            for img in cell['images']:
-                fname = f"cmp_{uuid.uuid4()}.png"
-                fpath = os.path.join(OUTPUT_DIR, fname)
-                img.save(fpath, format='PNG')
-                urls.append(f"/output/{fname}")
-            result_cells.append({
-                'x': cell['x'],
-                'y': cell['y'],
-                'images': urls,
-            })
 
-        return JSONResponse({
-            'cells': result_cells,
-            'x_labels': combo_labels,
-            'y_labels': prompts_list,
-        })
+@app.get("/api/comparison_result")
+async def api_comparison_result(
+    evaluation_id: str = Query(...), user: str = Depends(get_current_user)
+):
+    with _evaluation_lock:
+        data = _evaluation_progress.get(evaluation_id)
+        if data is None:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+        if data.get("status") != "done":
+            raise HTTPException(status_code=409, detail="Evaluation is not complete")
+        return data["result"]
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/comparison_cancel")
+async def api_comparison_cancel(
+    evaluation_id: str = Form(...), user: str = Depends(get_current_user)
+):
+    with _evaluation_cancel_lock:
+        event = _evaluation_cancel_events.get(evaluation_id)
+    if event is None:
+        return {"status": "not_found"}
+    event.set()
+    _set_evaluation_progress(evaluation_id, status="cancelling", message="Cancelling...")
+    return {"status": "cancelling"}
 
 
 @app.post("/api/lora_info")

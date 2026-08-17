@@ -6,6 +6,8 @@ from PIL import Image
 import os
 import struct
 import json
+import threading
+from functools import wraps
 
 from safetensors.torch import load_file as safetensors_load_file
 from .zimage import load_zimage_pipeline
@@ -13,10 +15,88 @@ from .flux2 import load_base_flux2_and_swap_weights
 
 
 _pipelines = {}
+_inference_lock = threading.RLock()
 
 
 class CancelGeneration(Exception):
     pass
+
+
+def _serialized_inference(function):
+    """Protect cached pipelines and their mutable LoRA state across background jobs."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _inference_lock:
+            return function(*args, **kwargs)
+    return wrapped
+
+
+def _reset_pipeline_loras(pipeline):
+    """Remove adapters loaded by a previous generation from a cached pipeline."""
+    had_adapters = bool(getattr(pipeline, "_ai_toolkit_lora_adapters", []))
+
+    if hasattr(pipeline, "unload_lora_weights"):
+        try:
+            pipeline.unload_lora_weights()
+            pipeline._ai_toolkit_lora_adapters = []
+            return
+        except Exception:
+            # Some pipeline implementations expose the method but do not support it.
+            pass
+
+    if had_adapters and hasattr(pipeline, "delete_adapters"):
+        try:
+            pipeline.delete_adapters(pipeline._ai_toolkit_lora_adapters)
+            pipeline._ai_toolkit_lora_adapters = []
+            return
+        except Exception:
+            pass
+
+    if had_adapters:
+        raise RuntimeError(
+            "This pipeline cannot remove the LoRA from the previous run. "
+            "Unload the model before evaluating another variant."
+        )
+
+    if hasattr(pipeline, "disable_lora"):
+        try:
+            pipeline.disable_lora()
+        except Exception:
+            pass
+
+
+def _configure_pipeline_loras(pipeline, lora_paths=None, lora_weights=None):
+    """Reset cached adapter state, then load exactly the requested LoRAs."""
+    _reset_pipeline_loras(pipeline)
+
+    requested = []
+    supplied_weights = list(lora_weights or [])
+    for index, path in enumerate(lora_paths or []):
+        if path and os.path.exists(path):
+            weight = supplied_weights[index] if index < len(supplied_weights) else 1.0
+            requested.append((path, float(weight)))
+
+    if not requested:
+        return []
+    if not hasattr(pipeline, "load_lora_weights") or not hasattr(pipeline, "set_adapters"):
+        raise RuntimeError("The selected model pipeline does not support LoRA adapters.")
+
+    adapter_names = []
+    adapter_weights = []
+    for index, (path, weight) in enumerate(requested):
+        adapter_name = f"ai_toolkit_lora_{index}"
+        pipeline.load_lora_weights(
+            os.path.dirname(path) or ".",
+            weight_name=os.path.basename(path),
+            adapter_name=adapter_name,
+            ignore_mismatched_sizes=True,
+        )
+        adapter_names.append(adapter_name)
+        adapter_weights.append(weight)
+
+    pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+    pipeline._ai_toolkit_lora_adapters = adapter_names
+    return adapter_names
 
 
 def _read_safetensors_meta(path: str):
@@ -278,6 +358,7 @@ def _get_pipeline(
     return pipeline
 
 
+@_serialized_inference
 def sdxl_generate(
     prompt: str,
     negative: str = "",
@@ -295,24 +376,15 @@ def sdxl_generate(
     cancel_event=None,
     on_message=None,
     on_progress=None,
+    configure_loras: bool = True,
 ) -> Image.Image:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipeline = _get_pipeline(model_path, vae_path, text_encoder_path, on_message=on_message, on_progress=on_progress)
 
     generator = torch.Generator(device=device).manual_seed(seed)
 
-    if lora_paths:
-        for i, (lp, lw) in enumerate(zip(lora_paths, lora_weights or [])):
-            if lp and os.path.exists(lp):
-                pipeline.load_lora_weights(
-                    os.path.dirname(lp) or ".",
-                    weight_name=os.path.basename(lp),
-                    adapter_name=f"lora_{i}",
-                    ignore_mismatched_sizes=True,
-                )
-        adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
-        adapter_weights = lora_weights or [1.0] * len(lora_paths)
-        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+    if configure_loras:
+        _configure_pipeline_loras(pipeline, lora_paths, lora_weights)
 
     def _step_cb(pipeline, step_index, timestep, callback_kwargs):
         if cancel_event and cancel_event.is_set():
@@ -345,6 +417,7 @@ def sdxl_generate(
     return image
 
 
+@_serialized_inference
 def sdxl_generate_parallel(
     prompts: list[str],
     negative: str = "",
@@ -371,18 +444,7 @@ def sdxl_generate_parallel(
 
     generators = [torch.Generator(device=device).manual_seed(s) for s in seeds]
 
-    if lora_paths:
-        for i, (lp, lw) in enumerate(zip(lora_paths, lora_weights or [])):
-            if lp and os.path.exists(lp):
-                pipeline.load_lora_weights(
-                    os.path.dirname(lp) or ".",
-                    weight_name=os.path.basename(lp),
-                    adapter_name=f"lora_{i}",
-                    ignore_mismatched_sizes=True,
-                )
-        adapter_names = [f"lora_{i}" for i in range(len(lora_paths))]
-        adapter_weights = lora_weights or [1.0] * len(lora_paths)
-        pipeline.set_adapters(adapter_names, adapter_weights=adapter_weights)
+    _configure_pipeline_loras(pipeline, lora_paths, lora_weights)
 
     def _step_cb(pipeline, step_index, timestep, callback_kwargs):
         if cancel_event and cancel_event.is_set():
@@ -546,11 +608,10 @@ def comparison_generate(
     width: int = 1024,
     height: int = 1024,
     count: int = 1,
+    seed: int = 42,
     progress_cb=None,
     cancel_event=None,
 ) -> tuple[list[dict], list[str]]:
-    import random as _random
-
     cells = []
     total = len(prompts) * len(combos) * count
     done = 0
@@ -559,18 +620,25 @@ def comparison_generate(
     for c in combos:
         parts = [os.path.basename(c['model_path'])]
         if c.get('lora_paths'):
-            for lp in c['lora_paths']:
-                parts.append(os.path.basename(lp).replace('.safetensors', ''))
-        combo_labels.append(' + '.join(parts))
+            weights = c.get('lora_weights') or []
+            for index, lp in enumerate(c['lora_paths']):
+                weight = weights[index] if index < len(weights) else 1.0
+                lora_name = os.path.basename(lp).replace('.safetensors', '')
+                parts.append(f"{lora_name} ({float(weight):g})")
+        combo_labels.append(c.get('label') or ' + '.join(parts))
 
     for ci, combo in enumerate(combos):
         for pi, prompt in enumerate(prompts):
             cell_images = []
-            for _ in range(count):
+            cell_seeds = []
+            combo_steps = int(combo.get('steps', steps))
+            combo_cfg = float(combo.get('cfg', cfg))
+            for repeat_index in range(count):
                 if cancel_event and cancel_event.is_set():
                     return cells, combo_labels
 
-                seed = _random.randint(0, 2147483647)
+                # The same prompt/repeat uses the same initial noise for every variant.
+                image_seed = seed + (pi * count) + repeat_index
                 img = sdxl_generate(
                     prompt=prompt,
                     negative=negative,
@@ -579,19 +647,27 @@ def comparison_generate(
                     model_path=combo['model_path'],
                     vae_path=combo.get('vae_path'),
                     text_encoder_path=combo.get('text_encoder_path'),
-                    steps=steps,
-                    cfg=cfg,
-                    seed=seed,
+                    steps=combo_steps,
+                    cfg=combo_cfg,
+                    seed=image_seed,
                     width=width,
                     height=height,
-                    progress_cb=progress_cb,
                     cancel_event=cancel_event,
+                    configure_loras=(pi == 0 and repeat_index == 0),
                 )
                 cell_images.append(img)
+                cell_seeds.append(image_seed)
                 done += 1
                 if progress_cb:
                     progress_cb(done, total)
 
-            cells.append({'x': ci, 'y': pi, 'images': cell_images})
+            cells.append({
+                'x': ci,
+                'y': pi,
+                'images': cell_images,
+                'seeds': cell_seeds,
+                'steps': combo_steps,
+                'cfg': combo_cfg,
+            })
 
     return cells, combo_labels

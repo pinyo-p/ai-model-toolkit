@@ -22,9 +22,9 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), L
 | Tab | Feature | Description |
 |-----|---------|-------------|
 | Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
-| Batch | **Batch Generate** | Multiple prompts → ZIP download |
-| Train | **Train LoRA** | 5-50 images, auto-caption (BLIP + metadata), select base model from local models |
-| Train | **Image to LoRA** | Quick LoRA from 1-3 images |
+| Test LoRA | **LoRA Evaluation** | Deterministic Prompt × Variant grid with matched seeds, per-variant settings, progress/cancel, and a downloadable test manifest |
+| Train | **Train LoRA (prototype)** | Current UI scaffold for dataset training; the training engine is not production-ready yet |
+| Train | **Image to LoRA (prototype)** | Planned quick workflow that expands 1-5 source images into a reviewed training dataset |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
 | Load Model | **File Manager** | Browse directories, upload (drag & drop), rename, create/delete dirs and files |
@@ -93,6 +93,10 @@ Default login: `admin` / `admin` (change in Settings)
 | GET | `/api/gpu` | GPU info (VRAM, CUDA) |
 | POST | `/api/generate` | Generate image |
 | POST | `/api/batch_generate` | Batch generate (ZIP) |
+| POST | `/api/comparison_generate_async` | Start a deterministic LoRA evaluation job |
+| GET | `/api/comparison_progress` | Poll LoRA evaluation progress |
+| GET | `/api/comparison_result` | Get a completed evaluation grid + reproducible manifest |
+| POST | `/api/comparison_cancel` | Cancel an active evaluation |
 | POST | `/api/image2lora` | LoRA from 1-3 images |
 | POST | `/api/train_lora` | LoRA from 5-50 images |
 | POST | `/api/merge_lora` | Merge LoRA files |
@@ -126,7 +130,7 @@ Default login: `admin` / `admin` (change in Settings)
 ai-toolkit/
 ├── main.py              # FastAPI app, all endpoints (browse/upload/rename/download)
 ├── core/
-│   ├── sdxl.py          # SDXL / z-Image generation (model detection + dispatch)
+│   ├── sdxl.py          # Generation dispatch + deterministic LoRA evaluation
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation
 │   ├── lora.py          # LoRA train/merge/extract
