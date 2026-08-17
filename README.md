@@ -49,6 +49,7 @@ expanded and reviewed.
 | Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
+| Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
@@ -66,6 +67,7 @@ expanded and reviewed.
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
 - Disk and VRAM requirements vary significantly by family; Krea 2 is a large (~12B parameter) pipeline
+- Reference expansion downloads `Qwen/Qwen-Image-Edit-2509` on first use and requires CUDA; the editor is released after each batch before training
 
 ## Quick Start
 
@@ -130,6 +132,11 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
 | GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |
 | POST | `/api/datasets/caption-cancel/{job_id}` | Cancel dataset captioning |
+| POST | `/api/datasets/{id}/expansion` | Start reference-guided dataset candidate generation |
+| GET | `/api/expansion/{job_id}` | Poll expansion progress and generated candidate metadata |
+| POST | `/api/expansion/{job_id}/cancel` | Cancel expansion at the next diffusion step |
+| GET | `/api/datasets/{id}/expansion/{run_id}/candidates/{candidate_id}` | View an authenticated candidate image |
+| POST | `/api/datasets/{id}/expansion/{run_id}/review` | Accept or reject selected candidates |
 | GET | `/api/datasets/{id}/training-recipe` | Preview a Fast/Balanced/Quality Krea 2 recipe |
 | POST | `/api/datasets/{id}/training` | Start official Krea 2 Raw LoRA training |
 | GET | `/api/training/{job_id}` | Poll training steps, loss, log, and output path |
@@ -168,6 +175,7 @@ ai-toolkit/
 │   ├── sdxl.py          # Generation dispatch + deterministic LoRA evaluation
 │   ├── runtimes.py      # Model-family detection, loaders, and generation defaults
 │   ├── datasets.py      # Persistent dataset manifests, validation, captions, readiness
+│   ├── expansion.py     # Qwen Image Edit candidate recipes and inference adapter
 │   ├── training.py      # Simple recipes + pinned official Krea 2 trainer adapter
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation

@@ -166,6 +166,15 @@
         .training-progress-track { height:6px;background:#172331;border-radius:99px;overflow:hidden;margin:9px 0; }
         .training-progress-fill { height:100%;width:0;background:linear-gradient(90deg,#00a8d6,#67e8f9);transition:width .3s; }
         .training-log { max-height:190px;overflow:auto;background:#070b11;border:1px solid #162331;border-radius:7px;padding:10px;color:#708da5;font:11px/1.55 monospace;white-space:pre-wrap;margin-top:10px; }
+        .expansion-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:12px; }
+        .expansion-card { position:relative;background:#101925;border:1px solid #1a2a3a;border-radius:9px;overflow:hidden; }
+        .expansion-card.pending:has(input:checked) { border-color:#00d4ff;box-shadow:0 0 0 1px rgba(0,212,255,.25); }
+        .expansion-card img { width:100%;aspect-ratio:1/1;object-fit:cover;background:#080d13;display:block; }
+        .expansion-card-meta { padding:8px;color:#6f8da5;font-size:10px;line-height:1.35; }
+        .expansion-card-select { position:absolute;top:7px;left:7px;width:18px;height:18px;accent-color:#00d4ff; }
+        .expansion-card-status { position:absolute;top:7px;right:7px;padding:3px 6px;border-radius:99px;background:rgba(5,10,16,.82);color:#9cb6ca;font-size:9px;text-transform:uppercase; }
+        .expansion-card.accepted { border-color:#285b34;opacity:.68; }
+        .expansion-card.rejected,.expansion-card.duplicate { opacity:.4; }
 
         /* Drop zone */
         .drop-zone { border: 2px dashed #1a2a3a; border-radius: 10px; padding: 30px; text-align: center; color: #3a5a7a; transition: all 0.2s; cursor: pointer; }
@@ -212,6 +221,7 @@
             .dataset-layout { grid-template-columns:1fr; }
             .dataset-metrics { grid-template-columns:repeat(2,1fr); }
             .training-recipe-grid { grid-template-columns:repeat(2,1fr); }
+            .expansion-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
         #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
         .toast { background: #1a2a1a; color: #4caf50; padding: 10px 18px; border-radius: 8px; font-size: 13px; border: 1px solid #2a4a2a; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards; pointer-events: auto; }
@@ -588,9 +598,36 @@
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
+                    <button id="dataset-expansion-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetExpansion()">Generate candidates</button>
                     <button id="dataset-training-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetTraining()">Configure Krea 2 training</button>
                 </div>
                 <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
+                <div id="dataset-expansion-panel" class="training-panel" style="display:none;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <div style="color:#e8f4ff;font-weight:650;">Reference-image expansion</div>
+                            <div style="color:#55748d;font-size:11px;margin-top:3px;">Qwen Image Edit Plus · candidates stay separate until you accept them · first run downloads the editor</div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:flex-end;">
+                            <div><label style="font-size:10px;margin-bottom:3px;">Candidates</label><select id="dataset-expansion-count" style="width:105px;padding:7px 9px;font-size:12px;"><option value="4">4</option><option value="8" selected>8</option><option value="12">12</option><option value="24">24</option></select></div>
+                            <div><label style="font-size:10px;margin-bottom:3px;">Seed</label><input id="dataset-expansion-seed" type="number" value="42" min="0" max="2147483623" style="width:105px;padding:7px 9px;font-size:12px;"></div>
+                        </div>
+                    </div>
+                    <div id="dataset-expansion-message" style="font-size:12px;color:#6f8da5;margin:10px 0;">Best for 1–5 source images. Uses up to three references per candidate.</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="dataset-expansion-start" class="btn btn-sm" onclick="startDatasetExpansion()">Generate candidates</button>
+                        <button id="dataset-expansion-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetExpansion()" style="display:none;">Cancel generation</button>
+                    </div>
+                    <div id="dataset-expansion-progress" style="display:none;margin-top:13px;">
+                        <div style="display:flex;justify-content:space-between;color:#7fa0b8;font-size:11px;"><span id="dataset-expansion-progress-text">Preparing…</span><span id="dataset-expansion-progress-count"></span></div>
+                        <div class="training-progress-track"><div id="dataset-expansion-progress-fill" class="training-progress-fill"></div></div>
+                    </div>
+                    <div id="dataset-expansion-candidates" class="expansion-grid"></div>
+                    <div id="dataset-expansion-review" style="display:none;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                        <button class="btn btn-sm btn-success" onclick="reviewDatasetCandidates('accept')">Accept selected</button>
+                        <button class="btn btn-sm btn-danger" onclick="reviewDatasetCandidates('reject')">Reject selected</button>
+                    </div>
+                </div>
                 <div id="dataset-training-panel" class="training-panel" style="display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                         <div>
@@ -2136,10 +2173,16 @@
         }
 
         var activeDatasetId = '';
+        var activeDatasetData = null;
         var activeDatasetCaptionJob = '';
         var activeDatasetTrainingJob = '';
         var activeDatasetTrainingDataset = '';
+        var activeDatasetExpansionJob = '';
+        var activeDatasetExpansionDataset = '';
+        var activeDatasetExpansionRun = '';
         var datasetThumbUrls = [];
+        var datasetCandidateUrls = [];
+        var renderedExpansionKey = '';
 
         async function datasetResponseError(response) {
             try {
@@ -2230,6 +2273,7 @@
         }
 
         function renderDatasetDetail(dataset) {
+            activeDatasetData = dataset;
             var analysis = dataset.analysis || {};
             var trainingRuns = dataset.training_runs || [];
             var latestTraining = trainingRuns.length ? trainingRuns[trainingRuns.length - 1] : null;
@@ -2248,6 +2292,21 @@
             document.getElementById('dataset-issues').innerHTML = (analysis.issues || []).map(function(issue) {
                 return '<div class="dataset-issue ' + escapeHtml(issue.severity || '') + '">' + escapeHtml(issue.message) + '</div>';
             }).join('');
+            var expansionRuns = dataset.expansion_runs || [];
+            var expansionToggle = document.getElementById('dataset-expansion-toggle');
+            expansionToggle.disabled = analysis.source_mode !== 'quick' && !expansionRuns.length;
+            expansionToggle.textContent = document.getElementById('dataset-expansion-panel').style.display !== 'none'
+                ? 'Hide candidate workspace'
+                : (expansionRuns.length ? 'Review candidates' : 'Generate candidates');
+            if (!activeDatasetExpansionJob) {
+                document.getElementById('dataset-expansion-start').disabled = analysis.source_mode !== 'quick';
+                document.getElementById('dataset-expansion-message').textContent = analysis.source_mode === 'quick'
+                    ? 'Best for 1–5 source images. Uses up to three original references per candidate.'
+                    : 'This dataset has enough images. Review existing candidates or continue to captions and training.';
+            }
+            if (document.getElementById('dataset-expansion-panel').style.display !== 'none') {
+                renderLatestDatasetExpansion(dataset);
+            }
 
             datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
             datasetThumbUrls = [];
@@ -2346,6 +2405,196 @@
             if (!activeDatasetCaptionJob) return;
             await fetch('/api/datasets/caption-cancel/' + encodeURIComponent(activeDatasetCaptionJob), { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
             document.getElementById('dataset-caption-progress').textContent = 'Cancelling after the current image…';
+        }
+
+        function toggleDatasetExpansion() {
+            var panel = document.getElementById('dataset-expansion-panel');
+            var showing = panel.style.display !== 'none';
+            panel.style.display = showing ? 'none' : 'block';
+            document.getElementById('dataset-expansion-toggle').textContent = showing
+                ? ((activeDatasetData && (activeDatasetData.expansion_runs || []).length) ? 'Review candidates' : 'Generate candidates')
+                : 'Hide candidate workspace';
+            if (!showing && activeDatasetData) renderLatestDatasetExpansion(activeDatasetData);
+        }
+
+        function renderLatestDatasetExpansion(dataset) {
+            var runs = dataset.expansion_runs || [];
+            if (!runs.length) {
+                activeDatasetExpansionRun = '';
+                renderedExpansionKey = '';
+                document.getElementById('dataset-expansion-candidates').innerHTML = '';
+                document.getElementById('dataset-expansion-review').style.display = 'none';
+                return;
+            }
+            renderDatasetExpansionRun(runs[runs.length - 1], dataset.id);
+        }
+
+        function renderDatasetExpansionRun(run, datasetId) {
+            activeDatasetExpansionRun = run.run_id;
+            var candidates = run.candidates || [];
+            var key = datasetId + ':' + run.run_id + ':' + candidates.map(function(item) { return item.id + ':' + item.status; }).join(',');
+            if (key === renderedExpansionKey) return;
+            renderedExpansionKey = key;
+            datasetCandidateUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+            datasetCandidateUrls = [];
+            var container = document.getElementById('dataset-expansion-candidates');
+            if (!candidates.length) {
+                container.innerHTML = '<div class="dataset-empty" style="grid-column:1/-1;">No candidates generated yet.</div>';
+                document.getElementById('dataset-expansion-review').style.display = 'none';
+                return;
+            }
+            container.innerHTML = candidates.map(function(candidate) {
+                var pending = candidate.status === 'pending';
+                return '<label class="expansion-card ' + escapeHtml(candidate.status || 'pending') + '">' +
+                    (pending ? '<input class="expansion-card-select" type="checkbox" value="' + escapeHtml(candidate.id) + '">' : '') +
+                    '<span class="expansion-card-status">' + escapeHtml(candidate.status || 'pending') + '</span>' +
+                    '<img class="expansion-thumb" data-candidate-id="' + escapeHtml(candidate.id) + '" alt="Expansion candidate">' +
+                    '<div class="expansion-card-meta">Seed ' + candidate.seed + '<br>' + escapeHtml(candidate.caption || '') + '</div></label>';
+            }).join('');
+            document.getElementById('dataset-expansion-review').style.display = candidates.some(function(item) { return item.status === 'pending'; }) ? 'flex' : 'none';
+            loadDatasetCandidateThumbnails(datasetId, run.run_id);
+        }
+
+        async function loadDatasetCandidateThumbnails(datasetId, runId) {
+            var images = Array.from(document.querySelectorAll('.expansion-thumb'));
+            for (var i = 0; i < images.length; i++) {
+                if (datasetId !== activeDatasetId || runId !== activeDatasetExpansionRun) return;
+                try {
+                    var candidateId = images[i].getAttribute('data-candidate-id');
+                    var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/expansion/' + encodeURIComponent(runId) + '/candidates/' + encodeURIComponent(candidateId), { headers:{ 'Authorization':'Basic ' + auth } });
+                    if (!response.ok) continue;
+                    var url = URL.createObjectURL(await response.blob());
+                    datasetCandidateUrls.push(url);
+                    images[i].src = url;
+                } catch (e) {}
+            }
+        }
+
+        async function startDatasetExpansion() {
+            if (!activeDatasetId || activeDatasetExpansionJob) return;
+            var datasetId = activeDatasetId;
+            var count = Number(document.getElementById('dataset-expansion-count').value);
+            var seed = Number(document.getElementById('dataset-expansion-seed').value);
+            if (!Number.isInteger(seed) || seed < 0 || seed > 2147483623) {
+                showAlert('Invalid seed', 'Seed must be a whole number from 0 to 2,147,483,623.');
+                return;
+            }
+            var confirmed = await showConfirm('Generate <strong>' + count + '</strong> reference-guided candidates?<br><br>They remain outside the training dataset until you review and accept them.');
+            if (!confirmed) return;
+            document.getElementById('dataset-expansion-start').disabled = true;
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/expansion', {
+                    method:'POST',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({ candidate_count:count, seed:seed })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var data = await response.json();
+                activeDatasetExpansionJob = data.job_id;
+                activeDatasetExpansionRun = data.job_id;
+                activeDatasetExpansionDataset = datasetId;
+                renderedExpansionKey = '';
+                document.getElementById('dataset-expansion-count').disabled = true;
+                document.getElementById('dataset-expansion-seed').disabled = true;
+                document.getElementById('dataset-expansion-cancel').style.display = 'inline-flex';
+                document.getElementById('dataset-expansion-progress').style.display = 'block';
+                document.getElementById('dataset-expansion-progress-fill').style.width = '0%';
+                document.getElementById('dataset-expansion-progress-text').textContent = 'Queued…';
+                document.getElementById('dataset-expansion-progress-count').textContent = '0/' + count;
+                document.getElementById('dataset-expansion-candidates').innerHTML = '';
+                document.getElementById('dataset-expansion-review').style.display = 'none';
+                pollDatasetExpansion();
+            } catch (e) {
+                document.getElementById('dataset-expansion-start').disabled = false;
+                showAlert('Expansion could not start', e.message);
+            }
+        }
+
+        function finishDatasetExpansionControls() {
+            document.getElementById('dataset-expansion-count').disabled = false;
+            document.getElementById('dataset-expansion-seed').disabled = false;
+            document.getElementById('dataset-expansion-start').disabled = false;
+            document.getElementById('dataset-expansion-cancel').disabled = false;
+            document.getElementById('dataset-expansion-cancel').style.display = 'none';
+        }
+
+        async function pollDatasetExpansion() {
+            if (!activeDatasetExpansionJob) return;
+            var jobId = activeDatasetExpansionJob;
+            try {
+                var response = await fetch('/api/expansion/' + encodeURIComponent(jobId), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var job = await response.json();
+                if (jobId !== activeDatasetExpansionJob) return;
+                var totalUnits = Math.max(1, (job.candidate_count || 1) * (job.total_steps || 50));
+                var doneUnits = (job.completed || 0) * (job.total_steps || 50);
+                if ((job.current_candidate || 0) > (job.completed || 0)) doneUnits += job.current_step || 0;
+                var percent = Math.min(100, Math.round(doneUnits * 100 / totalUnits));
+                document.getElementById('dataset-expansion-progress-text').textContent = job.message || job.status;
+                document.getElementById('dataset-expansion-progress-count').textContent = (job.completed || 0) + '/' + (job.candidate_count || 0) + ' (' + percent + '%)';
+                document.getElementById('dataset-expansion-progress-fill').style.width = percent + '%';
+                renderDatasetExpansionRun(job, activeDatasetExpansionDataset);
+                if (job.status === 'queued' || job.status === 'loading' || job.status === 'running' || job.status === 'cancelling') {
+                    document.getElementById('dataset-expansion-cancel').disabled = job.status === 'cancelling';
+                    setTimeout(pollDatasetExpansion, 1000);
+                    return;
+                }
+                finishDatasetExpansionControls();
+                if (job.status === 'done') {
+                    document.getElementById('dataset-expansion-progress-fill').style.width = '100%';
+                    showToast('Candidates ready for review');
+                } else if (job.status === 'cancelled') {
+                    showToast('Dataset expansion cancelled');
+                } else {
+                    showAlert('Dataset expansion failed', job.error || 'Unknown error');
+                }
+                await loadDatasets(activeDatasetExpansionDataset);
+                if (activeDatasetId === activeDatasetExpansionDataset) await openDataset(activeDatasetExpansionDataset);
+                activeDatasetExpansionJob = '';
+                activeDatasetExpansionDataset = '';
+            } catch (e) {
+                finishDatasetExpansionControls();
+                activeDatasetExpansionJob = '';
+                activeDatasetExpansionDataset = '';
+                showAlert('Expansion status error', e.message);
+            }
+        }
+
+        async function cancelDatasetExpansion() {
+            if (!activeDatasetExpansionJob) return;
+            document.getElementById('dataset-expansion-cancel').disabled = true;
+            try {
+                var response = await fetch('/api/expansion/' + encodeURIComponent(activeDatasetExpansionJob) + '/cancel', { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                document.getElementById('dataset-expansion-progress-text').textContent = 'Cancelling after the current diffusion step…';
+            } catch (e) {
+                document.getElementById('dataset-expansion-cancel').disabled = false;
+                showAlert('Cancel failed', e.message);
+            }
+        }
+
+        async function reviewDatasetCandidates(decision) {
+            if (!activeDatasetId || !activeDatasetExpansionRun) return;
+            var selected = Array.from(document.querySelectorAll('.expansion-card-select:checked')).map(function(input) { return input.value; });
+            if (!selected.length) {
+                showAlert('Nothing selected', 'Select one or more pending candidates first.');
+                return;
+            }
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(activeDatasetId) + '/expansion/' + encodeURIComponent(activeDatasetExpansionRun) + '/review', {
+                    method:'POST',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({ candidate_ids:selected, decision:decision })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                renderedExpansionKey = '';
+                var dataset = await response.json();
+                renderDatasetDetail(dataset);
+                loadDatasets(activeDatasetId);
+                showToast(decision === 'accept' ? selected.length + ' candidates added to dataset' : selected.length + ' candidates rejected');
+            } catch (e) {
+                showAlert('Candidate review failed', e.message);
+            }
         }
 
         function toggleDatasetTraining() {

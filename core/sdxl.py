@@ -4,6 +4,7 @@ from diffusers import StableDiffusionXLPipeline, AutoencoderKL
 from PIL import Image
 import os
 import threading
+import gc
 from functools import wraps
 
 from safetensors.torch import load_file as safetensors_load_file
@@ -12,6 +13,20 @@ from .runtimes import RuntimeLoadContext, detect_model_type, get_runtime
 
 _pipelines = {}
 _inference_lock = threading.RLock()
+
+
+def inference_session():
+    """Return the shared lock used by every GPU image inference workflow."""
+    return _inference_lock
+
+
+def release_cached_pipelines():
+    """Release cached generation models before another large GPU workflow."""
+    with _inference_lock:
+        _pipelines.clear()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 class CancelGeneration(Exception):

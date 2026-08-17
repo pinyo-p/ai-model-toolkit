@@ -353,3 +353,141 @@ def record_training_run(root: str | os.PathLike, dataset_id: str, run: dict) -> 
         manifest["training_runs"] = runs[-20:]
         _save_manifest(manifest_path, manifest)
     return _with_analysis(manifest)
+
+
+def expansion_candidate_dir(
+    root: str | os.PathLike, dataset_id: str, run_id: str
+) -> Path:
+    if not _ID_PATTERN.fullmatch(run_id or ""):
+        raise DatasetNotFound("Expansion run not found")
+    path = _dataset_dir(root, dataset_id) / "candidates" / run_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def record_expansion_run(root: str | os.PathLike, dataset_id: str, run: dict) -> dict:
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        runs = manifest.setdefault("expansion_runs", [])
+        run_id = run.get("run_id")
+        existing = next((item for item in runs if item.get("run_id") == run_id), None)
+        if existing is None:
+            runs.append(dict(run))
+        else:
+            existing.update(run)
+        manifest["expansion_runs"] = runs[-10:]
+        _save_manifest(manifest_path, manifest)
+    return _with_analysis(manifest)
+
+
+def get_expansion_run(root: str | os.PathLike, dataset_id: str, run_id: str) -> dict:
+    manifest = get_dataset(root, dataset_id)
+    run = next(
+        (item for item in manifest.get("expansion_runs", []) if item.get("run_id") == run_id),
+        None,
+    )
+    if run is None:
+        raise DatasetNotFound("Expansion run not found")
+    return run
+
+
+def expansion_candidate_path(
+    root: str | os.PathLike, dataset_id: str, run_id: str, candidate_id: str
+) -> Path:
+    if not _ID_PATTERN.fullmatch(candidate_id or ""):
+        raise DatasetNotFound("Expansion candidate not found")
+    run = get_expansion_run(root, dataset_id, run_id)
+    candidate = next(
+        (item for item in run.get("candidates", []) if item.get("id") == candidate_id),
+        None,
+    )
+    if candidate is None:
+        raise DatasetNotFound("Expansion candidate not found")
+    path = expansion_candidate_dir(root, dataset_id, run_id) / candidate["filename"]
+    if not path.is_file():
+        raise DatasetNotFound("Expansion candidate image not found")
+    return path
+
+
+def review_expansion_candidates(
+    root: str | os.PathLike,
+    dataset_id: str,
+    run_id: str,
+    candidate_ids: list[str],
+    decision: str,
+) -> dict:
+    if decision not in {"accept", "reject"}:
+        raise DatasetError("Decision must be accept or reject")
+    selected = set(candidate_ids)
+    if not selected:
+        raise DatasetError("Select at least one candidate")
+
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        run = next(
+            (item for item in manifest.get("expansion_runs", []) if item.get("run_id") == run_id),
+            None,
+        )
+        if run is None:
+            raise DatasetNotFound("Expansion run not found")
+        candidates = {item.get("id"): item for item in run.get("candidates", [])}
+        unknown = selected - set(candidates)
+        if unknown:
+            raise DatasetNotFound("Expansion candidate not found")
+
+        if decision == "reject":
+            for candidate_id in selected:
+                candidate = candidates[candidate_id]
+                if candidate.get("status") == "pending":
+                    candidate["status"] = "rejected"
+            _save_manifest(manifest_path, manifest)
+            return _with_analysis(manifest)
+
+        existing_hashes = {item.get("sha256") for item in manifest.get("images", [])}
+        images_dir = manifest_path.parent / "images"
+        for candidate_id in selected:
+            candidate = candidates[candidate_id]
+            if candidate.get("status") != "pending":
+                continue
+            source = manifest_path.parent / "candidates" / run_id / candidate["filename"]
+            if not source.is_file():
+                raise DatasetNotFound("Expansion candidate image not found")
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if digest in existing_hashes:
+                candidate["status"] = "duplicate"
+                continue
+            with Image.open(source) as image:
+                width, height = image.size
+                mode = image.mode
+            image_id = f"image-{len(manifest['images']) + 1:05d}"
+            filename = f"{image_id}.png"
+            target = images_dir / filename
+            shutil.copy2(source, target)
+            caption_value = str(candidate.get("caption", "")).strip()[:4000]
+            manifest["images"].append({
+                "id": image_id,
+                "filename": filename,
+                "original_filename": f"generated-{candidate_id}.png",
+                "width": width,
+                "height": height,
+                "format": "PNG",
+                "mode": mode,
+                "bytes": target.stat().st_size,
+                "sha256": digest,
+                "caption": caption_value,
+                "caption_source": "expansion_recipe" if caption_value else "none",
+                "generated": True,
+                "expansion_run_id": run_id,
+                "expansion_candidate_id": candidate_id,
+            })
+            if caption_value:
+                with open(images_dir / f"{Path(filename).stem}.txt", "w", encoding="utf-8") as file:
+                    file.write(caption_value + "\n")
+            existing_hashes.add(digest)
+            candidate["status"] = "accepted"
+            candidate["image_id"] = image_id
+
+        _save_manifest(manifest_path, manifest)
+    return _with_analysis(manifest)

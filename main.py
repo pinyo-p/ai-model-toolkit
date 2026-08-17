@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from core import datasets as dataset_module
-from core import gpu, caption, sdxl, lora, training, image as img_module, utils
+from core import gpu, caption, sdxl, lora, training, expansion, image as img_module, utils
 import threading
 import time
 
@@ -51,6 +51,10 @@ _training_jobs: dict = {}
 _training_lock = threading.Lock()
 _training_processes: dict = {}
 _training_cancel_events: dict = {}
+
+_expansion_jobs: dict = {}
+_expansion_lock = threading.Lock()
+_expansion_cancel_events: dict = {}
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -191,6 +195,16 @@ class DatasetCaptionPayload(BaseModel):
 class TrainingStartPayload(BaseModel):
     profile: str = "balanced"
     seed: int = 42
+
+
+class ExpansionStartPayload(BaseModel):
+    candidate_count: int = 8
+    seed: int = 42
+
+
+class ExpansionReviewPayload(BaseModel):
+    candidate_ids: list[str]
+    decision: str
 
 
 def _set_dataset_caption_job(job_id: str, **updates):
@@ -409,6 +423,14 @@ def _training_was_cancelled(job_id: str) -> bool:
         return bool(event and event.is_set())
 
 
+def _active_expansion_job() -> bool:
+    with _expansion_lock:
+        return any(
+            job.get("status") in {"queued", "loading", "running", "cancelling"}
+            for job in _expansion_jobs.values()
+        )
+
+
 def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
     output_dir = None
     try:
@@ -550,6 +572,8 @@ async def api_start_training(
             status_code=409,
             detail="Krea 2 training dependencies are not installed. Run update.sh first.",
         ) from exc
+    if _active_expansion_job():
+        raise HTTPException(status_code=409, detail="Dataset expansion is currently using the GPU")
 
     with _training_lock:
         if any(job.get("status") in {"queued", "preparing", "running", "cancelling"} for job in _training_jobs.values()):
@@ -613,6 +637,249 @@ async def api_cancel_training(job_id: str, user: str = Depends(get_current_user)
         except ProcessLookupError:
             pass
     return {"status": "cancelling", "job_id": job_id}
+
+
+def _set_expansion_job(job_id: str, **updates):
+    with _expansion_lock:
+        job = _expansion_jobs.get(job_id, {})
+        job.update(updates)
+        job["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _expansion_jobs[job_id] = job
+
+
+def _expansion_run_record(job: dict) -> dict:
+    return {
+        key: job.get(key)
+        for key in (
+            "run_id", "job_id", "status", "model", "created_at", "updated_at",
+            "candidate_count", "completed", "current_candidate", "message", "error", "candidates",
+        )
+        if job.get(key) is not None
+    }
+
+
+def _run_dataset_expansion(job_id: str, dataset_id: str, candidate_count: int, seed: int):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        variations = expansion.build_variations(manifest["type"], candidate_count)
+        source_images = [
+            item for item in manifest.get("images", []) if not item.get("generated")
+        ] or manifest.get("images", [])
+        source_paths = [
+            str(dataset_module.image_path(_datasets_root(), dataset_id, item["id"]))
+            for item in source_images
+        ]
+        source_ids = [item["id"] for item in source_images]
+        candidate_dir = dataset_module.expansion_candidate_dir(_datasets_root(), dataset_id, job_id)
+        _set_expansion_job(
+            job_id,
+            status="loading",
+            message="Loading Qwen Image Edit Plus — first run may download large model weights",
+        )
+
+        for index, variation in enumerate(variations, start=1):
+            with _expansion_lock:
+                cancel_event = _expansion_cancel_events.get(job_id)
+            if cancel_event and cancel_event.is_set():
+                raise expansion.ExpansionCancelled("Dataset expansion cancelled")
+
+            if len(source_paths) <= expansion.MAX_REFERENCE_IMAGES:
+                refs = source_paths
+                ref_ids = source_ids
+            else:
+                positions = [(index - 1 + offset) % len(source_paths) for offset in range(expansion.MAX_REFERENCE_IMAGES)]
+                refs = [source_paths[position] for position in positions]
+                ref_ids = [source_ids[position] for position in positions]
+
+            _set_expansion_job(
+                job_id,
+                status="running",
+                message=f"Generating candidate {index} of {candidate_count}",
+                current_candidate=index,
+                current_step=0,
+                total_steps=expansion.INFERENCE_STEPS,
+            )
+
+            def progress_cb(step, total, current=index):
+                _set_expansion_job(
+                    job_id,
+                    current_candidate=current,
+                    current_step=step,
+                    total_steps=total,
+                )
+
+            candidate_seed = seed + index - 1
+            image = expansion.generate_candidate(
+                refs,
+                variation.instruction,
+                candidate_seed,
+                progress_cb=progress_cb,
+                cancel_event=cancel_event,
+            )
+            candidate_id = f"candidate-{index:04d}"
+            filename = f"{candidate_id}.png"
+            temporary = candidate_dir / f".{candidate_id}.tmp"
+            image.save(temporary, format="PNG")
+            os.replace(temporary, candidate_dir / filename)
+            with _expansion_lock:
+                candidates = list(_expansion_jobs[job_id].get("candidates", []))
+            candidates.append({
+                "id": candidate_id,
+                "filename": filename,
+                "prompt": variation.instruction,
+                "caption": variation.caption,
+                "seed": candidate_seed,
+                "source_image_ids": ref_ids,
+                "status": "pending",
+            })
+            _set_expansion_job(job_id, completed=index, candidates=candidates)
+            with _expansion_lock:
+                snapshot = dict(_expansion_jobs[job_id])
+            dataset_module.record_expansion_run(
+                _datasets_root(), dataset_id, _expansion_run_record(snapshot)
+            )
+
+        _set_expansion_job(
+            job_id,
+            status="done",
+            message="Candidates ready — review and accept only the useful images",
+            completed=candidate_count,
+        )
+    except expansion.ExpansionCancelled as exc:
+        _set_expansion_job(job_id, status="cancelled", message=str(exc))
+    except Exception as exc:
+        _set_expansion_job(job_id, status="error", message="Dataset expansion failed", error=str(exc))
+    finally:
+        expansion.release_pipeline()
+        with _expansion_lock:
+            snapshot = dict(_expansion_jobs.get(job_id, {}))
+        try:
+            dataset_module.record_expansion_run(
+                _datasets_root(), dataset_id, _expansion_run_record(snapshot)
+            )
+        except Exception:
+            pass
+
+
+@app.post("/api/datasets/{dataset_id}/expansion")
+async def api_start_dataset_expansion(
+    dataset_id: str,
+    payload: ExpansionStartPayload,
+    user: str = Depends(get_current_user),
+):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        expansion.build_variations(manifest["type"], payload.candidate_count)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except expansion.ExpansionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if manifest["analysis"]["source_mode"] != "quick":
+        raise HTTPException(status_code=409, detail="Reference expansion is intended for datasets with 1–5 images")
+    if payload.seed < 0 or payload.seed > 2_147_483_647 - payload.candidate_count:
+        raise HTTPException(status_code=409, detail="Seed is outside the supported range")
+    if not torch.cuda.is_available():
+        raise HTTPException(status_code=409, detail="Dataset expansion requires an NVIDIA CUDA GPU")
+    try:
+        from diffusers import QwenImageEditPlusPipeline  # noqa: F401
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Qwen Image Edit Plus is unavailable. Run update.sh first.",
+        ) from exc
+    with _training_lock:
+        if any(job.get("status") in {"queued", "preparing", "running", "cancelling"} for job in _training_jobs.values()):
+            raise HTTPException(status_code=409, detail="LoRA training is currently using the GPU")
+    with _expansion_lock:
+        if any(job.get("status") in {"queued", "loading", "running", "cancelling"} for job in _expansion_jobs.values()):
+            raise HTTPException(status_code=409, detail="Another dataset expansion job is active")
+        job_id = uuid.uuid4().hex
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _expansion_jobs[job_id] = {
+            "run_id": job_id,
+            "job_id": job_id,
+            "dataset_id": dataset_id,
+            "dataset_name": manifest["name"],
+            "status": "queued",
+            "model": expansion.MODEL_ID,
+            "candidate_count": payload.candidate_count,
+            "completed": 0,
+            "current_candidate": 0,
+            "current_step": 0,
+            "total_steps": expansion.INFERENCE_STEPS,
+            "created_at": now,
+            "updated_at": now,
+            "message": "Dataset expansion queued",
+            "candidates": [],
+        }
+        _expansion_cancel_events[job_id] = threading.Event()
+        snapshot = dict(_expansion_jobs[job_id])
+    dataset_module.record_expansion_run(
+        _datasets_root(), dataset_id, _expansion_run_record(snapshot)
+    )
+    threading.Thread(
+        target=_run_dataset_expansion,
+        args=(job_id, dataset_id, payload.candidate_count, payload.seed),
+        daemon=True,
+    ).start()
+    return {"job_id": job_id, "status": "queued", "model": expansion.MODEL_ID}
+
+
+@app.get("/api/expansion/{job_id}")
+async def api_expansion_progress(job_id: str, user: str = Depends(get_current_user)):
+    with _expansion_lock:
+        job = _expansion_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Expansion job not found")
+        return dict(job)
+
+
+@app.post("/api/expansion/{job_id}/cancel")
+async def api_cancel_expansion(job_id: str, user: str = Depends(get_current_user)):
+    with _expansion_lock:
+        job = _expansion_jobs.get(job_id)
+        event = _expansion_cancel_events.get(job_id)
+        if not job or not event:
+            raise HTTPException(status_code=404, detail="Expansion job not found")
+        if job.get("status") not in {"queued", "loading", "running"}:
+            return {"job_id": job_id, "status": job.get("status")}
+        event.set()
+        job["status"] = "cancelling"
+        job["message"] = "Cancelling after the current diffusion step"
+    return {"job_id": job_id, "status": "cancelling"}
+
+
+@app.get("/api/datasets/{dataset_id}/expansion/{run_id}/candidates/{candidate_id}")
+async def api_expansion_candidate_image(
+    dataset_id: str,
+    run_id: str,
+    candidate_id: str,
+    user: str = Depends(get_current_user),
+):
+    try:
+        path = dataset_module.expansion_candidate_path(
+            _datasets_root(), dataset_id, run_id, candidate_id
+        )
+        return FileResponse(path, media_type="image/png")
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/datasets/{dataset_id}/expansion/{run_id}/review")
+async def api_review_expansion_candidates(
+    dataset_id: str,
+    run_id: str,
+    payload: ExpansionReviewPayload,
+    user: str = Depends(get_current_user),
+):
+    try:
+        return dataset_module.review_expansion_candidates(
+            _datasets_root(), dataset_id, run_id, payload.candidate_ids, payload.decision
+        )
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/image2lora")
@@ -1162,6 +1429,18 @@ async def api_active_jobs(user: str = Depends(get_current_user)):
                     "message": (
                         f"Training {data.get('dataset_name', 'LoRA')} "
                         f"({data.get('completed_steps', 0)}/{data.get('total_steps', 0)})"
+                    ),
+                })
+    with _expansion_lock:
+        for job_id, data in _expansion_jobs.items():
+            if data.get("status") in {"queued", "loading", "running", "cancelling"}:
+                jobs.append({
+                    "type": "dataset_expansion",
+                    "id": job_id,
+                    "status": data.get("status"),
+                    "message": (
+                        f"Expanding {data.get('dataset_name', 'dataset')} "
+                        f"({data.get('completed', 0)}/{data.get('candidate_count', 0)})"
                     ),
                 })
     return {"jobs": jobs}
