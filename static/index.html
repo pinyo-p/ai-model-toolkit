@@ -624,12 +624,23 @@
                     <button id="dataset-add-images-btn" class="btn btn-sm btn-ghost" onclick="document.getElementById('dataset-add-files').click()">Add images</button>
                     <input id="dataset-add-files" type="file" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple style="display:none;" onchange="addImagesToDataset()">
                     <button id="dataset-remove-images-btn" class="btn btn-sm btn-danger" onclick="removeSelectedDatasetImages()" disabled>Remove selected</button>
+                    <button class="btn btn-sm btn-ghost" onclick="toggleDatasetSettings()">Edit settings</button>
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
                     <button id="dataset-expansion-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetExpansion()">Generate candidates</button>
                     <button id="dataset-training-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetTraining()">Configure Krea 2 training</button>
                     <button id="dataset-test-lora-btn" class="btn btn-sm btn-success" onclick="openDatasetEvaluation()" style="display:none;">Test latest LoRA</button>
+                </div>
+                <div id="dataset-settings-panel" class="training-panel" style="display:none;">
+                    <div style="color:#e8f4ff;font-weight:650;margin-bottom:10px;">Dataset settings</div>
+                    <div class="row">
+                        <div class="col"><label>Name</label><input id="dataset-settings-name" maxlength="120"></div>
+                        <div class="col"><label>LoRA type</label><select id="dataset-settings-type"><option value="person">Person / character</option><option value="style">Visual style</option><option value="clothing">Clothing</option><option value="environment">Room / environment</option><option value="vehicle">Vehicle</option><option value="object">Object</option></select></div>
+                        <div class="col"><label>Trigger word</label><input id="dataset-settings-trigger" maxlength="120" placeholder="Auto-generated if blank"></div>
+                    </div>
+                    <div style="color:#55748d;font-size:11px;margin:8px 0 10px;">Changing LoRA type or trigger word creates a new dataset revision. Renaming does not.</div>
+                    <div style="display:flex;gap:8px;"><button id="dataset-settings-save" class="btn btn-sm btn-success" onclick="saveDatasetSettings()">Save settings</button><button class="btn btn-sm btn-ghost" onclick="toggleDatasetSettings(false)">Cancel</button></div>
                 </div>
                 <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
                 <div id="dataset-expansion-panel" class="training-panel" style="display:none;">
@@ -2528,6 +2539,52 @@
             }
         }
 
+        function toggleDatasetSettings(forceOpen) {
+            if (!activeDatasetData) return;
+            var panel = document.getElementById('dataset-settings-panel');
+            var show = forceOpen === undefined ? panel.style.display === 'none' : forceOpen;
+            panel.style.display = show ? 'block' : 'none';
+            if (show) {
+                document.getElementById('dataset-settings-name').value = activeDatasetData.name || '';
+                document.getElementById('dataset-settings-type').value = activeDatasetData.type || 'person';
+                document.getElementById('dataset-settings-trigger').value = activeDatasetData.trigger_word || '';
+            }
+        }
+
+        async function saveDatasetSettings() {
+            if (!activeDatasetId) return;
+            var name = document.getElementById('dataset-settings-name').value.trim();
+            if (!name) { showAlert('Dataset name required', 'Enter a name for this dataset.'); return; }
+            var datasetId = activeDatasetId;
+            var button = document.getElementById('dataset-settings-save');
+            button.disabled = true;
+            button.textContent = 'Saving…';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId), {
+                    method:'PUT',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({
+                        name:name,
+                        dataset_type:document.getElementById('dataset-settings-type').value,
+                        trigger_word:document.getElementById('dataset-settings-trigger').value.trim()
+                    })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var dataset = await response.json();
+                toggleDatasetSettings(false);
+                if (activeDatasetId === datasetId) renderDatasetDetail(dataset);
+                await loadDatasets(activeDatasetId);
+                showToast((dataset.settings_result || {}).training_changed
+                    ? 'Settings saved · dataset revision updated'
+                    : 'Dataset settings saved');
+            } catch (e) {
+                showAlert('Could not save settings', e.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Save settings';
+            }
+        }
+
         function renderDatasetDetail(dataset) {
             activeDatasetData = dataset;
             datasetSelectedImageIds.clear();
@@ -2538,6 +2595,11 @@
             var trainingState = dataset.training_state || {};
             document.getElementById('dataset-detail').style.display = 'block';
             document.getElementById('dataset-detail-name').textContent = dataset.name;
+            if (document.getElementById('dataset-settings-panel').style.display !== 'none') {
+                document.getElementById('dataset-settings-name').value = dataset.name || '';
+                document.getElementById('dataset-settings-type').value = dataset.type || 'person';
+                document.getElementById('dataset-settings-trigger').value = dataset.trigger_word || '';
+            }
             document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action +
                 (trainingState.status === 'current' ? ' · latest LoRA matches this dataset' :
                     trainingState.status === 'stale' ? ' · dataset changed since latest LoRA' :

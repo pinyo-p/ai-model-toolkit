@@ -56,6 +56,30 @@ _expansion_jobs: dict = {}
 _expansion_lock = threading.Lock()
 _expansion_cancel_events: dict = {}
 
+
+def _dataset_has_active_job(dataset_id: str) -> bool:
+    with _dataset_caption_lock:
+        if any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "running"}
+            for job in _dataset_caption_jobs.values()
+        ):
+            return True
+    with _expansion_lock:
+        if any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "loading", "running", "cancelling"}
+            for job in _expansion_jobs.values()
+        ):
+            return True
+    with _training_lock:
+        return any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "preparing", "running", "cancelling"}
+            for job in _training_jobs.values()
+        )
+
+
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
 def init_db():
@@ -196,6 +220,12 @@ class DatasetImageRemovePayload(BaseModel):
     image_ids: list[str]
 
 
+class DatasetSettingsPayload(BaseModel):
+    name: str
+    dataset_type: str
+    trigger_word: str = ""
+
+
 class TrainingStartPayload(BaseModel):
     profile: str = "balanced"
     seed: int = 42
@@ -301,6 +331,31 @@ async def api_get_dataset(dataset_id: str, user: str = Depends(get_current_user)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.put("/api/datasets/{dataset_id}")
+async def api_update_dataset_settings(
+    dataset_id: str,
+    payload: DatasetSettingsPayload,
+    user: str = Depends(get_current_user),
+):
+    if _dataset_has_active_job(dataset_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Wait for active dataset jobs to finish before changing settings",
+        )
+    try:
+        return dataset_module.update_dataset_settings(
+            _datasets_root(),
+            dataset_id,
+            payload.name,
+            payload.dataset_type,
+            payload.trigger_word,
+        )
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/datasets/{dataset_id}/images")
 async def api_add_dataset_images(
     dataset_id: str,
@@ -322,24 +377,7 @@ async def api_remove_dataset_images(
     payload: DatasetImageRemovePayload,
     user: str = Depends(get_current_user),
 ):
-    with _dataset_caption_lock:
-        captioning = any(
-            job.get("dataset_id") == dataset_id and job.get("status") in {"queued", "running"}
-            for job in _dataset_caption_jobs.values()
-        )
-    with _expansion_lock:
-        expanding = any(
-            job.get("dataset_id") == dataset_id
-            and job.get("status") in {"queued", "loading", "running", "cancelling"}
-            for job in _expansion_jobs.values()
-        )
-    with _training_lock:
-        training_active = any(
-            job.get("dataset_id") == dataset_id
-            and job.get("status") in {"queued", "preparing", "running", "cancelling"}
-            for job in _training_jobs.values()
-        )
-    if captioning or expanding or training_active:
+    if _dataset_has_active_job(dataset_id):
         raise HTTPException(
             status_code=409,
             detail="Wait for active dataset jobs to finish before removing images",

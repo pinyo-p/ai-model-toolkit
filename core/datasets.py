@@ -491,6 +491,49 @@ def remove_images(
     return result
 
 
+def update_dataset_settings(
+    root: str | os.PathLike,
+    dataset_id: str,
+    name: str,
+    dataset_type: str,
+    trigger_word: str,
+) -> dict:
+    name = str(name).strip()
+    dataset_type = str(dataset_type).strip().lower()
+    trigger_word = str(trigger_word).strip()
+    if not name:
+        raise DatasetError("Dataset name is required")
+    if dataset_type not in DATASET_TYPES:
+        raise DatasetError(f"Unsupported dataset type: {dataset_type}")
+
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        if not trigger_word:
+            trigger_word = dataset_id.replace("-", "_")
+        new_name = name[:120]
+        new_trigger = trigger_word[:120]
+        metadata_changed = manifest.get("name") != new_name
+        training_changed = (
+            manifest.get("type") != dataset_type
+            or manifest.get("trigger_word") != new_trigger
+        )
+        if metadata_changed or training_changed:
+            manifest["name"] = new_name
+            manifest["type"] = dataset_type
+            manifest["trigger_word"] = new_trigger
+            if training_changed:
+                _advance_dataset_revision(manifest)
+            _save_manifest(manifest_path, manifest)
+
+    result = _with_analysis(manifest)
+    result["settings_result"] = {
+        "changed": metadata_changed or training_changed,
+        "training_changed": training_changed,
+    }
+    return result
+
+
 def list_datasets(root: str | os.PathLike) -> list[dict]:
     root_path = Path(root).resolve()
     if not root_path.exists():

@@ -162,6 +162,31 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     root, created["id"], [item["id"] for item in created["images"]]
                 )
 
+    def test_dataset_settings_only_revision_training_relevant_changes(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root, "Original", "person", "person_x", [("first.png", _image_file("red"))]
+            )
+            renamed = datasets.update_dataset_settings(
+                root, created["id"], "Renamed", "person", "person_x"
+            )
+            self.assertEqual(renamed["name"], "Renamed")
+            self.assertEqual(renamed["dataset_revision"], 1)
+            self.assertFalse(renamed["settings_result"]["training_changed"])
+
+            changed = datasets.update_dataset_settings(
+                root, created["id"], "Renamed", "style", "paint_x"
+            )
+            self.assertEqual(changed["type"], "style")
+            self.assertEqual(changed["trigger_word"], "paint_x")
+            self.assertEqual(changed["dataset_revision"], 2)
+            self.assertTrue(changed["settings_result"]["training_changed"])
+
+            with self.assertRaisesRegex(datasets.DatasetError, "Unsupported dataset type"):
+                datasets.update_dataset_settings(
+                    root, created["id"], "Renamed", "unknown", "paint_x"
+                )
+
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:
             created = datasets.create_dataset(
@@ -241,6 +266,17 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     )
                     self.assertEqual(created_response.status_code, 200)
                     created = created_response.json()
+
+                    settings_response = client.put(
+                        f"/api/datasets/{created['id']}",
+                        json={
+                            "name": "Jacket study",
+                            "dataset_type": "clothing",
+                            "trigger_word": "blue_jacket",
+                        },
+                    )
+                    self.assertEqual(settings_response.status_code, 200, settings_response.text)
+                    self.assertEqual(settings_response.json()["name"], "Jacket study")
 
                     listed = client.get("/api/datasets").json()["datasets"]
                     self.assertEqual([item["id"] for item in listed], [created["id"]])
