@@ -4,8 +4,8 @@ numpy>=1.26.0
 fastapi==0.115.0
 uvicorn==0.30.6
 # Krea2Pipeline is newer than the latest stable release as of 2026-08.
-# Pin the first upstream commit containing the complete Krea 2 modular support.
-diffusers @ git+https://github.com/huggingface/diffusers.git@623213d
+# Runtime and official Krea 2 trainer are pinned to the same tested upstream commit.
+diffusers @ git+https://github.com/huggingface/diffusers.git@9284607295a09f759aadd65ed08f48b35feea6d9
 transformers>=4.57.1
 accelerate>=0.33.0
 safetensors>=0.4.5
@@ -18,6 +18,10 @@ Pillow>=10.4.0
 python-multipart>=0.0.9
 lycoris-lora>=2.1.0
 einops>=0.7.0
+ftfy>=6.1.0
+tensorboard>=2.14.0
+Jinja2>=3.1.0
+sentencepiece>=0.2.0
 
 # Optional — image upscale (try/except in code)
 opencv-python>=4.10.0

@@ -32,6 +32,14 @@ the pipeline also needs its model index, Qwen3-VL text encoder, tokenizer, and
 Qwen-Image VAE components. Hugging Face access requires accepting the model license
 and configuring `HF_TOKEN` in Settings.
 
+Dataset training uses `krea/Krea-2-Raw` and writes the finished adapter under
+`<models_path>/lora/krea2/`, ready to select in **Test LoRA** with Turbo. The first
+run downloads the official Diffusers Krea 2 training script pinned to the same exact
+source revision as the runtime and verifies its SHA-256 checksum before execution.
+Training requires an NVIDIA CUDA GPU. A blank dataset trigger word is generated
+automatically; all images must be captioned and 1–5 image datasets must first be
+expanded and reviewed.
+
 ## Features
 
 | Tab | Feature | Description |
@@ -41,6 +49,7 @@ and configuring `HF_TOKEN` in Settings.
 | Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
+| Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
 | Load Model | **File Manager** | Browse directories, upload (drag & drop), rename, create/delete dirs and files |
@@ -121,6 +130,10 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
 | GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |
 | POST | `/api/datasets/caption-cancel/{job_id}` | Cancel dataset captioning |
+| GET | `/api/datasets/{id}/training-recipe` | Preview a Fast/Balanced/Quality Krea 2 recipe |
+| POST | `/api/datasets/{id}/training` | Start official Krea 2 Raw LoRA training |
+| GET | `/api/training/{job_id}` | Poll training steps, loss, log, and output path |
+| POST | `/api/training/{job_id}/cancel` | Stop the trainer process group safely |
 | POST | `/api/merge_lora` | Merge LoRA files |
 | POST | `/api/lora_info` | LoRA metadata |
 | POST | `/api/extract_lora` | Extract LoRA from ckpt |
@@ -155,6 +168,7 @@ ai-toolkit/
 │   ├── sdxl.py          # Generation dispatch + deterministic LoRA evaluation
 │   ├── runtimes.py      # Model-family detection, loaders, and generation defaults
 │   ├── datasets.py      # Persistent dataset manifests, validation, captions, readiness
+│   ├── training.py      # Simple recipes + pinned official Krea 2 trainer adapter
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation
 │   ├── lora.py          # LoRA train/merge/extract

@@ -158,6 +158,14 @@
         .dataset-thumb { width:58px;height:58px;object-fit:cover;border-radius:6px;background:#090e15;border:1px solid #1e2d3d; }
         .dataset-caption { min-height:58px;padding:8px;font-size:12px;resize:vertical; }
         .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
+        .training-panel { margin:14px 0;padding:16px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
+        .training-recipe-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0; }
+        .training-recipe-item { padding:9px;background:#111d29;border-radius:7px;border:1px solid #1a2a3a; }
+        .training-recipe-item strong { display:block;color:#dcecff;font-size:14px; }
+        .training-recipe-item span { color:#4f718d;font-size:10px;text-transform:uppercase; }
+        .training-progress-track { height:6px;background:#172331;border-radius:99px;overflow:hidden;margin:9px 0; }
+        .training-progress-fill { height:100%;width:0;background:linear-gradient(90deg,#00a8d6,#67e8f9);transition:width .3s; }
+        .training-log { max-height:190px;overflow:auto;background:#070b11;border:1px solid #162331;border-radius:7px;padding:10px;color:#708da5;font:11px/1.55 monospace;white-space:pre-wrap;margin-top:10px; }
 
         /* Drop zone */
         .drop-zone { border: 2px dashed #1a2a3a; border-radius: 10px; padding: 30px; text-align: center; color: #3a5a7a; transition: all 0.2s; cursor: pointer; }
@@ -203,6 +211,7 @@
             .action-bar .btn-sm { font-size: 11px; padding: 6px 10px; }
             .dataset-layout { grid-template-columns:1fr; }
             .dataset-metrics { grid-template-columns:repeat(2,1fr); }
+            .training-recipe-grid { grid-template-columns:repeat(2,1fr); }
         }
         #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
         .toast { background: #1a2a1a; color: #4caf50; padding: 10px 18px; border-radius: 8px; font-size: 13px; border: 1px solid #2a4a2a; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards; pointer-events: auto; }
@@ -540,7 +549,7 @@
                         </div>
                         <div class="col">
                             <div class="form-group">
-                                <label>Trigger word <span style="color:#3a5a7a;">(optional)</span></label>
+                                <label>Trigger word <span style="color:#3a5a7a;">(auto-generated if blank)</span></label>
                                 <input id="dataset-trigger" placeholder="e.g. nara_person">
                             </div>
                         </div>
@@ -579,9 +588,34 @@
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
-                    <button class="btn btn-sm btn-ghost" disabled title="A real trainer will be connected in the next milestone">Configure training — next milestone</button>
+                    <button id="dataset-training-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetTraining()">Configure Krea 2 training</button>
                 </div>
                 <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
+                <div id="dataset-training-panel" class="training-panel" style="display:none;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <div style="color:#e8f4ff;font-weight:650;">Krea 2 LoRA recipe</div>
+                            <div style="color:#55748d;font-size:11px;margin-top:3px;">Train on Raw · resulting LoRA is intended for Turbo evaluation</div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:flex-end;">
+                            <div><label style="font-size:10px;margin-bottom:3px;">Profile</label><select id="dataset-training-profile" onchange="loadDatasetTrainingRecipe()" style="width:125px;padding:7px 9px;font-size:12px;"><option value="fast">Fast</option><option value="balanced" selected>Balanced</option><option value="quality">Quality</option></select></div>
+                            <div><label style="font-size:10px;margin-bottom:3px;">Seed</label><input id="dataset-training-seed" type="number" value="42" min="0" max="2147483647" style="width:105px;padding:7px 9px;font-size:12px;"></div>
+                        </div>
+                    </div>
+                    <div id="dataset-training-recipe" class="training-recipe-grid"></div>
+                    <div id="dataset-training-message" style="font-size:12px;color:#6f8da5;margin:8px 0;"></div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button id="dataset-training-start" class="btn btn-sm" onclick="startDatasetTraining()">Start training</button>
+                        <button id="dataset-training-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetTraining()" style="display:none;">Cancel training</button>
+                    </div>
+                    <div id="dataset-training-progress" style="display:none;margin-top:13px;">
+                        <div style="display:flex;justify-content:space-between;color:#7fa0b8;font-size:11px;"><span id="dataset-training-progress-text">Preparing…</span><span id="dataset-training-progress-count"></span></div>
+                        <div class="training-progress-track"><div id="dataset-training-progress-fill" class="training-progress-fill"></div></div>
+                        <div id="dataset-training-output" style="font-size:12px;color:#6f8da5;"></div>
+                        <div id="dataset-training-log" class="training-log" style="display:none;"></div>
+                        <button id="dataset-training-log-toggle" class="btn-small" onclick="toggleDatasetTrainingLog()" style="margin-top:8px;">Show log</button>
+                    </div>
+                </div>
                 <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
                 <div class="dataset-table-wrap">
                     <table class="dataset-table">
@@ -2103,6 +2137,8 @@
 
         var activeDatasetId = '';
         var activeDatasetCaptionJob = '';
+        var activeDatasetTrainingJob = '';
+        var activeDatasetTrainingDataset = '';
         var datasetThumbUrls = [];
 
         async function datasetResponseError(response) {
@@ -2195,9 +2231,12 @@
 
         function renderDatasetDetail(dataset) {
             var analysis = dataset.analysis || {};
+            var trainingRuns = dataset.training_runs || [];
+            var latestTraining = trainingRuns.length ? trainingRuns[trainingRuns.length - 1] : null;
             document.getElementById('dataset-detail').style.display = 'block';
             document.getElementById('dataset-detail-name').textContent = dataset.name;
-            document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action;
+            document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action +
+                (latestTraining && latestTraining.status === 'done' ? ' · latest LoRA ready' : '');
             var badge = document.getElementById('dataset-detail-status');
             badge.className = 'dataset-badge ' + analysis.status;
             badge.textContent = datasetStatusLabel(analysis.status);
@@ -2307,6 +2346,166 @@
             if (!activeDatasetCaptionJob) return;
             await fetch('/api/datasets/caption-cancel/' + encodeURIComponent(activeDatasetCaptionJob), { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
             document.getElementById('dataset-caption-progress').textContent = 'Cancelling after the current image…';
+        }
+
+        function toggleDatasetTraining() {
+            var panel = document.getElementById('dataset-training-panel');
+            var showing = panel.style.display !== 'none';
+            panel.style.display = showing ? 'none' : 'block';
+            document.getElementById('dataset-training-toggle').textContent = showing ? 'Configure Krea 2 training' : 'Hide training setup';
+            if (!showing && !activeDatasetTrainingJob) loadDatasetTrainingRecipe();
+        }
+
+        function renderDatasetTrainingRecipe(recipe) {
+            var values = [
+                ['Training model', recipe.training_model.replace('krea/', '')],
+                ['Resolution', recipe.resolution + ' px'],
+                ['Steps', Number(recipe.max_train_steps).toLocaleString()],
+                ['LoRA rank', recipe.rank],
+                ['Learning rate', recipe.learning_rate],
+                ['Caption dropout', Math.round(recipe.caption_dropout * 100) + '%']
+            ];
+            document.getElementById('dataset-training-recipe').innerHTML = values.map(function(item) {
+                return '<div class="training-recipe-item"><span>' + escapeHtml(String(item[0])) + '</span><strong>' + escapeHtml(String(item[1])) + '</strong></div>';
+            }).join('');
+            document.getElementById('dataset-training-message').textContent =
+                'Prompt: ' + recipe.instance_prompt + ' · aspect-ratio buckets · bf16 · 8-bit AdamW';
+        }
+
+        async function loadDatasetTrainingRecipe() {
+            if (!activeDatasetId || activeDatasetTrainingJob) return;
+            var datasetId = activeDatasetId;
+            var profile = document.getElementById('dataset-training-profile').value;
+            var startButton = document.getElementById('dataset-training-start');
+            startButton.disabled = true;
+            document.getElementById('dataset-training-recipe').innerHTML = '';
+            document.getElementById('dataset-training-message').innerHTML = '<span class="loading">Checking dataset…</span>';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/training-recipe?profile=' + encodeURIComponent(profile), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                if (datasetId !== activeDatasetId) return;
+                var data = await response.json();
+                renderDatasetTrainingRecipe(data.recipe);
+                startButton.disabled = false;
+            } catch (e) {
+                if (datasetId !== activeDatasetId) return;
+                document.getElementById('dataset-training-message').innerHTML = '<span class="error">' + escapeHtml(e.message) + '</span>';
+            }
+        }
+
+        async function startDatasetTraining() {
+            if (!activeDatasetId || activeDatasetTrainingJob) return;
+            var datasetId = activeDatasetId;
+            var profile = document.getElementById('dataset-training-profile').value;
+            var seed = Number(document.getElementById('dataset-training-seed').value);
+            if (!Number.isInteger(seed) || seed < 0 || seed > 2147483647) {
+                showAlert('Invalid seed', 'Seed must be a whole number from 0 to 2,147,483,647.');
+                return;
+            }
+            var confirmed = await showConfirm('Start the <strong>' + escapeHtml(profile) + '</strong> Krea 2 training profile?<br><br>This uses the NVIDIA GPU until training finishes or is cancelled.');
+            if (!confirmed) return;
+            var startButton = document.getElementById('dataset-training-start');
+            startButton.disabled = true;
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/training', {
+                    method:'POST',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({ profile:profile, seed:seed })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var data = await response.json();
+                activeDatasetTrainingJob = data.job_id;
+                activeDatasetTrainingDataset = datasetId;
+                document.getElementById('dataset-training-profile').disabled = true;
+                document.getElementById('dataset-training-seed').disabled = true;
+                document.getElementById('dataset-training-cancel').style.display = 'inline-flex';
+                document.getElementById('dataset-training-progress').style.display = 'block';
+                document.getElementById('dataset-training-progress-fill').style.width = '0%';
+                document.getElementById('dataset-training-progress-text').textContent = 'Queued…';
+                document.getElementById('dataset-training-progress-count').textContent = '0/' + data.recipe.max_train_steps;
+                document.getElementById('dataset-training-output').textContent = '';
+                document.getElementById('dataset-training-log').textContent = '';
+                pollDatasetTraining();
+            } catch (e) {
+                startButton.disabled = false;
+                showAlert('Training could not start', e.message);
+            }
+        }
+
+        function finishDatasetTrainingControls() {
+            document.getElementById('dataset-training-profile').disabled = false;
+            document.getElementById('dataset-training-seed').disabled = false;
+            document.getElementById('dataset-training-cancel').style.display = 'none';
+            document.getElementById('dataset-training-start').disabled = false;
+        }
+
+        async function pollDatasetTraining() {
+            if (!activeDatasetTrainingJob) return;
+            var jobId = activeDatasetTrainingJob;
+            try {
+                var response = await fetch('/api/training/' + encodeURIComponent(jobId), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var job = await response.json();
+                if (jobId !== activeDatasetTrainingJob) return;
+                var completed = job.completed_steps || 0;
+                var total = job.total_steps || 0;
+                var percent = total ? Math.min(100, Math.round(completed * 100 / total)) : 0;
+                var statusText = job.message || job.status;
+                if (job.loss !== undefined && job.loss !== null) statusText += ' · loss ' + Number(job.loss).toFixed(4);
+                document.getElementById('dataset-training-progress-text').textContent = statusText;
+                document.getElementById('dataset-training-progress-count').textContent = total ? completed + '/' + total + ' (' + percent + '%)' : '';
+                document.getElementById('dataset-training-progress-fill').style.width = percent + '%';
+                document.getElementById('dataset-training-log').textContent = (job.logs || []).join('\n');
+                if (job.status === 'queued' || job.status === 'preparing' || job.status === 'running' || job.status === 'cancelling') {
+                    document.getElementById('dataset-training-cancel').disabled = job.status === 'cancelling';
+                    setTimeout(pollDatasetTraining, 1000);
+                    return;
+                }
+
+                finishDatasetTrainingControls();
+                document.getElementById('dataset-training-cancel').disabled = false;
+                if (job.status === 'done') {
+                    document.getElementById('dataset-training-progress-fill').style.width = '100%';
+                    document.getElementById('dataset-training-output').innerHTML = '<span style="color:#69d47c;">Saved: ' + escapeHtml(job.lora_path || job.output_dir || '') + '</span>';
+                    showToast('Krea 2 LoRA is ready for Test LoRA');
+                    await Promise.all([loadBatchModels(), refreshLoraList(), loadDatasets(activeDatasetTrainingDataset)]);
+                    if (activeDatasetId === activeDatasetTrainingDataset) await openDataset(activeDatasetTrainingDataset);
+                } else if (job.status === 'cancelled') {
+                    document.getElementById('dataset-training-output').textContent = 'Training cancelled. Any checkpoint files remain in the output folder.';
+                    showToast('Training cancelled');
+                } else {
+                    document.getElementById('dataset-training-output').innerHTML = '<span class="error">' + escapeHtml(job.error || 'Training failed') + '</span>';
+                    showAlert('Training failed', job.error || 'Unknown error');
+                }
+                activeDatasetTrainingJob = '';
+                activeDatasetTrainingDataset = '';
+            } catch (e) {
+                finishDatasetTrainingControls();
+                activeDatasetTrainingJob = '';
+                activeDatasetTrainingDataset = '';
+                showAlert('Training status error', e.message);
+            }
+        }
+
+        async function cancelDatasetTraining() {
+            if (!activeDatasetTrainingJob) return;
+            document.getElementById('dataset-training-cancel').disabled = true;
+            try {
+                var response = await fetch('/api/training/' + encodeURIComponent(activeDatasetTrainingJob) + '/cancel', { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                document.getElementById('dataset-training-progress-text').textContent = 'Cancelling training…';
+            } catch (e) {
+                document.getElementById('dataset-training-cancel').disabled = false;
+                showAlert('Cancel failed', e.message);
+            }
+        }
+
+        function toggleDatasetTrainingLog() {
+            var log = document.getElementById('dataset-training-log');
+            var showing = log.style.display !== 'none';
+            log.style.display = showing ? 'none' : 'block';
+            document.getElementById('dataset-training-log-toggle').textContent = showing ? 'Show log' : 'Hide log';
+            if (!showing) log.scrollTop = log.scrollHeight;
         }
 
         async function mergeLora() {

@@ -11,6 +11,7 @@ import io
 import sqlite3
 import hashlib
 import subprocess
+import signal
 from typing import List
 
 import torch
@@ -23,7 +24,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from core import datasets as dataset_module
-from core import gpu, caption, sdxl, lora, image as img_module, utils
+from core import gpu, caption, sdxl, lora, training, image as img_module, utils
 import threading
 import time
 
@@ -45,6 +46,11 @@ _evaluation_cancel_lock = threading.Lock()
 _dataset_caption_jobs: dict = {}
 _dataset_caption_lock = threading.Lock()
 _dataset_caption_cancel_events: dict = {}
+
+_training_jobs: dict = {}
+_training_lock = threading.Lock()
+_training_processes: dict = {}
+_training_cancel_events: dict = {}
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -180,6 +186,11 @@ async def api_auto_caption(files: list[UploadFile] = File(...), user: str = Depe
 
 class DatasetCaptionPayload(BaseModel):
     captions: dict[str, str]
+
+
+class TrainingStartPayload(BaseModel):
+    profile: str = "balanced"
+    seed: int = 42
 
 
 def _set_dataset_caption_job(job_id: str, **updates):
@@ -342,6 +353,265 @@ async def api_cancel_dataset_caption(job_id: str, user: str = Depends(get_curren
         if not event or not job:
             raise HTTPException(status_code=404, detail="Caption job not found")
         event.set()
+    return {"status": "cancelling", "job_id": job_id}
+
+
+def _set_training_job(job_id: str, **updates):
+    with _training_lock:
+        job = _training_jobs.get(job_id, {})
+        job.update(updates)
+        job["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _training_jobs[job_id] = job
+
+
+def _append_training_log(job_id: str, message: str):
+    message = message.strip()
+    if not message:
+        return
+    with _training_lock:
+        job = _training_jobs.get(job_id, {})
+        logs = job.setdefault("logs", [])
+        logs.append(message[-1000:])
+        job["logs"] = logs[-100:]
+        _training_jobs[job_id] = job
+
+
+def _iter_process_messages(stream):
+    buffer = []
+    while True:
+        character = stream.read(1)
+        if character == "":
+            if buffer:
+                yield "".join(buffer)
+            break
+        if character in {"\n", "\r"}:
+            if buffer:
+                yield "".join(buffer)
+                buffer = []
+        else:
+            buffer.append(character)
+
+
+def _training_run_record(job: dict) -> dict:
+    return {
+        key: job.get(key)
+        for key in (
+            "job_id", "status", "profile", "engine", "created_at", "updated_at",
+            "completed_steps", "total_steps", "loss", "output_dir", "lora_path", "error",
+        )
+        if job.get(key) is not None
+    }
+
+
+def _training_was_cancelled(job_id: str) -> bool:
+    with _training_lock:
+        event = _training_cancel_events.get(job_id)
+        return bool(event and event.is_set())
+
+
+def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
+    output_dir = None
+    try:
+        _set_training_job(job_id, status="preparing", message="Preparing official Krea 2 trainer")
+        project_root = os.path.dirname(__file__)
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        recipe = training.build_krea2_recipe(manifest, profile=profile, seed=seed)
+        trainer_path = training.ensure_krea2_trainer(project_root)
+        if _training_was_cancelled(job_id):
+            _set_training_job(job_id, status="cancelled", message="Training cancelled")
+            return
+        dataset_dir = os.path.join(_datasets_root(), dataset_id)
+        imagefolder = training.prepare_imagefolder(dataset_dir, manifest, recipe)
+
+        models_path = settings.get("models_path", os.path.join(os.path.expanduser("~"), "models"))
+        output_dir = os.path.join(models_path, "lora", "krea2", f"{dataset_id}-{job_id[:8]}")
+        os.makedirs(output_dir, exist_ok=False)
+        command = training.build_krea2_command(trainer_path, imagefolder, output_dir, recipe)
+        with open(os.path.join(output_dir, "training-recipe.json"), "w", encoding="utf-8") as file:
+            json.dump(recipe.to_dict(), file, ensure_ascii=False, indent=2)
+        if _training_was_cancelled(job_id):
+            _set_training_job(job_id, status="cancelled", message="Training cancelled")
+            return
+
+        _set_training_job(
+            job_id,
+            status="running",
+            message="Training Krea 2 LoRA on Raw",
+            engine=recipe.engine,
+            recipe=recipe.to_dict(),
+            output_dir=output_dir,
+            total_steps=recipe.max_train_steps,
+            completed_steps=0,
+        )
+        with _training_lock:
+            started_job = dict(_training_jobs[job_id])
+        dataset_module.record_training_run(
+            _datasets_root(), dataset_id, _training_run_record(started_job)
+        )
+
+        environment = os.environ.copy()
+        environment["PYTHONUNBUFFERED"] = "1"
+        popen_kwargs = {
+            "cwd": project_root,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "bufsize": 0,
+            "env": environment,
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
+        process = subprocess.Popen(command, **popen_kwargs)
+        with _training_lock:
+            _training_processes[job_id] = process
+
+        for message in _iter_process_messages(process.stdout):
+            _append_training_log(job_id, message)
+            progress = training.parse_training_progress(message)
+            if progress:
+                _set_training_job(job_id, **progress)
+
+        return_code = process.wait()
+        with _training_lock:
+            current_status = _training_jobs.get(job_id, {}).get("status")
+            _training_processes.pop(job_id, None)
+        if current_status == "cancelling":
+            _set_training_job(job_id, status="cancelled", message="Training cancelled")
+        elif return_code != 0:
+            raise training.TrainingError(f"Official trainer exited with code {return_code}")
+        else:
+            lora_path = training.find_final_lora(output_dir)
+            if lora_path is None:
+                raise training.TrainingError("Training finished but no LoRA weights were produced")
+            _set_training_job(
+                job_id,
+                status="done",
+                message="LoRA training complete — ready for Test LoRA",
+                completed_steps=recipe.max_train_steps,
+                lora_path=str(lora_path),
+            )
+    except Exception as exc:
+        with _training_lock:
+            current_status = _training_jobs.get(job_id, {}).get("status")
+            _training_processes.pop(job_id, None)
+        if current_status == "cancelling":
+            _set_training_job(job_id, status="cancelled", message="Training cancelled")
+        else:
+            _set_training_job(job_id, status="error", error=str(exc), message="Training failed")
+    finally:
+        with _training_lock:
+            job = dict(_training_jobs.get(job_id, {}))
+        try:
+            dataset_module.record_training_run(
+                _datasets_root(), dataset_id, _training_run_record(job)
+            )
+        except Exception:
+            pass
+
+
+@app.get("/api/datasets/{dataset_id}/training-recipe")
+async def api_training_recipe(
+    dataset_id: str,
+    profile: str = Query("balanced"),
+    user: str = Depends(get_current_user),
+):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        recipe = training.build_krea2_recipe(manifest, profile=profile)
+        return {"recipe": recipe.to_dict(), "dataset_analysis": manifest["analysis"]}
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except training.TrainingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/datasets/{dataset_id}/training")
+async def api_start_training(
+    dataset_id: str,
+    payload: TrainingStartPayload,
+    user: str = Depends(get_current_user),
+):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        recipe = training.build_krea2_recipe(manifest, profile=payload.profile, seed=payload.seed)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except training.TrainingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if not torch.cuda.is_available():
+        raise HTTPException(status_code=409, detail="Krea 2 training requires an NVIDIA CUDA GPU")
+    try:
+        from diffusers import Krea2Pipeline  # noqa: F401
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Krea 2 training dependencies are not installed. Run update.sh first.",
+        ) from exc
+
+    with _training_lock:
+        if any(job.get("status") in {"queued", "preparing", "running", "cancelling"} for job in _training_jobs.values()):
+            raise HTTPException(status_code=409, detail="Another training job is already active")
+        job_id = uuid.uuid4().hex
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _training_jobs[job_id] = {
+            "job_id": job_id,
+            "dataset_id": dataset_id,
+            "dataset_name": manifest["name"],
+            "profile": recipe.profile,
+            "engine": recipe.engine,
+            "status": "queued",
+            "message": "Training queued",
+            "completed_steps": 0,
+            "total_steps": recipe.max_train_steps,
+            "created_at": now,
+            "updated_at": now,
+            "logs": [],
+        }
+        _training_cancel_events[job_id] = threading.Event()
+
+    thread = threading.Thread(
+        target=_run_krea2_training,
+        args=(job_id, dataset_id, recipe.profile, payload.seed),
+        daemon=True,
+    )
+    thread.start()
+    return {"job_id": job_id, "status": "queued", "recipe": recipe.to_dict()}
+
+
+@app.get("/api/training/{job_id}")
+async def api_training_progress(job_id: str, user: str = Depends(get_current_user)):
+    with _training_lock:
+        job = _training_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Training job not found")
+        return dict(job)
+
+
+@app.post("/api/training/{job_id}/cancel")
+async def api_cancel_training(job_id: str, user: str = Depends(get_current_user)):
+    with _training_lock:
+        job = _training_jobs.get(job_id)
+        process = _training_processes.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Training job not found")
+        if job.get("status") not in {"queued", "preparing", "running"}:
+            return {"status": job.get("status"), "job_id": job_id}
+        job["status"] = "cancelling"
+        job["message"] = "Cancelling training"
+        cancel_event = _training_cancel_events.get(job_id)
+        if cancel_event:
+            cancel_event.set()
+    if process and process.poll() is None:
+        try:
+            if os.name == "nt":
+                process.terminate()
+            else:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     return {"status": "cancelling", "job_id": job_id}
 
 
@@ -880,6 +1150,18 @@ async def api_active_jobs(user: str = Depends(get_current_user)):
                     "message": (
                         f"Captioning {data.get('dataset_name', 'dataset')} "
                         f"({data.get('completed', 0)}/{data.get('total', 0)})"
+                    ),
+                })
+    with _training_lock:
+        for job_id, data in _training_jobs.items():
+            if data.get("status") in {"queued", "preparing", "running", "cancelling"}:
+                jobs.append({
+                    "type": "training",
+                    "id": job_id,
+                    "status": data.get("status"),
+                    "message": (
+                        f"Training {data.get('dataset_name', 'LoRA')} "
+                        f"({data.get('completed_steps', 0)}/{data.get('total_steps', 0)})"
                     ),
                 })
     return {"jobs": jobs}

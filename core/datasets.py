@@ -180,6 +180,8 @@ def create_dataset(
     root_path = Path(root).resolve()
     root_path.mkdir(parents=True, exist_ok=True)
     dataset_id = f"{_slug(name)}-{uuid.uuid4().hex[:8]}"
+    if not trigger_word:
+        trigger_word = dataset_id.replace("-", "_")
     stage_dir = root_path / f".staging-{dataset_id}"
     final_dir = root_path / dataset_id
     images_dir = stage_dir / "images"
@@ -333,5 +335,21 @@ def update_captions(
                     file.write(value + "\n")
             elif sidecar.exists():
                 sidecar.unlink()
+        _save_manifest(manifest_path, manifest)
+    return _with_analysis(manifest)
+
+
+def record_training_run(root: str | os.PathLike, dataset_id: str, run: dict) -> dict:
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        runs = manifest.setdefault("training_runs", [])
+        run_id = run.get("job_id")
+        existing = next((item for item in runs if item.get("job_id") == run_id), None)
+        if existing is None:
+            runs.append(dict(run))
+        else:
+            existing.update(run)
+        manifest["training_runs"] = runs[-20:]
         _save_manifest(manifest_path, manifest)
     return _with_analysis(manifest)
