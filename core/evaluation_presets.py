@@ -62,7 +62,7 @@ def comparison_evidence(result: dict) -> dict:
         saved_cells.append({
             "x": x,
             "y": y,
-            "images": images,
+            "images": list(images),
             "seeds": seeds,
             "steps": cell.get("steps"),
             "cfg": cell.get("cfg"),

@@ -50,10 +50,11 @@ def _evaluation_result(lora_path: str) -> dict:
     cells = []
     for y in range(3):
         for x in range(3):
+            image_id = f"{y:02x}{x:02x}" + ("0" * 28)
             cells.append({
                 "x": x,
                 "y": y,
-                "images": [f"/output/eval-{y}-{x}.png"],
+                "images": [f"/output/eval_{image_id}.png"],
                 "seeds": [42 + y],
                 "steps": 8,
                 "cfg": 0.0,
@@ -65,6 +66,13 @@ def _evaluation_result(lora_path: str) -> dict:
         "y_labels": experiment["prompts"],
         "cells": cells,
     }
+
+
+def _write_evaluation_outputs(root: Path, result: dict) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    for cell in result["cells"]:
+        for url in cell["images"]:
+            (root / Path(url).name).write_bytes(b"png evidence")
 
 
 class EvaluationPresetTests(unittest.TestCase):
@@ -198,13 +206,18 @@ class EvaluationPresetTests(unittest.TestCase):
             })
             evaluation_id = "evaluation-verdict-api"
             result = _evaluation_result(str(lora_path))
+            output_root = Path(root) / "output"
+            _write_evaluation_outputs(output_root, result)
             main._evaluation_progress[evaluation_id] = {
                 "status": "done", "result": result,
             }
             main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
             client = TestClient(main.app)
             try:
-                with patch.object(main, "_datasets_root", return_value=root):
+                with (
+                    patch.object(main, "_datasets_root", return_value=root),
+                    patch.object(main, "OUTPUT_DIR", str(output_root)),
+                ):
                     response = client.post(
                         f"/api/datasets/{created['id']}/evaluation-verdict",
                         json={
@@ -215,7 +228,10 @@ class EvaluationPresetTests(unittest.TestCase):
                     )
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["summary"]["winner"]["label"], "Subject 0.7")
-                with patch.object(main, "_datasets_root", return_value=root):
+                with (
+                    patch.object(main, "_datasets_root", return_value=root),
+                    patch.object(main, "OUTPUT_DIR", str(output_root)),
+                ):
                     updated_response = client.post(
                         f"/api/datasets/{created['id']}/evaluation-verdict",
                         json={
@@ -231,10 +247,18 @@ class EvaluationPresetTests(unittest.TestCase):
                 self.assertEqual(stored[0]["training_run_id"], "run-verdict")
                 self.assertEqual(stored[0]["summary"]["winner"]["label"], "Base")
                 self.assertEqual(stored[0]["comparison"]["image_count"], 9)
+                evidence_url = stored[0]["comparison"]["cells"][0]["images"][0]
                 self.assertEqual(
-                    stored[0]["comparison"]["cells"][0]["images"],
-                    ["/output/eval-0-0.png"],
+                    evidence_url,
+                    f"/api/datasets/{created['id']}/evaluations/{evaluation_id}/images/"
+                    "eval_00000000000000000000000000000000.png",
                 )
+                for output_file in output_root.iterdir():
+                    output_file.unlink()
+                with patch.object(main, "_datasets_root", return_value=root):
+                    evidence_response = client.get(evidence_url)
+                self.assertEqual(evidence_response.status_code, 200)
+                self.assertEqual(evidence_response.content, b"png evidence")
             finally:
                 main._evaluation_progress.pop(evaluation_id, None)
                 main.app.dependency_overrides.clear()
@@ -250,14 +274,20 @@ class EvaluationPresetTests(unittest.TestCase):
                 "job_id": "run-mismatch", "status": "done", "lora_path": str(trained_lora),
             })
             evaluation_id = "evaluation-mismatch"
+            mismatch_result = _evaluation_result(str(Path(root) / "other.safetensors"))
+            output_root = Path(root) / "output"
+            _write_evaluation_outputs(output_root, mismatch_result)
             main._evaluation_progress[evaluation_id] = {
                 "status": "done",
-                "result": _evaluation_result(str(Path(root) / "other.safetensors")),
+                "result": mismatch_result,
             }
             main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
             client = TestClient(main.app)
             try:
-                with patch.object(main, "_datasets_root", return_value=root):
+                with (
+                    patch.object(main, "_datasets_root", return_value=root),
+                    patch.object(main, "OUTPUT_DIR", str(output_root)),
+                ):
                     response = client.post(
                         f"/api/datasets/{created['id']}/evaluation-verdict",
                         json={

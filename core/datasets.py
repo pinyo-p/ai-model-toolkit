@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 import hashlib
 import json
 import os
@@ -21,6 +22,7 @@ MAX_IMAGE_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
 DATASET_TYPES = {"person", "style", "clothing", "environment", "vehicle", "object"}
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
+_EVALUATION_IMAGE_PATTERN = re.compile(r"^eval_[a-f0-9-]{32,40}\.png$")
 _FORMAT_EXTENSIONS = {
     "JPEG": ".jpg",
     "PNG": ".png",
@@ -364,6 +366,7 @@ def record_evaluation_verdict(
     comparison: dict,
     votes: dict[int, int],
     summary: dict,
+    output_root: str | os.PathLike,
 ) -> dict:
     """Persist a completed human evaluation against its originating training run."""
     manifest_path = _manifest_path(root, dataset_id)
@@ -391,6 +394,36 @@ def record_evaluation_verdict(
         if trained_path not in tested_paths:
             raise DatasetError("Evaluation does not test the LoRA from this training run")
 
+        if not _ID_PATTERN.fullmatch(evaluation_id or ""):
+            raise DatasetError("Invalid evaluation id")
+        stored_comparison = copy.deepcopy(comparison)
+        source_root = Path(output_root).resolve()
+        evidence_dir = manifest_path.parent / "evaluations" / evaluation_id
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        for cell in stored_comparison.get("cells", []):
+            stored_urls = []
+            for url in cell.get("images", []):
+                filename = Path(url).name
+                if (
+                    url != f"/output/{filename}"
+                    or not _EVALUATION_IMAGE_PATTERN.fullmatch(filename)
+                ):
+                    raise DatasetError("Evaluation contains an invalid output image")
+                source = (source_root / filename).resolve()
+                target = evidence_dir / filename
+                if source.parent != source_root:
+                    raise DatasetError("Evaluation image escapes the output directory")
+                if target.is_symlink():
+                    raise DatasetError("Evaluation evidence target is invalid")
+                if source.is_file():
+                    shutil.copy2(source, target)
+                elif not target.is_file():
+                    raise DatasetError(f"Evaluation image is missing: {filename}")
+                stored_urls.append(
+                    f"/api/datasets/{dataset_id}/evaluations/{evaluation_id}/images/{filename}"
+                )
+            cell["images"] = stored_urls
+
         record = {
             "evaluation_id": evaluation_id,
             "training_run_id": training_run_id,
@@ -398,7 +431,7 @@ def record_evaluation_verdict(
             "votes": {str(key): int(value) for key, value in sorted(votes.items())},
             "summary": summary,
             "experiment": experiment,
-            "comparison": comparison,
+            "comparison": stored_comparison,
         }
         evaluations = manifest.setdefault("evaluation_runs", [])
         existing = next(
@@ -412,6 +445,37 @@ def record_evaluation_verdict(
         manifest["evaluation_runs"] = evaluations[-20:]
         _save_manifest(manifest_path, manifest)
     return record
+
+
+def evaluation_image_path(
+    root: str | os.PathLike,
+    dataset_id: str,
+    evaluation_id: str,
+    filename: str,
+) -> Path:
+    if not _ID_PATTERN.fullmatch(evaluation_id or ""):
+        raise DatasetNotFound("Evaluation image not found")
+    if not _EVALUATION_IMAGE_PATTERN.fullmatch(filename or ""):
+        raise DatasetNotFound("Evaluation image not found")
+    manifest = get_dataset(root, dataset_id)
+    record = next(
+        (
+            item for item in manifest.get("evaluation_runs", [])
+            if item.get("evaluation_id") == evaluation_id
+        ),
+        None,
+    )
+    expected_url = (
+        f"/api/datasets/{dataset_id}/evaluations/{evaluation_id}/images/{filename}"
+    )
+    referenced = record and any(
+        expected_url in (cell.get("images") or [])
+        for cell in (record.get("comparison", {}).get("cells") or [])
+    )
+    path = _dataset_dir(root, dataset_id) / "evaluations" / evaluation_id / filename
+    if not referenced or not path.is_file():
+        raise DatasetNotFound("Evaluation image not found")
+    return path
 
 
 def expansion_candidate_dir(

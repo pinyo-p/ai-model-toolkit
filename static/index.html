@@ -1798,6 +1798,8 @@
 
         function _renderComparisonGrid(container, data, options) {
             options = options || {};
+            evaluationEvidenceObjectUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+            evaluationEvidenceObjectUrls = [];
             var prompts = data.y_labels || [];
             var combos = data.x_labels || [];
             var cells = data.cells || [];
@@ -1846,11 +1848,12 @@
                     var picked = evaluationVotes[ri] === ci;
                     html += '<td class="eval-cell' + (picked ? ' eval-cell-picked' : '') + '" data-prompt-index="' + ri + '" data-variant-index="' + ci + '" style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
                     for (var ii = 0; ii < images.length; ii++) {
+                        var protectedImage = images[ii].indexOf('/api/datasets/') === 0;
                         html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
-                        html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')" onerror="this.style.opacity=\'.2\';this.title=\'Saved image is missing\'">';
+                        html += '<img ' + (protectedImage ? 'class="eval-protected-image" data-evidence-url="' + images[ii] + '"' : 'src="' + images[ii] + '"') + ' style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="if(this.src)openLightbox(this.src)" onerror="this.style.opacity=\'.2\';this.title=\'Saved image is missing\'">';
                         html += '<div style="margin-top:2px;font-size:10px;color:#666;">';
                         html += 'seed ' + escapeHtml(String(seeds[ii] !== undefined ? seeds[ii] : '—')) + ' · ';
-                        html += '<a href="' + images[ii] + '" download="eval_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">download</a>';
+                        html += '<a ' + (protectedImage ? 'class="eval-protected-download" data-evidence-url="' + images[ii] + '" href="#" onclick="if(this.getAttribute(\'href\')===\'#\')return false"' : 'href="' + images[ii] + '"') + ' download="eval_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">download</a>';
                         html += '</div></div>';
                     }
                     if (images.length === 0) {
@@ -1873,6 +1876,7 @@
 
             container.innerHTML = html;
             renderEvaluationVerdictSummary();
+            loadProtectedEvaluationImages(container);
         }
 
         var currentEvaluationId = null;
@@ -1881,6 +1885,31 @@
         var activeEvaluationPreset = null;
         var evaluationVotes = {};
         var evaluationReadOnly = false;
+        var evaluationEvidenceObjectUrls = [];
+
+        async function loadProtectedEvaluationImages(container) {
+            var images = Array.from(container.querySelectorAll('.eval-protected-image'));
+            for (var i = 0; i < images.length; i++) {
+                var image = images[i];
+                var evidenceUrl = image.getAttribute('data-evidence-url');
+                try {
+                    var response = await fetch(evidenceUrl, { headers:{ 'Authorization':'Basic ' + auth } });
+                    if (!response.ok) throw new Error('Evidence image unavailable');
+                    var objectUrl = URL.createObjectURL(await response.blob());
+                    if (!image.isConnected || image.getAttribute('data-evidence-url') !== evidenceUrl) {
+                        URL.revokeObjectURL(objectUrl);
+                        continue;
+                    }
+                    evaluationEvidenceObjectUrls.push(objectUrl);
+                    image.src = objectUrl;
+                    var download = image.parentElement.querySelector('.eval-protected-download');
+                    if (download) download.href = objectUrl;
+                } catch (e) {
+                    image.style.opacity = '.2';
+                    image.title = 'Saved image is missing or unavailable';
+                }
+            }
+        }
 
         function pickEvaluationWinner(promptIndex, variantIndex) {
             if (evaluationReadOnly) return;

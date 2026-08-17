@@ -309,6 +309,24 @@ async def api_get_dataset_image(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get(
+    "/api/datasets/{dataset_id}/evaluations/{evaluation_id}/images/{filename}"
+)
+async def api_get_evaluation_image(
+    dataset_id: str,
+    evaluation_id: str,
+    filename: str,
+    user: str = Depends(get_current_user),
+):
+    try:
+        path = dataset_module.evaluation_image_path(
+            _datasets_root(), dataset_id, evaluation_id, filename
+        )
+        return FileResponse(path, media_type="image/png")
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.put("/api/datasets/{dataset_id}/captions")
 async def api_update_dataset_captions(
     dataset_id: str,
@@ -685,6 +703,7 @@ async def api_dataset_evaluation_verdict(
         record = dataset_module.record_evaluation_verdict(
             _datasets_root(), dataset_id, payload.training_run_id,
             payload.evaluation_id, experiment, comparison, normalized_votes, summary,
+            OUTPUT_DIR,
         )
         return record
     except dataset_module.DatasetNotFound as exc:
