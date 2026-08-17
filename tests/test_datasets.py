@@ -36,6 +36,8 @@ class DatasetWorkspaceTests(unittest.TestCase):
             self.assertEqual(result["analysis"]["duplicate_count"], 1)
             self.assertEqual(result["analysis"]["source_mode"], "quick")
             self.assertEqual(result["analysis"]["status"], "needs_captions")
+            self.assertEqual(result["dataset_revision"], 1)
+            self.assertEqual(result["training_state"]["status"], "none")
             self.assertTrue((Path(root) / result["id"] / "dataset.json").is_file())
 
     def test_caption_updates_write_trainer_sidecars(self):
@@ -56,6 +58,12 @@ class DatasetWorkspaceTests(unittest.TestCase):
             self.assertEqual(sidecar.read_text().strip(), "a blue modern room")
             self.assertEqual(updated["analysis"]["captioned_count"], 1)
             self.assertEqual(updated["analysis"]["status"], "needs_expansion")
+            self.assertEqual(updated["dataset_revision"], 2)
+
+            unchanged = datasets.update_captions(
+                root, result["id"], {image["id"]: "a blue modern room"}
+            )
+            self.assertEqual(unchanged["dataset_revision"], 2)
 
     def test_add_images_appends_unique_files_and_skips_duplicates(self):
         with tempfile.TemporaryDirectory() as root:
@@ -77,9 +85,39 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 "image-00001", "image-00002",
             ])
             self.assertEqual(updated["analysis"]["image_count"], 2)
+            self.assertEqual(updated["dataset_revision"], 2)
             self.assertTrue(
                 (Path(root) / created["id"] / "images" / "image-00002.png").is_file()
             )
+
+            duplicate_only = datasets.add_images(
+                root, created["id"], [("duplicate-again.png", _image_file("blue"))]
+            )
+            self.assertEqual(duplicate_only["dataset_revision"], 2)
+
+    def test_training_state_marks_older_dataset_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root, "Versioned set", "object", "object_x", [("first.png", _image_file("red"))]
+            )
+            datasets.record_training_run(root, created["id"], {
+                "job_id": "run-current",
+                "status": "done",
+                "lora_path": "/models/current.safetensors",
+                "dataset_revision": 1,
+                "dataset_image_count": 1,
+            })
+            current = datasets.get_dataset(root, created["id"])
+            self.assertEqual(current["training_state"]["status"], "current")
+
+            changed = datasets.add_images(
+                root, created["id"], [("second.png", _image_file("blue"))]
+            )
+            self.assertEqual(changed["training_state"]["status"], "stale")
+            self.assertEqual(changed["training_state"]["trained_image_count"], 1)
+            self.assertIn("stale_training", {
+                issue["code"] for issue in changed["analysis"]["issues"]
+            })
 
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:

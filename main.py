@@ -451,7 +451,8 @@ def _training_run_record(job: dict) -> dict:
         for key in (
             "job_id", "status", "profile", "engine", "created_at", "updated_at",
             "completed_steps", "total_steps", "loss", "output_dir", "lora_path", "error",
-            "seed", "recipe",
+            "seed", "recipe", "dataset_revision", "dataset_image_count",
+            "dataset_captioned_count",
         )
         if job.get(key) is not None
     }
@@ -478,6 +479,7 @@ def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
         project_root = os.path.dirname(__file__)
         manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
         recipe = training.build_krea2_recipe(manifest, profile=profile, seed=seed)
+        dataset_snapshot = dataset_module.training_snapshot(manifest)
         trainer_path = training.ensure_krea2_trainer(project_root)
         if _training_was_cancelled(job_id):
             _set_training_job(job_id, status="cancelled", message="Training cancelled")
@@ -490,7 +492,7 @@ def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
         os.makedirs(output_dir, exist_ok=False)
         command = training.build_krea2_command(trainer_path, imagefolder, output_dir, recipe)
         with open(os.path.join(output_dir, "training-recipe.json"), "w", encoding="utf-8") as file:
-            json.dump(recipe.to_dict(), file, ensure_ascii=False, indent=2)
+            json.dump({**recipe.to_dict(), **dataset_snapshot}, file, ensure_ascii=False, indent=2)
         if _training_was_cancelled(job_id):
             _set_training_job(job_id, status="cancelled", message="Training cancelled")
             return
@@ -504,6 +506,7 @@ def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
             output_dir=output_dir,
             total_steps=recipe.max_train_steps,
             completed_steps=0,
+            **dataset_snapshot,
         )
         with _training_lock:
             started_job = dict(_training_jobs[job_id])
@@ -634,6 +637,7 @@ async def api_start_training(
             "created_at": now,
             "updated_at": now,
             "logs": [],
+            **dataset_module.training_snapshot(manifest),
         }
         _training_cancel_events[job_id] = threading.Event()
 

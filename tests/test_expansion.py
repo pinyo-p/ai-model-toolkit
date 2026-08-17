@@ -65,6 +65,7 @@ class ExpansionCandidateTests(unittest.TestCase):
             )
 
             self.assertEqual(accepted["analysis"]["image_count"], 2)
+            self.assertEqual(accepted["dataset_revision"], 2)
             self.assertEqual(rejected["expansion_runs"][-1]["candidates"][0]["status"], "accepted")
             self.assertEqual(rejected["expansion_runs"][-1]["candidates"][1]["status"], "rejected")
             generated = rejected["images"][-1]

@@ -176,6 +176,9 @@ class TrainingJobTests(unittest.TestCase):
             self.assertTrue(job["lora_path"].endswith("pytorch_lora_weights.safetensors"))
             manifest = datasets.get_dataset(root, created["id"])
             self.assertEqual(manifest["training_runs"][-1]["status"], "done")
+            self.assertEqual(manifest["training_runs"][-1]["dataset_revision"], 2)
+            self.assertEqual(manifest["training_runs"][-1]["dataset_image_count"], 6)
+            self.assertEqual(manifest["training_state"]["status"], "current")
 
 
 if __name__ == "__main__":

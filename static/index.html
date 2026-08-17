@@ -2478,13 +2478,17 @@
             var trainingRuns = dataset.training_runs || [];
             var completedTraining = trainingRuns.filter(function(run) { return run.status === 'done' && run.lora_path; });
             var latestTraining = completedTraining.length ? completedTraining[completedTraining.length - 1] : null;
+            var trainingState = dataset.training_state || {};
             document.getElementById('dataset-detail').style.display = 'block';
             document.getElementById('dataset-detail-name').textContent = dataset.name;
             document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action +
-                (latestTraining && latestTraining.status === 'done' ? ' · latest LoRA ready' : '');
+                (trainingState.status === 'current' ? ' · latest LoRA matches this dataset' :
+                    trainingState.status === 'stale' ? ' · dataset changed since latest LoRA' :
+                    trainingState.status === 'legacy' ? ' · latest LoRA dataset version unknown' : '');
             var testLoraButton = document.getElementById('dataset-test-lora-btn');
             testLoraButton.style.display = latestTraining ? 'inline-flex' : 'none';
             testLoraButton.setAttribute('data-run-id', latestTraining ? latestTraining.job_id : '');
+            testLoraButton.textContent = trainingState.status === 'stale' ? 'Test previous LoRA' : 'Test latest LoRA';
             var badge = document.getElementById('dataset-detail-status');
             badge.className = 'dataset-badge ' + analysis.status;
             badge.textContent = datasetStatusLabel(analysis.status);
@@ -2556,8 +2560,15 @@
                 var stepText = totalSteps
                     ? (completedSteps === undefined ? totalSteps : completedSteps + '/' + totalSteps) + ' steps'
                     : '';
+                var runRevision = run.dataset_revision;
+                var currentRevision = dataset.dataset_revision || 1;
+                var revisionText = typeof runRevision === 'number'
+                    ? (runRevision === currentRevision ? 'dataset v' + runRevision : 'dataset v' + runRevision + ' · older')
+                    : 'dataset version unknown';
                 var chips = [
                     run.engine || 'Krea 2',
+                    revisionText,
+                    run.dataset_image_count === undefined ? '' : run.dataset_image_count + ' images',
                     run.seed === undefined ? '' : 'seed ' + run.seed,
                     stepText,
                     recipe.rank ? 'rank ' + recipe.rank : '',

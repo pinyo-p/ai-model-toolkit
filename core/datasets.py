@@ -16,7 +16,7 @@ import uuid
 from PIL import Image, UnidentifiedImageError
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_IMAGES = 2000
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
@@ -158,8 +158,64 @@ def analyze_dataset(manifest: dict) -> dict:
 
 def _with_analysis(manifest: dict) -> dict:
     result = dict(manifest)
-    result["analysis"] = analyze_dataset(manifest)
+    result["dataset_revision"] = _dataset_revision(manifest)
+    analysis = analyze_dataset(manifest)
+    result["analysis"] = analysis
+    completed_runs = [
+        run for run in manifest.get("training_runs", [])
+        if run.get("status") == "done" and run.get("lora_path")
+    ]
+    latest_run = completed_runs[-1] if completed_runs else None
+    trained_revision = latest_run.get("dataset_revision") if latest_run else None
+    if latest_run is None:
+        training_status = "none"
+    elif not isinstance(trained_revision, int) or trained_revision < 1:
+        training_status = "legacy"
+    elif trained_revision == result["dataset_revision"]:
+        training_status = "current"
+    else:
+        training_status = "stale"
+    result["training_state"] = {
+        "status": training_status,
+        "current_revision": result["dataset_revision"],
+        "trained_revision": trained_revision,
+        "current_image_count": len(manifest.get("images", [])),
+        "trained_image_count": latest_run.get("dataset_image_count") if latest_run else None,
+    }
+    if training_status == "stale":
+        analysis["issues"].append({
+            "code": "stale_training",
+            "severity": "warning",
+            "message": "This dataset changed after the latest LoRA was trained. Train again when the new revision is ready.",
+        })
+    elif training_status == "legacy":
+        analysis["issues"].append({
+            "code": "legacy_training_revision",
+            "severity": "info",
+            "message": "The latest LoRA predates dataset version tracking, so its exact training revision is unknown.",
+        })
     return result
+
+
+def _dataset_revision(manifest: dict) -> int:
+    revision = manifest.get("dataset_revision", 1)
+    return revision if isinstance(revision, int) and revision >= 1 else 1
+
+
+def _advance_dataset_revision(manifest: dict) -> int:
+    manifest["dataset_revision"] = _dataset_revision(manifest) + 1
+    return manifest["dataset_revision"]
+
+
+def training_snapshot(manifest: dict) -> dict:
+    images = manifest.get("images", [])
+    return {
+        "dataset_revision": _dataset_revision(manifest),
+        "dataset_image_count": len(images),
+        "dataset_captioned_count": sum(
+            bool(str(item.get("caption", "")).strip()) for item in images
+        ),
+    }
 
 
 def _inspect_upload(original_name: str, source: object) -> dict:
@@ -240,6 +296,7 @@ def create_dataset(
         "trigger_word": trigger_word[:120],
         "created_at": _utc_now(),
         "updated_at": _utc_now(),
+        "dataset_revision": 1,
         "images": [],
         "duplicates": [],
     }
@@ -347,6 +404,8 @@ def add_images(
                     os.replace(stage_dir / item["filename"], target)
                     moved_paths.append(target)
                 images.extend(staged_images)
+                if staged_images:
+                    _advance_dataset_revision(manifest)
                 manifest.setdefault("duplicates", []).extend(duplicates)
                 manifest["duplicates"] = manifest["duplicates"][-MAX_IMAGES:]
                 _save_manifest(manifest_path, manifest)
@@ -417,10 +476,12 @@ def update_captions(
         unknown = set(captions) - known_ids
         if unknown:
             raise DatasetError(f"Unknown image id: {sorted(unknown)[0]}")
+        changed = False
         for item in manifest.get("images", []):
             if item["id"] not in captions:
                 continue
             value = str(captions[item["id"]]).strip()[:4000]
+            changed = changed or item.get("caption", "") != value
             item["caption"] = value
             item["caption_source"] = source if value else "none"
             sidecar = manifest_path.parent / "images" / f"{Path(item['filename']).stem}.txt"
@@ -429,6 +490,8 @@ def update_captions(
                     file.write(value + "\n")
             elif sidecar.exists():
                 sidecar.unlink()
+        if changed:
+            _advance_dataset_revision(manifest)
         _save_manifest(manifest_path, manifest)
     return _with_analysis(manifest)
 
@@ -662,6 +725,7 @@ def review_expansion_candidates(
 
         existing_hashes = {item.get("sha256") for item in manifest.get("images", [])}
         images_dir = manifest_path.parent / "images"
+        accepted_count = 0
         for candidate_id in selected:
             candidate = candidates[candidate_id]
             if candidate.get("status") != "pending":
@@ -703,6 +767,9 @@ def review_expansion_candidates(
             existing_hashes.add(digest)
             candidate["status"] = "accepted"
             candidate["image_id"] = image_id
+            accepted_count += 1
 
+        if accepted_count:
+            _advance_dataset_revision(manifest)
         _save_manifest(manifest_path, manifest)
     return _with_analysis(manifest)
