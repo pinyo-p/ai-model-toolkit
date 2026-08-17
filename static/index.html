@@ -625,6 +625,7 @@
                     <input id="dataset-add-files" type="file" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple style="display:none;" onchange="addImagesToDataset()">
                     <button id="dataset-remove-images-btn" class="btn btn-sm btn-danger" onclick="removeSelectedDatasetImages()" disabled>Remove selected</button>
                     <button class="btn btn-sm btn-ghost" onclick="toggleDatasetSettings()">Edit settings</button>
+                    <button id="dataset-export-btn" class="btn btn-sm btn-ghost" onclick="exportDatasetWorkspace()">Export ZIP</button>
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
                     <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
@@ -2582,6 +2583,33 @@
             } finally {
                 button.disabled = false;
                 button.textContent = 'Save settings';
+            }
+        }
+
+        async function exportDatasetWorkspace() {
+            if (!activeDatasetId) return;
+            var datasetId = activeDatasetId;
+            var button = document.getElementById('dataset-export-btn');
+            button.disabled = true;
+            button.textContent = 'Preparing ZIP…';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/export', {
+                    method:'POST', headers:{ 'Authorization':'Basic ' + auth }
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var result = await response.json();
+                var link = document.createElement('a');
+                link.href = result.download_url;
+                link.download = result.filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                showToast('Export ready · ' + result.image_count + ' images · ' + result.captioned_count + ' captions');
+            } catch (e) {
+                showAlert('Could not export dataset', e.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Export ZIP';
             }
         }
 

@@ -22,6 +22,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from PIL import Image
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from starlette.background import BackgroundTask
 
 from core import datasets as dataset_module
 from core import gpu, caption, sdxl, lora, training, expansion, evaluation_presets, image as img_module, utils
@@ -56,6 +57,10 @@ _expansion_jobs: dict = {}
 _expansion_lock = threading.Lock()
 _expansion_cancel_events: dict = {}
 
+_dataset_exports: dict = {}
+_dataset_export_lock = threading.Lock()
+_DATASET_EXPORT_TTL_SECONDS = 10 * 60
+
 
 def _dataset_has_active_job(dataset_id: str) -> bool:
     with _dataset_caption_lock:
@@ -78,6 +83,30 @@ def _dataset_has_active_job(dataset_id: str) -> bool:
             and job.get("status") in {"queued", "preparing", "running", "cancelling"}
             for job in _training_jobs.values()
         )
+
+
+def _unlink_quietly(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _prune_dataset_exports(now: float) -> None:
+    expired = [
+        token for token, item in _dataset_exports.items()
+        if now - item["created_at"] > _DATASET_EXPORT_TTL_SECONDS
+    ]
+    for token in expired:
+        item = _dataset_exports.pop(token)
+        _unlink_quietly(item["path"])
+
+
+def _expire_dataset_export(token: str) -> None:
+    with _dataset_export_lock:
+        item = _dataset_exports.pop(token, None)
+    if item:
+        _unlink_quietly(item["path"])
 
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
@@ -354,6 +383,70 @@ async def api_update_dataset_settings(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except dataset_module.DatasetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/datasets/{dataset_id}/export")
+def api_prepare_dataset_export(
+    dataset_id: str,
+    user: str = Depends(get_current_user),
+):
+    file_descriptor, archive_path = tempfile.mkstemp(
+        prefix="ai-toolkit-dataset-", suffix=".zip"
+    )
+    os.close(file_descriptor)
+    try:
+        export_manifest = dataset_module.create_dataset_export(
+            _datasets_root(), dataset_id, archive_path
+        )
+    except dataset_module.DatasetNotFound as exc:
+        _unlink_quietly(archive_path)
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        _unlink_quietly(archive_path)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception:
+        _unlink_quietly(archive_path)
+        raise
+
+    token = secrets.token_urlsafe(32)
+    filename = f"{dataset_id}-v{export_manifest['dataset_revision']}.zip"
+    with _dataset_export_lock:
+        _prune_dataset_exports(time.time())
+        _dataset_exports[token] = {
+            "path": archive_path,
+            "filename": filename,
+            "created_at": time.time(),
+        }
+    expiry_timer = threading.Timer(
+        _DATASET_EXPORT_TTL_SECONDS, _expire_dataset_export, args=(token,)
+    )
+    expiry_timer.daemon = True
+    expiry_timer.start()
+    return {
+        "download_url": f"/api/dataset-exports/{token}",
+        "filename": filename,
+        "image_count": export_manifest["image_count"],
+        "captioned_count": export_manifest["captioned_count"],
+    }
+
+
+@app.get("/api/dataset-exports/{token}")
+def api_download_dataset_export(token: str):
+    with _dataset_export_lock:
+        _prune_dataset_exports(time.time())
+        item = _dataset_exports.pop(token, None)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Dataset export not found or already downloaded")
+    try:
+        return FileResponse(
+            item["path"],
+            media_type="application/zip",
+            filename=item["filename"],
+            background=BackgroundTask(_unlink_quietly, item["path"]),
+        )
+    except Exception:
+        _unlink_quietly(item["path"])
+        raise
 
 
 @app.post("/api/datasets/{dataset_id}/images")

@@ -1,7 +1,9 @@
 import io
+import json
 import tempfile
 import threading
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -187,6 +189,47 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     root, created["id"], "Renamed", "unknown", "paint_x"
                 )
 
+    def test_dataset_export_contains_original_images_captions_and_portable_metadata(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Portable set",
+                "environment",
+                "room_x",
+                [("first.png", _image_file("red")), ("second.png", _image_file("blue"))],
+            )
+            first = created["images"][0]
+            datasets.update_captions(root, created["id"], {first["id"]: "a red room"})
+            archive_path = Path(root) / "export.zip"
+
+            result = datasets.create_dataset_export(root, created["id"], archive_path)
+
+            self.assertEqual(result["image_count"], 2)
+            self.assertEqual(result["captioned_count"], 1)
+            with zipfile.ZipFile(archive_path) as archive:
+                self.assertEqual(set(archive.namelist()), {
+                    "images/image-00001.png",
+                    "images/image-00001.txt",
+                    "images/image-00002.png",
+                    "metadata.jsonl",
+                    "dataset-export.json",
+                })
+                self.assertEqual(archive.read("images/image-00001.txt"), b"a red room\n")
+                self.assertEqual(
+                    archive.getinfo("images/image-00001.png").compress_type,
+                    zipfile.ZIP_STORED,
+                )
+                records = [
+                    json.loads(line)
+                    for line in archive.read("metadata.jsonl").decode().splitlines()
+                ]
+                self.assertEqual(records[0], {
+                    "file_name": "images/image-00001.png", "text": "a red room"
+                })
+                portable = json.loads(archive.read("dataset-export.json"))
+                self.assertEqual(portable["dataset_revision"], 2)
+                self.assertNotIn("training_runs", portable)
+
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:
             created = datasets.create_dataset(
@@ -277,6 +320,18 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     )
                     self.assertEqual(settings_response.status_code, 200, settings_response.text)
                     self.assertEqual(settings_response.json()["name"], "Jacket study")
+
+                    export_response = client.post(
+                        f"/api/datasets/{created['id']}/export"
+                    )
+                    self.assertEqual(export_response.status_code, 200, export_response.text)
+                    download_url = export_response.json()["download_url"]
+                    download_response = client.get(download_url)
+                    self.assertEqual(download_response.status_code, 200)
+                    self.assertEqual(download_response.headers["content-type"], "application/zip")
+                    with zipfile.ZipFile(io.BytesIO(download_response.content)) as archive:
+                        self.assertIn("dataset-export.json", archive.namelist())
+                    self.assertEqual(client.get(download_url).status_code, 404)
 
                     listed = client.get("/api/datasets").json()["datasets"]
                     self.assertEqual([item["id"] for item in listed], [created["id"]])

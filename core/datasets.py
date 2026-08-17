@@ -12,6 +12,7 @@ import re
 import shutil
 import threading
 import uuid
+import zipfile
 
 from PIL import Image, UnidentifiedImageError
 
@@ -532,6 +533,87 @@ def update_dataset_settings(
         "training_changed": training_changed,
     }
     return result
+
+
+def create_dataset_export(
+    root: str | os.PathLike,
+    dataset_id: str,
+    output_path: str | os.PathLike,
+) -> dict:
+    manifest_path = _manifest_path(root, dataset_id)
+    target = Path(output_path)
+    try:
+        with _manifest_lock:
+            manifest = _load_manifest(manifest_path)
+            images_dir = manifest_path.parent / "images"
+            metadata_records = []
+            portable_images = []
+            with zipfile.ZipFile(target, "w", allowZip64=True) as archive:
+                for item in manifest.get("images", []):
+                    filename = str(item.get("filename", ""))
+                    if not filename or Path(filename).name != filename:
+                        raise DatasetError("Dataset image path is invalid")
+                    source = images_dir / filename
+                    if not source.is_file() or source.is_symlink():
+                        raise DatasetError(f"Dataset image is missing or invalid: {filename}")
+                    archive.write(
+                        source,
+                        f"images/{filename}",
+                        compress_type=zipfile.ZIP_STORED,
+                    )
+                    caption_value = str(item.get("caption", "")).strip()
+                    if caption_value:
+                        archive.writestr(
+                            f"images/{Path(filename).stem}.txt",
+                            caption_value + "\n",
+                            compress_type=zipfile.ZIP_DEFLATED,
+                        )
+                    metadata_records.append({
+                        "file_name": f"images/{filename}",
+                        "text": caption_value,
+                    })
+                    portable_images.append({
+                        key: item.get(key)
+                        for key in (
+                            "id", "filename", "original_filename", "width", "height",
+                            "format", "mode", "bytes", "sha256", "caption", "caption_source",
+                            "generated", "expansion_run_id", "expansion_candidate_id",
+                        )
+                        if item.get(key) is not None
+                    })
+
+                metadata_jsonl = "".join(
+                    json.dumps(record, ensure_ascii=False) + "\n"
+                    for record in metadata_records
+                )
+                archive.writestr(
+                    "metadata.jsonl", metadata_jsonl, compress_type=zipfile.ZIP_DEFLATED
+                )
+                export_manifest = {
+                    "schema_version": 1,
+                    "source_dataset_id": manifest.get("id"),
+                    "name": manifest.get("name"),
+                    "type": manifest.get("type"),
+                    "trigger_word": manifest.get("trigger_word"),
+                    "dataset_revision": _dataset_revision(manifest),
+                    "created_at": manifest.get("created_at"),
+                    "exported_at": _utc_now(),
+                    "image_count": len(portable_images),
+                    "captioned_count": sum(bool(record["text"]) for record in metadata_records),
+                    "images": portable_images,
+                }
+                archive.writestr(
+                    "dataset-export.json",
+                    json.dumps(export_manifest, ensure_ascii=False, indent=2),
+                    compress_type=zipfile.ZIP_DEFLATED,
+                )
+    except Exception:
+        try:
+            target.unlink()
+        except OSError:
+            pass
+        raise
+    return export_manifest
 
 
 def list_datasets(root: str | os.PathLike) -> list[dict]:

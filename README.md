@@ -52,6 +52,7 @@ expanded and reviewed.
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Dataset curation** | Add images later or remove selected images and caption sidecars with rollback-safe manifest updates |
 | Dataset | **Editable settings** | Rename a workspace or change its LoRA type and trigger word, with training-relevant edits tracked as a new revision |
+| Dataset | **Portable export** | Download original images, caption sidecars, ImageFolder `metadata.jsonl`, and a history-free portable manifest as a ZIP |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
@@ -136,6 +137,7 @@ Default login: `admin` / `admin` (change in Settings)
 | GET/POST | `/api/datasets` | List or create persistent dataset workspaces |
 | GET | `/api/datasets/{id}` | Dataset manifest, image metadata, readiness, and captions |
 | PUT | `/api/datasets/{id}` | Update dataset name, LoRA type, and trigger word with revision-aware semantics |
+| POST | `/api/datasets/{id}/export` | Prepare a portable dataset ZIP and return a short-lived one-time download URL |
 | POST | `/api/datasets/{id}/images` | Add validated images to an existing dataset and skip exact duplicates |
 | DELETE | `/api/datasets/{id}/images` | Remove selected images and caption sidecars while keeping at least one source image |
 | PUT | `/api/datasets/{id}/captions` | Save caption edits and matching `.txt` sidecars |
