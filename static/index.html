@@ -76,6 +76,12 @@
         .eval-pick { margin-top:5px; background:#243746; color:#b9d5e8; }
         .eval-cell-picked .eval-pick { background:#2e8b68; color:#fff; }
         .eval-verdict { margin-top:12px; padding:12px; border:1px solid #30465a; border-radius:8px; background:#14202b; }
+        .evaluation-history { margin:14px 0;padding:14px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
+        .evaluation-history-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px; }
+        .evaluation-history-card { padding:11px;background:#101925;border:1px solid #1a2a3a;border-radius:9px; }
+        .evaluation-history-head { display:flex;justify-content:space-between;gap:9px;align-items:flex-start; }
+        .evaluation-history-counts { display:flex;gap:5px;flex-wrap:wrap;margin-top:8px; }
+        .evaluation-history-count { padding:3px 6px;border-radius:99px;background:#182736;color:#7895ab;font-size:10px; }
 
         /* Action bar (file manager) */
         .action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -227,6 +233,7 @@
             .dataset-metrics { grid-template-columns:repeat(2,1fr); }
             .training-recipe-grid { grid-template-columns:repeat(2,1fr); }
             .expansion-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .evaluation-history-list { grid-template-columns:1fr; }
         }
         #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
         .toast { background: #1a2a1a; color: #4caf50; padding: 10px 18px; border-radius: 8px; font-size: 13px; border: 1px solid #2a4a2a; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards; pointer-events: auto; }
@@ -276,6 +283,7 @@
         <div id="base-url-bar" style="display:none;padding:6px 15px;background:#1a2a1a;border-bottom:1px solid #2a4a2a;font-size:12px;color:#4caf50;text-align:center;word-break:break-all;"></div>
 
         <div id="generate" class="panel active">
+            <div id="gen-preset-banner" style="display:none;margin-bottom:12px;padding:9px 11px;background:#10241a;border:1px solid #245535;border-radius:8px;color:#76d68a;font-size:12px;"></div>
             <div style="display:flex;gap:16px;">
                 <div style="flex:1;min-width:0;">
                     <div class="card">
@@ -659,6 +667,11 @@
                         <div id="dataset-training-log" class="training-log" style="display:none;"></div>
                         <button id="dataset-training-log-toggle" class="btn-small" onclick="toggleDatasetTrainingLog()" style="margin-top:8px;">Show log</button>
                     </div>
+                </div>
+                <div id="dataset-evaluation-history" class="evaluation-history" style="display:none;">
+                    <div style="color:#e8f4ff;font-weight:650;">LoRA evaluation history</div>
+                    <div style="color:#55748d;font-size:11px;margin-top:3px;">Human-reviewed comparisons saved from Test LoRA</div>
+                    <div id="dataset-evaluation-history-list" class="evaluation-history-list"></div>
                 </div>
                 <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
                 <div class="dataset-table-wrap">
@@ -1150,14 +1163,15 @@
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
             document.getElementById(tab).classList.add('active');
-            if (tab === 'train') loadDatasets();
-            if (tab === 'generate') { loadGenModels(); refreshLoraList(); }
+            var loading = Promise.resolve();
+            if (tab === 'train') loading = loadDatasets();
+            if (tab === 'generate') loading = Promise.all([loadGenModels(), refreshLoraList()]);
             if (tab === 'batch') {
                 if (!document.querySelector('#cmp-combos .cmp-combo-row')) addComboRow('Base');
-                refreshLoraList();
-                loadBatchModels();
+                loading = Promise.all([refreshLoraList(), loadBatchModels()]);
             }
             if (tab === 'loadmodel') { browseFiles(); }
+            return loading;
         }
 
         function showSubTab(sub) {
@@ -1903,6 +1917,13 @@
                 if (!response.ok) throw new Error(await datasetResponseError(response));
                 var saved = await response.json();
                 var label = saved.summary && saved.summary.winner ? saved.summary.winner.label : 'Tie / inconclusive';
+                if (activeDatasetData && activeDatasetData.id === activeEvaluationPreset.dataset_id) {
+                    var savedRuns = activeDatasetData.evaluation_runs || [];
+                    savedRuns = savedRuns.filter(function(item) { return item.evaluation_id !== saved.evaluation_id; });
+                    savedRuns.push(saved);
+                    activeDatasetData.evaluation_runs = savedRuns;
+                    renderDatasetEvaluationHistory(activeDatasetData);
+                }
                 showToast('Review saved · ' + label);
                 if (button) button.textContent = '✓ Review saved';
             } catch (e) {
@@ -2395,6 +2416,7 @@
             if (document.getElementById('dataset-expansion-panel').style.display !== 'none') {
                 renderLatestDatasetExpansion(dataset);
             }
+            renderDatasetEvaluationHistory(dataset);
 
             datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
             datasetThumbUrls = [];
@@ -2409,6 +2431,109 @@
                     '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" placeholder="Describe what should remain variable…">' + escapeHtml(image.caption || '') + '</textarea></td></tr>';
             }).join('');
             loadDatasetThumbnails(dataset.id);
+        }
+
+        function renderDatasetEvaluationHistory(dataset) {
+            var panel = document.getElementById('dataset-evaluation-history');
+            var list = document.getElementById('dataset-evaluation-history-list');
+            var evaluations = dataset.evaluation_runs || [];
+            panel.style.display = evaluations.length ? 'block' : 'none';
+            if (!evaluations.length) { list.innerHTML = ''; return; }
+            var trainingRuns = dataset.training_runs || [];
+            list.innerHTML = evaluations.map(function(record, index) {
+                var summary = record.summary || {};
+                var winner = summary.winner || null;
+                var run = trainingRuns.find(function(item) { return item.job_id === record.training_run_id; }) || {};
+                var title = winner ? winner.label : 'Tie / inconclusive';
+                var outcome = summary.verdict === 'base'
+                    ? 'Base model won this review'
+                    : summary.verdict === 'lora'
+                        ? 'Recommended LoRA variant'
+                        : 'No single variant won';
+                var created = record.created_at ? new Date(record.created_at) : null;
+                var createdText = created && !isNaN(created.getTime()) ? created.toLocaleString() : 'Saved review';
+                var counts = (summary.counts || []).map(function(item) {
+                    return '<span class="evaluation-history-count">' + escapeHtml(item.label || '') + ' · ' + (item.votes || 0) + '</span>';
+                }).join('');
+                var experiment = record.experiment || {};
+                var variants = experiment.variants || [];
+                var canUse = winner && variants[winner.index];
+                return '<div class="evaluation-history-card">'
+                    + '<div class="evaluation-history-head"><div><div style="color:#dcecff;font-weight:600;">' + escapeHtml(title) + '</div>'
+                    + '<div style="color:#6f8da5;font-size:10px;margin-top:2px;">' + escapeHtml(outcome) + ' · ' + escapeHtml(run.profile || 'trained') + '</div></div>'
+                    + '<div style="color:#4e6d84;font-size:9px;text-align:right;">' + escapeHtml(createdText) + '</div></div>'
+                    + '<div class="evaluation-history-counts">' + counts + '</div>'
+                    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;">'
+                    + '<span style="color:#4f718d;font-size:10px;">' + (summary.reviewed_count || 0) + '/' + (summary.prompt_count || 0) + ' prompts reviewed</span>'
+                    + (canUse ? '<button class="btn-small btn-add" onclick="useDatasetEvaluation(' + index + ')">Use in Generate</button>' : '')
+                    + '</div></div>';
+            }).reverse().join('');
+        }
+
+        function setGenerateSelect(selectId, customId, value) {
+            var select = document.getElementById(selectId);
+            var custom = document.getElementById(customId);
+            value = value || '';
+            var exists = Array.from(select.options).some(function(option) { return option.value === value; });
+            if (!value || exists) {
+                select.value = value;
+                custom.value = '';
+                custom.style.display = 'none';
+            } else {
+                select.value = '__custom__';
+                custom.value = value;
+                custom.style.display = 'block';
+            }
+        }
+
+        async function useDatasetEvaluation(index) {
+            var evaluations = activeDatasetData ? (activeDatasetData.evaluation_runs || []) : [];
+            var record = evaluations[index];
+            var summary = record && record.summary ? record.summary : {};
+            var experiment = record && record.experiment ? record.experiment : {};
+            var variants = experiment.variants || [];
+            var winner = summary.winner || null;
+            var variant = winner ? variants[winner.index] : null;
+            if (!variant) { showAlert('No winner', 'This evaluation is tied or incomplete.'); return; }
+
+            await showTab('generate');
+            setGenerateSelect('gen-model', 'gen-model-custom', variant.model);
+            onGenModelChange();
+            setGenerateSelect('gen-vae', 'gen-vae-custom', variant.vae);
+            setGenerateSelect('gen-text-encoder', 'gen-text-encoder-custom', variant.text_encoder);
+            document.getElementById('gen-steps').value = variant.steps;
+            document.getElementById('gen-cfg').value = variant.cfg;
+            document.getElementById('gen-width').value = experiment.width || 1024;
+            document.getElementById('gen-height').value = experiment.height || 1024;
+            document.getElementById('gen-seed').value = experiment.base_seed === undefined ? 42 : experiment.base_seed;
+            document.getElementById('gen-seed-random').checked = false;
+            document.getElementById('gen-count').value = 1;
+            document.getElementById('gen-prompt').value = (experiment.prompts || [])[0] || '';
+            document.getElementById('gen-negative').value = experiment.negative_prompt || '';
+
+            var loraContainer = document.getElementById('lora-container');
+            loraContainer.innerHTML = '';
+            var loras = variant.loras || [];
+            if (!loras.length) addLoraRow('lora-container');
+            loras.forEach(function(lora) {
+                addLoraRow('lora-container', lora.path);
+                var row = loraContainer.lastElementChild;
+                var select = row.querySelector('.lora-select');
+                if (!Array.from(select.options).some(function(option) { return option.value === lora.path; })) {
+                    var option = document.createElement('option');
+                    option.value = lora.path;
+                    option.textContent = (lora.path || '').split('/').pop();
+                    select.appendChild(option);
+                }
+                select.value = lora.path;
+                row.querySelector('.lora-weight').value = lora.weight;
+            });
+
+            var banner = document.getElementById('gen-preset-banner');
+            banner.style.display = 'block';
+            banner.textContent = 'Loaded human-reviewed winner · ' + (winner.label || 'Variant') + ' · matched settings from ' + (activeDatasetData.name || 'dataset');
+            window.scrollTo({ top:0, behavior:'smooth' });
+            showToast('Evaluation winner loaded in Generate');
         }
 
         async function loadDatasetThumbnails(datasetId) {
@@ -2851,8 +2976,7 @@
                 lastEvaluationManifest = null;
                 evaluationVotes = {};
 
-                showTab('batch');
-                await Promise.all([loadBatchModels(), refreshLoraList()]);
+                await showTab('batch');
 
                 var promptsContainer = document.getElementById('cmp-prompts');
                 promptsContainer.innerHTML = '';

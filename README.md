@@ -47,11 +47,13 @@ expanded and reviewed.
 | Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
 | Test LoRA | **LoRA Evaluation** | Deterministic Prompt × Variant grid with matched seeds, per-variant settings, progress/cancel, and a downloadable test manifest |
 | Test LoRA | **Dataset handoff** | One click prepares six concept-aware prompts and Base/LoRA 0.7/LoRA 1.0 Krea 2 Turbo variants from the latest completed training run |
+| Test LoRA | **Human verdict** | Pick one winner per prompt; validated summaries are saved to the originating dataset without synthetic image scoring |
 | Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
+| Dataset | **Evaluation history** | Review saved Base/LoRA results and load the winning model, adapter weight, prompt, seed, and generation settings in one click |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
 | Load Model | **File Manager** | Browse directories, upload (drag & drop), rename, create/delete dirs and files |

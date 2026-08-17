@@ -158,9 +158,21 @@ class EvaluationPresetTests(unittest.TestCase):
                     )
                 self.assertEqual(response.status_code, 200, response.text)
                 self.assertEqual(response.json()["summary"]["winner"]["label"], "Subject 0.7")
+                with patch.object(main, "_datasets_root", return_value=root):
+                    updated_response = client.post(
+                        f"/api/datasets/{created['id']}/evaluation-verdict",
+                        json={
+                            "training_run_id": "run-verdict",
+                            "evaluation_id": evaluation_id,
+                            "votes": {"0": 0, "1": 0, "2": 1},
+                        },
+                    )
+                self.assertEqual(updated_response.status_code, 200, updated_response.text)
+                self.assertEqual(updated_response.json()["summary"]["verdict"], "base")
                 stored = datasets.get_dataset(root, created["id"])["evaluation_runs"]
                 self.assertEqual(len(stored), 1)
                 self.assertEqual(stored[0]["training_run_id"], "run-verdict")
+                self.assertEqual(stored[0]["summary"]["winner"]["label"], "Base")
             finally:
                 main._evaluation_progress.pop(evaluation_id, None)
                 main.app.dependency_overrides.clear()
