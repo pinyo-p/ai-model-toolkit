@@ -888,6 +888,7 @@
             // Check model family from data-family attribute (set by backend detection)
             var selectedOpt = select.options[select.selectedIndex];
             var family = selectedOpt ? selectedOpt.getAttribute('data-family') : '';
+            if (!family && (valLower.includes('krea-2') || valLower.includes('krea_2') || valLower.includes('krea2'))) family = 'krea2';
             var isFluxOrZimage = family === 'flux' || family === 'zimage'
                 || valLower.indexOf('flux') >= 0 || valLower.indexOf('z-image') >= 0 || valLower.indexOf('z_image') >= 0;
 
@@ -903,13 +904,15 @@
                 familyBadge.textContent = label;
                 familyBadge.style.display = 'inline';
                 // Detect FLUX.2 variant (klein vs dev) from model path
-                var modelLower = (modelName || '').toLowerCase();
+                var modelLower = valLower;
                 var isKlein = family === 'flux2' && (modelLower.includes('klein') || modelLower.includes('schnell'));
                 var isDev = family === 'flux2' && modelLower.includes('dev');
                 var cfg = FAMILY_CFG[family];
                 var steps = FAMILY_STEPS[family];
                 if (isKlein) { cfg = 1.0; steps = 4; }
                 else if (isDev) { cfg = 4.0; steps = 28; }
+                else if (family === 'krea2' && modelLower.includes('turbo')) { cfg = 0.0; steps = 8; }
+                else if (family === 'krea2') { cfg = 3.5; steps = 52; }
                 if (cfg !== undefined) {
                     document.getElementById('gen-cfg').value = cfg;
                     document.getElementById('batch-cfg').value = cfg;
@@ -937,6 +940,7 @@
         var FAMILY_LABELS = {
             'sd_unet': 'SD UNet', 'sdxl': 'SDXL', 'sd15': 'SD1.5',
             'sd3': 'SD3', 'flux1': 'Flux.1', 'flux2': 'Flux.2',
+            'krea2': 'Krea 2',
             'zimage': 'Z-Image', 'hunyuan': 'Hunyuan', 'pixart': 'PixArt',
             'kolors': 'Kolors'
         };
@@ -944,11 +948,12 @@
         var FAMILY_CFG = {
             'sd_unet': 7.0, 'sdxl': 7.0, 'sd15': 7.0,
             'sd3': 5.0, 'flux1': 3.5, 'flux2': 1.0,
+            'krea2': 0.0,
             'zimage': 0.0, 'hunyuan': 5.0, 'pixart': 5.0,
             'kolors': 5.0
         };
         var FAMILY_STEPS = {
-            'zimage': 9, 'flux2': 4
+            'zimage': 9, 'flux2': 4, 'krea2': 8
         };
 
         function _populateSelect(select, entries, modelsPath, filterType) {
@@ -985,6 +990,14 @@
                             count++;
                         });
                     }
+                } else if (m.type === 'folder' && filterType === 'checkpoint' && m.model_family) {
+                    // A complete Diffusers repository is itself the selectable model.
+                    var folderEl = document.createElement('option');
+                    folderEl.textContent = m.name + '/';
+                    folderEl.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                    folderEl.setAttribute('data-family', m.model_family);
+                    select.appendChild(folderEl);
+                    count++;
                 } else if (m.type === 'folder' && m.files && m.files.length > 0) {
                     // For checkpoint type: show files from matching folders (e.g. sd-xl/)
                     if (filterType !== 'checkpoint') return;
@@ -1615,6 +1628,9 @@
             var cfg = 7;
             if (name.indexOf('klein') >= 0 || name.indexOf('schnell') >= 0) {
                 steps = 4; cfg = 1;
+            } else if (family === 'krea2' || name.indexOf('krea-2') >= 0 || name.indexOf('krea2') >= 0) {
+                if (name.indexOf('turbo') >= 0) { steps = 8; cfg = 0; }
+                else { steps = 52; cfg = 3.5; }
             } else if (family === 'zimage' || name.indexOf('z-image') >= 0 || name.indexOf('z_image') >= 0) {
                 steps = 9; cfg = 0;
             } else if (family === 'flux2' || name.indexOf('flux.2') >= 0 || name.indexOf('flux2') >= 0) {
@@ -1942,6 +1958,7 @@
         var BATCH_FAMILY_LABELS = {
             'sd_unet': 'SD UNet', 'sdxl': 'SDXL', 'sd15': 'SD1.5',
             'sd3': 'SD3', 'flux1': 'Flux.1', 'flux2': 'Flux.2',
+            'krea2': 'Krea 2',
             'zimage': 'Z-Image', 'hunyuan': 'Hunyuan', 'pixart': 'PixArt',
             'kolors': 'Kolors'
         };
@@ -1949,12 +1966,13 @@
         var BATCH_FAMILY_CFG = {
             'sd_unet': 7.0, 'sdxl': 7.0, 'sd15': 7.0,
             'sd3': 5.0, 'flux1': 3.5, 'flux2': 1.0,
+            'krea2': 0.0,
             'zimage': 0.0, 'hunyuan': 5.0, 'pixart': 5.0,
             'kolors': 5.0
         };
 
         var BATCH_FAMILY_STEPS = {
-            'zimage': 9, 'flux2': 4
+            'zimage': 9, 'flux2': 4, 'krea2': 8
         };
 
         function _batchGetFileType(f, m) {
@@ -1998,6 +2016,13 @@
                             count++;
                         });
                     }
+                } else if (m.type === 'folder' && filterType === 'checkpoint' && m.model_family) {
+                    var folderEl = document.createElement('option');
+                    folderEl.textContent = m.name + '/';
+                    folderEl.value = modelsPath ? modelsPath + '/' + m.name : m.name;
+                    folderEl.setAttribute('data-family', m.model_family);
+                    select.appendChild(folderEl);
+                    count++;
                 } else if (m.type === 'folder' && m.files && m.files.length > 0) {
                     if (filterType !== 'checkpoint') return;
                     (m.files).forEach(function(f) {

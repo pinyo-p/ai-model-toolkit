@@ -4,7 +4,7 @@
 > This script is experimental and may contain bugs. Do not use in production.  
 > ⚠️ **⚠️ สคริป `scripts/finetune_llm_lora.py` กำลังพัฒนา ยังไม่พร้อมใช้งาน ⚠️**
 
-FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), LoRA training, captioning, and more.
+FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image, Krea 2), deterministic LoRA evaluation, training prototypes, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
 
@@ -16,6 +16,21 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), L
 | **FLUX.2[k]** | Klein 9B | 4 | 1.0 | Fast, distilled, CFG forced to 1.0 |
 | **FLUX.2[D]** | Dev 32B | 28 | 4.0 | High quality, needs ~64GB VRAM |
 | **z-Image** | Base, Turbo | 9 | 0.0 | Turbo recommended |
+| **Krea 2** | Raw | 52 | 3.5 | LoRA training/base workflow; full Diffusers repository required |
+| **Krea 2** | Turbo | 8 | 0.0 | Fast inference and LoRA testing; CFG forced to 0 |
+
+### Krea 2 setup
+
+Krea 2 support uses `Krea2Pipeline` from the pinned Diffusers source build in
+`requirements.txt`. Run `./update.sh` (or `update.bat`) after pulling this version.
+
+The simplest path is **Model → Custom** and enter `krea/Krea-2-Turbo` (or
+`krea/Krea-2-Raw`); Diffusers will cache the complete repository. A local full
+repository folder in the configured models directory is also selectable. A standalone
+`raw.safetensors` or `turbo.safetensors` is not sufficient for this runtime because
+the pipeline also needs its model index, Qwen3-VL text encoder, tokenizer, and
+Qwen-Image VAE components. Hugging Face access requires accepting the model license
+and configuring `HF_TOKEN` in Settings.
 
 ## Features
 
@@ -40,7 +55,7 @@ FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image-Base/Turbo), L
 
 - Python 3.10+
 - CUDA recommended (CPU fallback available)
-- Disk: ~2GB (SDXL) / ~20GB (FLUX.2[k]) / ~64GB (FLUX.2[D]) / ~10GB (z-Image)
+- Disk and VRAM requirements vary significantly by family; Krea 2 is a large (~12B parameter) pipeline
 
 ## Quick Start
 
@@ -120,7 +135,7 @@ Default login: `admin` / `admin` (change in Settings)
 
 - Python 3.10+, FastAPI, Uvicorn
 - PyTorch 2.9.0 + CUDA 12.8
-- Diffusers (FLUX.2 Klein/Dev pipelines, SDXL), Transformers (Qwen3, Mistral3)
+- Diffusers source build (Krea 2, FLUX.2, SDXL), Transformers (Qwen3-VL, Qwen3, Mistral3)
 - PEFT, Safetensors
 - OpenCV (upscale), Pillow
 
@@ -131,6 +146,7 @@ ai-toolkit/
 ├── main.py              # FastAPI app, all endpoints (browse/upload/rename/download)
 ├── core/
 │   ├── sdxl.py          # Generation dispatch + deterministic LoRA evaluation
+│   ├── runtimes.py      # Model-family detection, loaders, and generation defaults
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation
 │   ├── lora.py          # LoRA train/merge/extract

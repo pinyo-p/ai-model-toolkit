@@ -362,6 +362,25 @@ async def api_check_model(
                 "message": f"Model not found.",
             })
 
+    if model_type == "krea2":
+        if os.path.isfile(model_path):
+            missing.append({
+                "component": "model_format",
+                "path": model_path,
+                "message": (
+                    "AI Toolkit needs the full Krea 2 Diffusers repository, not only "
+                    "raw.safetensors or turbo.safetensors. Download krea/Krea-2-Raw "
+                    "or krea/Krea-2-Turbo as a repository."
+                ),
+            })
+        try:
+            from diffusers import Krea2Pipeline  # noqa: F401
+        except ImportError:
+            missing.append({
+                "component": "diffusers",
+                "message": "Krea2Pipeline is unavailable. Run update.sh to install the compatible Diffusers build.",
+            })
+
     return {
         "status": "ok" if not missing else "missing",
         "model_type": model_type,
@@ -520,6 +539,8 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
             vae_label = "black-forest-labs/FLUX.1-dev"
         elif family == "zimage":
             vae_label = "Tongyi-MAI/Z-Image-Turbo"
+        elif family == "krea2":
+            vae_label = "Qwen-Image VAE (built-in)"
         elif family == "sdxl":
             vae_label = "stabilityai/sdxl-vae"
         elif family == "sd15":
@@ -534,6 +555,8 @@ def _run_gen(gen_id, prompt, negative, lora_paths, lora_weights, model_path, vae
             te_label = "black-forest-labs/FLUX.2-klein-9B" if is_klein else "black-forest-labs/FLUX.2-dev-9B"
         elif family == "zimage":
             te_label = "Tongyi-MAI/Z-Image-Turbo"
+        elif family == "krea2":
+            te_label = "Qwen3-VL-4B (built-in)"
         else:
             te_label = "built-in"
     _set_gen_progress(gen_id,
@@ -1493,6 +1516,8 @@ def _detect_model_family_from_keys(tensor_keys):
 
 def _detect_family_from_name(name: str) -> str:
     name_lower = name.lower()
+    if any(x in name_lower for x in ["krea-2", "krea_2", "krea2"]):
+        return "krea2"
     if any(x in name_lower for x in ["z-image", "z_image", "zimage"]):
         return "zimage"
     if any(x in name_lower for x in ["flux2", "flux.2", "flux-2", "flux_dev2"]):
@@ -1534,6 +1559,7 @@ def _detect_family(path: str) -> str:
                     "Flux2KleinPipeline": "flux2",
                     "Flux2KleinKVPipeline": "flux2",
                     "ZImagePipeline": "zimage",
+                    "Krea2Pipeline": "krea2",
                     "HunyuanDiTPipeline": "hunyuan",
                     "PixArtAlphaPipeline": "pixart",
                     "KolorsPipeline": "kolors",

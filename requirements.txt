@@ -3,8 +3,10 @@ torchvision>=0.24.0
 numpy>=1.26.0
 fastapi==0.115.0
 uvicorn==0.30.6
-diffusers>=0.30.3
-transformers>=4.44.2
+# Krea2Pipeline is newer than the latest stable release as of 2026-08.
+# Pin the first upstream commit containing the complete Krea 2 modular support.
+diffusers @ git+https://github.com/huggingface/diffusers.git@623213d
+transformers>=4.57.1
 accelerate>=0.33.0
 safetensors>=0.4.5
 peft>=0.12.0
@@ -15,6 +17,7 @@ requests>=2.31.0
 Pillow>=10.4.0
 python-multipart>=0.0.9
 lycoris-lora>=2.1.0
+einops>=0.7.0
 
 # Optional — image upscale (try/except in code)
 opencv-python>=4.10.0
