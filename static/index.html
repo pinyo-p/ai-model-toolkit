@@ -1796,12 +1796,17 @@
             teSelect.value = currentTe;
         }
 
-        function _renderComparisonGrid(container, data) {
+        function _renderComparisonGrid(container, data, options) {
+            options = options || {};
             var prompts = data.y_labels || [];
             var combos = data.x_labels || [];
             var cells = data.cells || [];
             lastEvaluationManifest = data.experiment || null;
+            evaluationReadOnly = Boolean(options.readOnly);
             evaluationVotes = {};
+            Object.keys(options.votes || {}).forEach(function(key) {
+                evaluationVotes[parseInt(key)] = parseInt(options.votes[key]);
+            });
 
             // Build lookup: "rowIdx,colIdx" -> cell metadata and images
             var lookup = {};
@@ -1838,10 +1843,11 @@
                     var images = cell.images || [];
                     var seeds = cell.seeds || [];
 
-                    html += '<td class="eval-cell" data-prompt-index="' + ri + '" data-variant-index="' + ci + '" style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
+                    var picked = evaluationVotes[ri] === ci;
+                    html += '<td class="eval-cell' + (picked ? ' eval-cell-picked' : '') + '" data-prompt-index="' + ri + '" data-variant-index="' + ci + '" style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
                     for (var ii = 0; ii < images.length; ii++) {
                         html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
-                        html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')">';
+                        html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')" onerror="this.style.opacity=\'.2\';this.title=\'Saved image is missing\'">';
                         html += '<div style="margin-top:2px;font-size:10px;color:#666;">';
                         html += 'seed ' + escapeHtml(String(seeds[ii] !== undefined ? seeds[ii] : '—')) + ' · ';
                         html += '<a href="' + images[ii] + '" download="eval_' + ri + '_' + ci + '_' + ii + '.png" style="color:#4a9eff;">download</a>';
@@ -1850,7 +1856,9 @@
                     if (images.length === 0) {
                         html += '<span style="color:#555;">—</span>';
                     }
-                    html += '<div><button class="btn-small eval-pick" onclick="pickEvaluationWinner(' + ri + ',' + ci + ')">Pick winner</button></div>';
+                    if (!evaluationReadOnly) {
+                        html += '<div><button class="btn-small eval-pick" onclick="pickEvaluationWinner(' + ri + ',' + ci + ')">' + (picked ? '✓ Winner' : 'Pick winner') + '</button></div>';
+                    }
                     html += '</td>';
                 }
                 html += '</tr>';
@@ -1872,8 +1880,10 @@
         var lastEvaluationManifest = null;
         var activeEvaluationPreset = null;
         var evaluationVotes = {};
+        var evaluationReadOnly = false;
 
         function pickEvaluationWinner(promptIndex, variantIndex) {
+            if (evaluationReadOnly) return;
             evaluationVotes[promptIndex] = variantIndex;
             var rowCells = document.querySelectorAll('.eval-cell[data-prompt-index="' + promptIndex + '"]');
             rowCells.forEach(function(cell) {
@@ -1908,9 +1918,11 @@
                 return escapeHtml(variant.label || ('Variant ' + (index + 1))) + ': ' + counts[index];
             }).join(' · ');
             var canSave = activeEvaluationPreset && lastEvaluationId && reviewed === prompts.length;
-            var saveHtml = activeEvaluationPreset
-                ? '<button id="evaluation-save-verdict" class="btn-small btn-add" onclick="saveEvaluationVerdict()" ' + (canSave ? '' : 'disabled') + '>Save review to dataset</button>'
-                : '<span style="color:#71869a;">Open this test from a dataset training run to save its review.</span>';
+            var saveHtml = evaluationReadOnly
+                ? '<span style="color:#71869a;">Saved human review · read-only evidence</span>'
+                : activeEvaluationPreset
+                    ? '<button id="evaluation-save-verdict" class="btn-small btn-add" onclick="saveEvaluationVerdict()" ' + (canSave ? '' : 'disabled') + '>Save review to dataset</button>'
+                    : '<span style="color:#71869a;">Open this test from a dataset training run to save its review.</span>';
             panel.innerHTML = '<div style="font-weight:600;color:#d8e7f2;">Human review · ' + reviewed + '/' + prompts.length + ' prompts</div>'
                 + '<div style="margin-top:5px;color:#9eb3c4;">' + result + '</div>'
                 + '<div style="margin-top:5px;font-size:11px;color:#70889b;">' + countText + '</div>'
@@ -2544,6 +2556,7 @@
                 var experiment = record.experiment || {};
                 var variants = experiment.variants || [];
                 var canUse = winner && variants[winner.index];
+                var canView = record.comparison && (record.comparison.cells || []).length;
                 return '<div class="evaluation-history-card">'
                     + '<div class="evaluation-history-head"><div><div style="color:#dcecff;font-weight:600;">' + escapeHtml(title) + '</div>'
                     + '<div style="color:#6f8da5;font-size:10px;margin-top:2px;">' + escapeHtml(outcome) + ' · ' + escapeHtml(run.profile || 'trained') + '</div></div>'
@@ -2551,9 +2564,36 @@
                     + '<div class="evaluation-history-counts">' + counts + '</div>'
                     + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;">'
                     + '<span style="color:#4f718d;font-size:10px;">' + (summary.reviewed_count || 0) + '/' + (summary.prompt_count || 0) + ' prompts reviewed</span>'
+                    + '<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;">'
+                    + (canView ? '<button class="btn-small" onclick="viewDatasetEvaluation(' + index + ')">View review</button>' : '')
                     + (canUse ? '<button class="btn-small btn-add" onclick="useDatasetEvaluation(' + index + ')">Use in Generate</button>' : '')
+                    + '</div>'
                     + '</div></div>';
             }).reverse().join('');
+        }
+
+        async function viewDatasetEvaluation(index) {
+            var evaluations = activeDatasetData ? (activeDatasetData.evaluation_runs || []) : [];
+            var record = evaluations[index];
+            var comparison = record && record.comparison ? record.comparison : null;
+            if (!comparison || !(comparison.cells || []).length) {
+                showAlert('Review images unavailable', 'This older review was saved before image evidence was supported.');
+                return;
+            }
+            activeEvaluationPreset = null;
+            lastEvaluationId = null;
+            await showTab('batch');
+            _renderComparisonGrid(document.getElementById('batch-output'), {
+                cells:comparison.cells || [],
+                x_labels:comparison.x_labels || [],
+                y_labels:comparison.y_labels || [],
+                experiment:record.experiment || {}
+            }, { readOnly:true, votes:record.votes || {} });
+            var banner = document.getElementById('batch-preset-banner');
+            banner.style.display = 'block';
+            banner.textContent = 'Saved review · ' + (activeDatasetData.name || 'dataset') + ' · ' + (comparison.image_count || 0) + ' images · read-only';
+            document.getElementById('batch-output').scrollIntoView({ behavior:'smooth', block:'start' });
+            showToast('Saved evaluation review opened');
         }
 
         function setGenerateSelect(selectId, customId, value) {

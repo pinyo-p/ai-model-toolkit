@@ -10,6 +10,71 @@ class EvaluationPresetError(Exception):
     pass
 
 
+def comparison_evidence(result: dict) -> dict:
+    """Return a bounded, JSON-safe snapshot of a server-generated comparison grid."""
+    if not isinstance(result, dict):
+        raise EvaluationPresetError("Evaluation result is missing or invalid")
+    experiment = result.get("experiment")
+    if not isinstance(experiment, dict):
+        raise EvaluationPresetError("Evaluation manifest is missing or invalid")
+    prompts = experiment.get("prompts") or []
+    variants = experiment.get("variants") or []
+    x_labels = result.get("x_labels")
+    y_labels = result.get("y_labels")
+    cells = result.get("cells")
+    if not isinstance(x_labels, list) or len(x_labels) != len(variants):
+        raise EvaluationPresetError("Evaluation variant labels do not match its manifest")
+    if not isinstance(y_labels, list) or len(y_labels) != len(prompts):
+        raise EvaluationPresetError("Evaluation prompt labels do not match its manifest")
+    if not isinstance(cells, list) or len(cells) != len(prompts) * len(variants):
+        raise EvaluationPresetError("Evaluation cells do not match its manifest")
+
+    saved_cells = []
+    image_count = 0
+    positions = set()
+    for cell in cells:
+        if not isinstance(cell, dict):
+            raise EvaluationPresetError("Evaluation contains an invalid cell")
+        try:
+            x = int(cell.get("x"))
+            y = int(cell.get("y"))
+        except (TypeError, ValueError) as exc:
+            raise EvaluationPresetError("Evaluation contains an invalid cell position") from exc
+        if x < 0 or x >= len(variants) or y < 0 or y >= len(prompts):
+            raise EvaluationPresetError("Evaluation contains an unknown cell position")
+        if (x, y) in positions:
+            raise EvaluationPresetError("Evaluation contains a duplicate cell position")
+        positions.add((x, y))
+        images = cell.get("images") or []
+        if not isinstance(images, list) or not images or any(
+            not isinstance(url, str) or not url.startswith("/output/") for url in images
+        ):
+            raise EvaluationPresetError("Evaluation contains an invalid image reference")
+        try:
+            seeds = [int(seed) for seed in (cell.get("seeds") or [])]
+        except (TypeError, ValueError) as exc:
+            raise EvaluationPresetError("Evaluation contains an invalid seed") from exc
+        if len(seeds) != len(images):
+            raise EvaluationPresetError("Evaluation image and seed counts do not match")
+        image_count += len(images)
+        if image_count > 500:
+            raise EvaluationPresetError("Evaluation evidence exceeds 500 images")
+        saved_cells.append({
+            "x": x,
+            "y": y,
+            "images": images,
+            "seeds": seeds,
+            "steps": cell.get("steps"),
+            "cfg": cell.get("cfg"),
+        })
+    return {
+        "x_labels": [str(label) for label in x_labels],
+        "y_labels": [str(label) for label in y_labels],
+        "cells": saved_cells,
+        "image_count": image_count,
+    }
+
+
 def summarize_votes(
     experiment: dict,
     votes: Mapping[str | int, int],

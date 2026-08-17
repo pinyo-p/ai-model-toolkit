@@ -674,15 +674,17 @@ async def api_dataset_evaluation_verdict(
             raise HTTPException(status_code=404, detail="Evaluation not found")
         if evaluation.get("status") != "done" or not evaluation.get("result"):
             raise HTTPException(status_code=409, detail="Evaluation is not complete")
-        experiment = evaluation["result"].get("experiment")
+        result = evaluation["result"]
+        experiment = result.get("experiment")
     try:
         summary = evaluation_presets.summarize_votes(
             experiment, payload.votes, require_complete=True
         )
+        comparison = evaluation_presets.comparison_evidence(result)
         normalized_votes = {int(key): int(value) for key, value in payload.votes.items()}
         record = dataset_module.record_evaluation_verdict(
             _datasets_root(), dataset_id, payload.training_run_id,
-            payload.evaluation_id, experiment, normalized_votes, summary,
+            payload.evaluation_id, experiment, comparison, normalized_votes, summary,
         )
         return record
     except dataset_module.DatasetNotFound as exc:

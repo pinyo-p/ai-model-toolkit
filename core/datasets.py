@@ -361,6 +361,7 @@ def record_evaluation_verdict(
     training_run_id: str,
     evaluation_id: str,
     experiment: dict,
+    comparison: dict,
     votes: dict[int, int],
     summary: dict,
 ) -> dict:
@@ -397,6 +398,7 @@ def record_evaluation_verdict(
             "votes": {str(key): int(value) for key, value in sorted(votes.items())},
             "summary": summary,
             "experiment": experiment,
+            "comparison": comparison,
         }
         evaluations = manifest.setdefault("evaluation_runs", [])
         existing = next(

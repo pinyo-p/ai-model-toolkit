@@ -45,6 +45,28 @@ def _experiment(lora_path: str) -> dict:
     }
 
 
+def _evaluation_result(lora_path: str) -> dict:
+    experiment = _experiment(lora_path)
+    cells = []
+    for y in range(3):
+        for x in range(3):
+            cells.append({
+                "x": x,
+                "y": y,
+                "images": [f"/output/eval-{y}-{x}.png"],
+                "seeds": [42 + y],
+                "steps": 8,
+                "cfg": 0.0,
+                "ignored": "not persisted",
+            })
+    return {
+        "experiment": experiment,
+        "x_labels": [item["label"] for item in experiment["variants"]],
+        "y_labels": experiment["prompts"],
+        "cells": cells,
+    }
+
+
 class EvaluationPresetTests(unittest.TestCase):
     def test_vote_summary_reports_unique_lora_winner(self):
         summary = evaluation_presets.summarize_votes(
@@ -70,6 +92,15 @@ class EvaluationPresetTests(unittest.TestCase):
     def test_vote_summary_rejects_unknown_variant(self):
         with self.assertRaisesRegex(evaluation_presets.EvaluationPresetError, "unknown variant"):
             evaluation_presets.summarize_votes(_experiment("unused"), {0: 9})
+
+    def test_comparison_evidence_is_bounded_to_server_output_urls(self):
+        result = _evaluation_result("/tmp/subject.safetensors")
+        evidence = evaluation_presets.comparison_evidence(result)
+        self.assertEqual(evidence["image_count"], 9)
+        self.assertNotIn("ignored", evidence["cells"][0])
+        result["cells"][0]["images"] = ["https://example.com/untrusted.png"]
+        with self.assertRaisesRegex(evaluation_presets.EvaluationPresetError, "image reference"):
+            evaluation_presets.comparison_evidence(result)
 
     def test_completed_run_builds_base_and_two_weight_variants(self):
         with tempfile.TemporaryDirectory() as root:
@@ -166,9 +197,9 @@ class EvaluationPresetTests(unittest.TestCase):
                 "job_id": "run-verdict", "status": "done", "lora_path": str(lora_path),
             })
             evaluation_id = "evaluation-verdict-api"
-            experiment = _experiment(str(lora_path))
+            result = _evaluation_result(str(lora_path))
             main._evaluation_progress[evaluation_id] = {
-                "status": "done", "result": {"experiment": experiment},
+                "status": "done", "result": result,
             }
             main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
             client = TestClient(main.app)
@@ -199,6 +230,11 @@ class EvaluationPresetTests(unittest.TestCase):
                 self.assertEqual(len(stored), 1)
                 self.assertEqual(stored[0]["training_run_id"], "run-verdict")
                 self.assertEqual(stored[0]["summary"]["winner"]["label"], "Base")
+                self.assertEqual(stored[0]["comparison"]["image_count"], 9)
+                self.assertEqual(
+                    stored[0]["comparison"]["cells"][0]["images"],
+                    ["/output/eval-0-0.png"],
+                )
             finally:
                 main._evaluation_progress.pop(evaluation_id, None)
                 main.app.dependency_overrides.clear()
@@ -216,7 +252,7 @@ class EvaluationPresetTests(unittest.TestCase):
             evaluation_id = "evaluation-mismatch"
             main._evaluation_progress[evaluation_id] = {
                 "status": "done",
-                "result": {"experiment": _experiment(str(Path(root) / "other.safetensors"))},
+                "result": _evaluation_result(str(Path(root) / "other.safetensors")),
             }
             main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
             client = TestClient(main.app)
