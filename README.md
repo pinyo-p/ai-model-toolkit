@@ -143,6 +143,7 @@ Default login: `admin` / `admin` (change in Settings)
 | GET | `/api/training/{job_id}` | Poll training steps, loss, log, and output path |
 | POST | `/api/training/{job_id}/cancel` | Stop the trainer process group safely |
 | GET | `/api/datasets/{id}/evaluation-preset` | Build a deterministic Test LoRA preset from a completed dataset training run |
+| POST | `/api/datasets/{id}/evaluation-verdict` | Validate and save human winner picks for a completed LoRA evaluation |
 | POST | `/api/merge_lora` | Merge LoRA files |
 | POST | `/api/lora_info` | LoRA metadata |
 | POST | `/api/extract_lora` | Extract LoRA from ckpt |

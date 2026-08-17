@@ -355,6 +355,63 @@ def record_training_run(root: str | os.PathLike, dataset_id: str, run: dict) -> 
     return _with_analysis(manifest)
 
 
+def record_evaluation_verdict(
+    root: str | os.PathLike,
+    dataset_id: str,
+    training_run_id: str,
+    evaluation_id: str,
+    experiment: dict,
+    votes: dict[int, int],
+    summary: dict,
+) -> dict:
+    """Persist a completed human evaluation against its originating training run."""
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        manifest = _load_manifest(manifest_path)
+        run = next(
+            (
+                item for item in manifest.get("training_runs", [])
+                if item.get("job_id") == training_run_id and item.get("status") == "done"
+            ),
+            None,
+        )
+        if run is None:
+            raise DatasetError("Completed training run not found for this dataset")
+        trained_lora = run.get("lora_path")
+        if not trained_lora:
+            raise DatasetError("Training run does not contain a LoRA file")
+        trained_path = Path(trained_lora).resolve()
+        tested_paths = {
+            Path(lora.get("path", "")).resolve()
+            for variant in experiment.get("variants", [])
+            for lora in (variant.get("loras") or [])
+            if lora.get("path")
+        }
+        if trained_path not in tested_paths:
+            raise DatasetError("Evaluation does not test the LoRA from this training run")
+
+        record = {
+            "evaluation_id": evaluation_id,
+            "training_run_id": training_run_id,
+            "created_at": _utc_now(),
+            "votes": {str(key): int(value) for key, value in sorted(votes.items())},
+            "summary": summary,
+            "experiment": experiment,
+        }
+        evaluations = manifest.setdefault("evaluation_runs", [])
+        existing = next(
+            (item for item in evaluations if item.get("evaluation_id") == evaluation_id),
+            None,
+        )
+        if existing is None:
+            evaluations.append(record)
+        else:
+            existing.update(record)
+        manifest["evaluation_runs"] = evaluations[-20:]
+        _save_manifest(manifest_path, manifest)
+    return record
+
+
 def expansion_candidate_dir(
     root: str | os.PathLike, dataset_id: str, run_id: str
 ) -> Path:

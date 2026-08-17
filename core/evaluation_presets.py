@@ -3,10 +3,86 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping
 
 
 class EvaluationPresetError(Exception):
     pass
+
+
+def summarize_votes(
+    experiment: dict,
+    votes: Mapping[str | int, int],
+    *,
+    require_complete: bool = False,
+) -> dict:
+    """Validate human picks and return a deterministic evaluation summary."""
+    if not isinstance(experiment, dict):
+        raise EvaluationPresetError("Evaluation manifest is missing or invalid")
+    prompts = experiment.get("prompts")
+    variants = experiment.get("variants")
+    if not isinstance(prompts, list) or not prompts or len(prompts) > 100:
+        raise EvaluationPresetError("Evaluation must contain between 1 and 100 prompts")
+    if not isinstance(variants, list) or not variants or len(variants) > 100:
+        raise EvaluationPresetError("Evaluation must contain between 1 and 100 variants")
+    if not isinstance(votes, Mapping):
+        raise EvaluationPresetError("Votes must map prompt rows to winning variants")
+
+    normalized: dict[int, int] = {}
+    for raw_prompt, raw_variant in votes.items():
+        try:
+            prompt_index = int(raw_prompt)
+            variant_index = int(raw_variant)
+        except (TypeError, ValueError) as exc:
+            raise EvaluationPresetError("Vote indices must be integers") from exc
+        if str(prompt_index) != str(raw_prompt) and raw_prompt != prompt_index:
+            raise EvaluationPresetError("Vote prompt indices must be canonical integers")
+        if prompt_index < 0 or prompt_index >= len(prompts):
+            raise EvaluationPresetError("Vote refers to an unknown prompt row")
+        if variant_index < 0 or variant_index >= len(variants):
+            raise EvaluationPresetError("Vote refers to an unknown variant")
+        normalized[prompt_index] = variant_index
+
+    if require_complete and len(normalized) != len(prompts):
+        raise EvaluationPresetError(
+            f"Choose a winner for every prompt ({len(normalized)}/{len(prompts)} reviewed)"
+        )
+
+    counts = [0] * len(variants)
+    for variant_index in normalized.values():
+        counts[variant_index] += 1
+    highest = max(counts) if normalized else 0
+    leaders = [index for index, count in enumerate(counts) if count == highest] if normalized else []
+    winner_index = leaders[0] if len(leaders) == 1 else None
+    winner = None
+    verdict = "inconclusive"
+    if winner_index is not None:
+        variant = variants[winner_index]
+        winner = {
+            "index": winner_index,
+            "label": str(variant.get("label") or f"Variant {winner_index + 1}"),
+            "votes": counts[winner_index],
+        }
+        loras = variant.get("loras") or []
+        verdict = "lora" if loras else "base"
+        if len(loras) == 1:
+            winner["lora_weight"] = loras[0].get("weight")
+
+    return {
+        "prompt_count": len(prompts),
+        "reviewed_count": len(normalized),
+        "counts": [
+            {
+                "index": index,
+                "label": str(variant.get("label") or f"Variant {index + 1}"),
+                "votes": counts[index],
+            }
+            for index, variant in enumerate(variants)
+        ],
+        "winner": winner,
+        "tied_variant_indices": leaders if len(leaders) > 1 else [],
+        "verdict": verdict,
+    }
 
 
 def _trigger(manifest: dict) -> str:

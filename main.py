@@ -207,6 +207,12 @@ class ExpansionReviewPayload(BaseModel):
     decision: str
 
 
+class EvaluationVerdictPayload(BaseModel):
+    training_run_id: str
+    evaluation_id: str
+    votes: dict[str, int]
+
+
 def _set_dataset_caption_job(job_id: str, **updates):
     with _dataset_caption_lock:
         job = _dataset_caption_jobs.get(job_id, {})
@@ -653,6 +659,35 @@ async def api_dataset_evaluation_preset(
     except dataset_module.DatasetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except evaluation_presets.EvaluationPresetError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/datasets/{dataset_id}/evaluation-verdict")
+async def api_dataset_evaluation_verdict(
+    dataset_id: str,
+    payload: EvaluationVerdictPayload,
+    user: str = Depends(get_current_user),
+):
+    with _evaluation_lock:
+        evaluation = _evaluation_progress.get(payload.evaluation_id)
+        if evaluation is None:
+            raise HTTPException(status_code=404, detail="Evaluation not found")
+        if evaluation.get("status") != "done" or not evaluation.get("result"):
+            raise HTTPException(status_code=409, detail="Evaluation is not complete")
+        experiment = evaluation["result"].get("experiment")
+    try:
+        summary = evaluation_presets.summarize_votes(
+            experiment, payload.votes, require_complete=True
+        )
+        normalized_votes = {int(key): int(value) for key, value in payload.votes.items()}
+        record = dataset_module.record_evaluation_verdict(
+            _datasets_root(), dataset_id, payload.training_run_id,
+            payload.evaluation_id, experiment, normalized_votes, summary,
+        )
+        return record
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (dataset_module.DatasetError, evaluation_presets.EvaluationPresetError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 

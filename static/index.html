@@ -71,6 +71,11 @@
         .btn-small.btn-del:hover { background: #f44336; box-shadow: 0 2px 8px rgba(211,47,47,0.3); }
         .btn-small.btn-add { background: #1e3d3d; color: #4cafaf; }
         .btn-small.btn-add:hover { background: #2a5a5a; }
+        .eval-cell { transition: background .15s, box-shadow .15s; }
+        .eval-cell-picked { background:#173c32 !important; box-shadow:inset 0 0 0 2px #43b581; }
+        .eval-pick { margin-top:5px; background:#243746; color:#b9d5e8; }
+        .eval-cell-picked .eval-pick { background:#2e8b68; color:#fff; }
+        .eval-verdict { margin-top:12px; padding:12px; border:1px solid #30465a; border-radius:8px; background:#14202b; }
 
         /* Action bar (file manager) */
         .action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -1765,6 +1770,7 @@
             var combos = data.x_labels || [];
             var cells = data.cells || [];
             lastEvaluationManifest = data.experiment || null;
+            evaluationVotes = {};
 
             // Build lookup: "rowIdx,colIdx" -> cell metadata and images
             var lookup = {};
@@ -1801,7 +1807,7 @@
                     var images = cell.images || [];
                     var seeds = cell.seeds || [];
 
-                    html += '<td style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
+                    html += '<td class="eval-cell" data-prompt-index="' + ri + '" data-variant-index="' + ci + '" style="padding:6px;border:1px solid #333;text-align:center;vertical-align:top;">';
                     for (var ii = 0; ii < images.length; ii++) {
                         html += '<div style="margin-bottom:4px;position:relative;display:inline-block;">';
                         html += '<img src="' + images[ii] + '" style="width:140px;height:140px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="openLightbox(\'' + images[ii] + '\')">';
@@ -1813,6 +1819,7 @@
                     if (images.length === 0) {
                         html += '<span style="color:#555;">—</span>';
                     }
+                    html += '<div><button class="btn-small eval-pick" onclick="pickEvaluationWinner(' + ri + ',' + ci + ')">Pick winner</button></div>';
                     html += '</td>';
                 }
                 html += '</tr>';
@@ -1823,12 +1830,86 @@
             html += '<button class="btn-small" onclick="downloadAllXyzImages()" style="background:#2a4a4a;">📥 Download images</button>';
             html += '<button class="btn-small" onclick="downloadEvaluationManifest()" style="background:#1e3a5f;">📋 Download test config</button>';
             html += '</div>';
+            html += '<div id="evaluation-verdict-panel" class="eval-verdict"></div>';
 
             container.innerHTML = html;
+            renderEvaluationVerdictSummary();
         }
 
         var currentEvaluationId = null;
+        var lastEvaluationId = null;
         var lastEvaluationManifest = null;
+        var activeEvaluationPreset = null;
+        var evaluationVotes = {};
+
+        function pickEvaluationWinner(promptIndex, variantIndex) {
+            evaluationVotes[promptIndex] = variantIndex;
+            var rowCells = document.querySelectorAll('.eval-cell[data-prompt-index="' + promptIndex + '"]');
+            rowCells.forEach(function(cell) {
+                var picked = parseInt(cell.getAttribute('data-variant-index')) === variantIndex;
+                cell.classList.toggle('eval-cell-picked', picked);
+                var button = cell.querySelector('.eval-pick');
+                if (button) button.textContent = picked ? '✓ Winner' : 'Pick winner';
+            });
+            renderEvaluationVerdictSummary();
+        }
+
+        function renderEvaluationVerdictSummary() {
+            var panel = document.getElementById('evaluation-verdict-panel');
+            if (!panel || !lastEvaluationManifest) return;
+            var prompts = lastEvaluationManifest.prompts || [];
+            var variants = lastEvaluationManifest.variants || [];
+            var counts = variants.map(function() { return 0; });
+            Object.keys(evaluationVotes).forEach(function(key) {
+                var index = evaluationVotes[key];
+                if (index >= 0 && index < counts.length) counts[index] += 1;
+            });
+            var reviewed = Object.keys(evaluationVotes).length;
+            var highest = counts.length ? Math.max.apply(null, counts) : 0;
+            var leaders = [];
+            if (reviewed) counts.forEach(function(count, index) { if (count === highest) leaders.push(index); });
+            var result = reviewed === 0
+                ? 'Pick the image that best represents the concept in each prompt row.'
+                : leaders.length === 1
+                    ? 'Current leader: <strong>' + escapeHtml(variants[leaders[0]].label || ('Variant ' + (leaders[0] + 1))) + '</strong>'
+                    : 'Current result is tied.';
+            var countText = variants.map(function(variant, index) {
+                return escapeHtml(variant.label || ('Variant ' + (index + 1))) + ': ' + counts[index];
+            }).join(' · ');
+            var canSave = activeEvaluationPreset && lastEvaluationId && reviewed === prompts.length;
+            var saveHtml = activeEvaluationPreset
+                ? '<button id="evaluation-save-verdict" class="btn-small btn-add" onclick="saveEvaluationVerdict()" ' + (canSave ? '' : 'disabled') + '>Save review to dataset</button>'
+                : '<span style="color:#71869a;">Open this test from a dataset training run to save its review.</span>';
+            panel.innerHTML = '<div style="font-weight:600;color:#d8e7f2;">Human review · ' + reviewed + '/' + prompts.length + ' prompts</div>'
+                + '<div style="margin-top:5px;color:#9eb3c4;">' + result + '</div>'
+                + '<div style="margin-top:5px;font-size:11px;color:#70889b;">' + countText + '</div>'
+                + '<div style="margin-top:9px;">' + saveHtml + '</div>';
+        }
+
+        async function saveEvaluationVerdict() {
+            if (!activeEvaluationPreset || !lastEvaluationId) return;
+            var button = document.getElementById('evaluation-save-verdict');
+            if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(activeEvaluationPreset.dataset_id) + '/evaluation-verdict', {
+                    method:'POST',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({
+                        training_run_id:activeEvaluationPreset.training_run_id,
+                        evaluation_id:lastEvaluationId,
+                        votes:evaluationVotes
+                    })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var saved = await response.json();
+                var label = saved.summary && saved.summary.winner ? saved.summary.winner.label : 'Tie / inconclusive';
+                showToast('Review saved · ' + label);
+                if (button) button.textContent = '✓ Review saved';
+            } catch (e) {
+                if (button) { button.disabled = false; button.textContent = 'Save review to dataset'; }
+                showAlert('Could not save review', e.message);
+            }
+        }
 
         function wait(ms) {
             return new Promise(function(resolve) { setTimeout(resolve, ms); });
@@ -1963,6 +2044,7 @@
                 });
                 if (!resultRes.ok) throw new Error(await resultRes.text());
                 var data = await resultRes.json();
+                lastEvaluationId = currentEvaluationId;
 
                 progressBar.style.animation = 'none';
                 progressBar.style.width = '100%';
@@ -2764,6 +2846,10 @@
                 var response = await fetch(url, { headers:{ 'Authorization':'Basic ' + auth } });
                 if (!response.ok) throw new Error(await datasetResponseError(response));
                 var preset = await response.json();
+                activeEvaluationPreset = preset;
+                lastEvaluationId = null;
+                lastEvaluationManifest = null;
+                evaluationVotes = {};
 
                 showTab('batch');
                 await Promise.all([loadBatchModels(), refreshLoraList()]);

@@ -34,7 +34,43 @@ def _manifest_with_run(lora_path: str, dataset_type: str = "person") -> dict:
     }
 
 
+def _experiment(lora_path: str) -> dict:
+    return {
+        "prompts": ["portrait", "profile", "full body"],
+        "variants": [
+            {"label": "Base", "loras": []},
+            {"label": "Subject 0.7", "loras": [{"path": lora_path, "weight": 0.7}]},
+            {"label": "Subject 1.0", "loras": [{"path": lora_path, "weight": 1.0}]},
+        ],
+    }
+
+
 class EvaluationPresetTests(unittest.TestCase):
+    def test_vote_summary_reports_unique_lora_winner(self):
+        summary = evaluation_presets.summarize_votes(
+            _experiment("/tmp/subject.safetensors"), {"0": 1, "1": 1, "2": 2},
+            require_complete=True,
+        )
+
+        self.assertEqual(summary["reviewed_count"], 3)
+        self.assertEqual(summary["winner"]["label"], "Subject 0.7")
+        self.assertEqual(summary["winner"]["lora_weight"], 0.7)
+        self.assertEqual(summary["verdict"], "lora")
+
+    def test_vote_summary_reports_tie_and_rejects_incomplete_review(self):
+        experiment = _experiment("/tmp/subject.safetensors")
+        summary = evaluation_presets.summarize_votes(experiment, {0: 0, 1: 1})
+        self.assertIsNone(summary["winner"])
+        self.assertEqual(summary["tied_variant_indices"], [0, 1])
+        with self.assertRaisesRegex(evaluation_presets.EvaluationPresetError, "every prompt"):
+            evaluation_presets.summarize_votes(
+                experiment, {0: 0, 1: 1}, require_complete=True
+            )
+
+    def test_vote_summary_rejects_unknown_variant(self):
+        with self.assertRaisesRegex(evaluation_presets.EvaluationPresetError, "unknown variant"):
+            evaluation_presets.summarize_votes(_experiment("unused"), {0: 9})
+
     def test_completed_run_builds_base_and_two_weight_variants(self):
         with tempfile.TemporaryDirectory() as root:
             lora_path = Path(root) / "trained.safetensors"
@@ -91,6 +127,75 @@ class EvaluationPresetTests(unittest.TestCase):
                 self.assertEqual(preset["seed"], 19)
                 self.assertIn("wearing jacket_x", preset["prompts"][0])
             finally:
+                main.app.dependency_overrides.clear()
+
+    def test_authenticated_verdict_api_persists_server_evaluation(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root, "Subject", "person", "subject_x", [("subject.png", _image_file())]
+            )
+            lora_path = Path(root) / "subject.safetensors"
+            lora_path.write_bytes(b"weights")
+            datasets.record_training_run(root, created["id"], {
+                "job_id": "run-verdict", "status": "done", "lora_path": str(lora_path),
+            })
+            evaluation_id = "evaluation-verdict-api"
+            experiment = _experiment(str(lora_path))
+            main._evaluation_progress[evaluation_id] = {
+                "status": "done", "result": {"experiment": experiment},
+            }
+            main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
+            client = TestClient(main.app)
+            try:
+                with patch.object(main, "_datasets_root", return_value=root):
+                    response = client.post(
+                        f"/api/datasets/{created['id']}/evaluation-verdict",
+                        json={
+                            "training_run_id": "run-verdict",
+                            "evaluation_id": evaluation_id,
+                            "votes": {"0": 1, "1": 1, "2": 2},
+                        },
+                    )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["summary"]["winner"]["label"], "Subject 0.7")
+                stored = datasets.get_dataset(root, created["id"])["evaluation_runs"]
+                self.assertEqual(len(stored), 1)
+                self.assertEqual(stored[0]["training_run_id"], "run-verdict")
+            finally:
+                main._evaluation_progress.pop(evaluation_id, None)
+                main.app.dependency_overrides.clear()
+
+    def test_verdict_rejects_evaluation_from_another_lora(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root, "Subject", "person", "subject_x", [("subject.png", _image_file())]
+            )
+            trained_lora = Path(root) / "trained.safetensors"
+            trained_lora.write_bytes(b"weights")
+            datasets.record_training_run(root, created["id"], {
+                "job_id": "run-mismatch", "status": "done", "lora_path": str(trained_lora),
+            })
+            evaluation_id = "evaluation-mismatch"
+            main._evaluation_progress[evaluation_id] = {
+                "status": "done",
+                "result": {"experiment": _experiment(str(Path(root) / "other.safetensors"))},
+            }
+            main.app.dependency_overrides[main.get_current_user] = lambda: "tester"
+            client = TestClient(main.app)
+            try:
+                with patch.object(main, "_datasets_root", return_value=root):
+                    response = client.post(
+                        f"/api/datasets/{created['id']}/evaluation-verdict",
+                        json={
+                            "training_run_id": "run-mismatch",
+                            "evaluation_id": evaluation_id,
+                            "votes": {"0": 1, "1": 1, "2": 2},
+                        },
+                    )
+                self.assertEqual(response.status_code, 409)
+                self.assertIn("does not test the LoRA", response.json()["detail"])
+            finally:
+                main._evaluation_progress.pop(evaluation_id, None)
                 main.app.dependency_overrides.clear()
 
 
