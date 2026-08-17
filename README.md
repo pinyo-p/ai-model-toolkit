@@ -4,7 +4,7 @@
 > This script is experimental and may contain bugs. Do not use in production.  
 > ⚠️ **⚠️ สคริป `scripts/finetune_llm_lora.py` กำลังพัฒนา ยังไม่พร้อมใช้งาน ⚠️**
 
-FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image, Krea 2), deterministic LoRA evaluation, training prototypes, captioning, and more.
+FastAPI web UI for image generation (SDXL, FLUX.2[k]/[D], z-Image, Krea 2), deterministic LoRA evaluation, Krea 2 LoRA training, captioning, and more.
 
 > **Note:** This project was built with AI assistance. Code may not be perfect and could use improvement.
 
@@ -46,6 +46,7 @@ expanded and reviewed.
 |-----|---------|-------------|
 | Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
 | Test LoRA | **LoRA Evaluation** | Deterministic Prompt × Variant grid with matched seeds, per-variant settings, progress/cancel, and a downloadable test manifest |
+| Test LoRA | **Dataset handoff** | One click prepares six concept-aware prompts and Base/LoRA 0.7/LoRA 1.0 Krea 2 Turbo variants from the latest completed training run |
 | Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
 | Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
@@ -141,6 +142,7 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/datasets/{id}/training` | Start official Krea 2 Raw LoRA training |
 | GET | `/api/training/{job_id}` | Poll training steps, loss, log, and output path |
 | POST | `/api/training/{job_id}/cancel` | Stop the trainer process group safely |
+| GET | `/api/datasets/{id}/evaluation-preset` | Build a deterministic Test LoRA preset from a completed dataset training run |
 | POST | `/api/merge_lora` | Merge LoRA files |
 | POST | `/api/lora_info` | LoRA metadata |
 | POST | `/api/extract_lora` | Extract LoRA from ckpt |
@@ -176,6 +178,7 @@ ai-toolkit/
 │   ├── runtimes.py      # Model-family detection, loaders, and generation defaults
 │   ├── datasets.py      # Persistent dataset manifests, validation, captions, readiness
 │   ├── expansion.py     # Qwen Image Edit candidate recipes and inference adapter
+│   ├── evaluation_presets.py # Dataset-aware Krea 2 Turbo test prompts and variants
 │   ├── training.py      # Simple recipes + pinned official Krea 2 trainer adapter
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation

@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from core import datasets as dataset_module
-from core import gpu, caption, sdxl, lora, training, expansion, image as img_module, utils
+from core import gpu, caption, sdxl, lora, training, expansion, evaluation_presets, image as img_module, utils
 import threading
 import time
 
@@ -412,6 +412,7 @@ def _training_run_record(job: dict) -> dict:
         for key in (
             "job_id", "status", "profile", "engine", "created_at", "updated_at",
             "completed_steps", "total_steps", "loss", "output_dir", "lora_path", "error",
+            "seed", "recipe",
         )
         if job.get(key) is not None
     }
@@ -585,6 +586,7 @@ async def api_start_training(
             "dataset_id": dataset_id,
             "dataset_name": manifest["name"],
             "profile": recipe.profile,
+            "seed": payload.seed,
             "engine": recipe.engine,
             "status": "queued",
             "message": "Training queued",
@@ -637,6 +639,21 @@ async def api_cancel_training(job_id: str, user: str = Depends(get_current_user)
         except ProcessLookupError:
             pass
     return {"status": "cancelling", "job_id": job_id}
+
+
+@app.get("/api/datasets/{dataset_id}/evaluation-preset")
+async def api_dataset_evaluation_preset(
+    dataset_id: str,
+    run_id: str | None = Query(None),
+    user: str = Depends(get_current_user),
+):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        return evaluation_presets.build_evaluation_preset(manifest, run_id=run_id)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except evaluation_presets.EvaluationPresetError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _set_expansion_job(job_id: str, **updates):
