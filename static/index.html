@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Toolkit - SDXL</title>
+    <title>AI Toolkit — Media & LoRA Lab</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
@@ -133,6 +133,32 @@
 
         .gpu-info { background: #0d1420; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-family: monospace; font-size: 13px; color: #7aa2c0; border: 1px solid #1a2a3a; }
 
+        /* Dataset workspace */
+        .dataset-layout { display:grid;grid-template-columns:minmax(300px,0.85fr) minmax(360px,1.15fr);gap:16px;align-items:start; }
+        .dataset-list { display:flex;flex-direction:column;gap:8px;max-height:470px;overflow-y:auto; }
+        .dataset-item { padding:13px 14px;background:#0d1420;border:1px solid #1a2a3a;border-radius:9px;cursor:pointer;transition:all .2s; }
+        .dataset-item:hover,.dataset-item.active { border-color:#00d4ff;background:#101d2a; }
+        .dataset-item-head { display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:5px; }
+        .dataset-item-name { color:#e8f4ff;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+        .dataset-meta { color:#5a7a9a;font-size:12px;display:flex;gap:10px;flex-wrap:wrap; }
+        .dataset-badge { display:inline-flex;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;background:#182a39;color:#7aa2c0;white-space:nowrap; }
+        .dataset-badge.ready { background:#17351f;color:#69d47c; }
+        .dataset-badge.needs_captions { background:#392d12;color:#ffc85a; }
+        .dataset-badge.needs_expansion { background:#20264a;color:#9caeff; }
+        .dataset-metrics { display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0; }
+        .dataset-metric { background:#0d1420;border:1px solid #1a2a3a;border-radius:9px;padding:12px; }
+        .dataset-metric strong { display:block;color:#e8f4ff;font-size:20px;margin-bottom:2px; }
+        .dataset-metric span { color:#5a7a9a;font-size:11px;text-transform:uppercase;letter-spacing:.4px; }
+        .dataset-issue { padding:9px 11px;border-left:3px solid #ffc85a;background:#241f15;color:#d8bd80;font-size:12px;margin-bottom:6px;border-radius:4px; }
+        .dataset-issue.info { border-color:#6e83ff;background:#171b2d;color:#aeb9ff; }
+        .dataset-table-wrap { max-height:560px;overflow:auto;border:1px solid #1a2a3a;border-radius:9px; }
+        .dataset-table { width:100%;border-collapse:collapse;table-layout:fixed; }
+        .dataset-table th { position:sticky;top:0;background:#111d29;color:#5a7a9a;text-align:left;font-size:11px;padding:9px;z-index:1; }
+        .dataset-table td { border-top:1px solid #172331;padding:9px;vertical-align:middle;font-size:12px; }
+        .dataset-thumb { width:58px;height:58px;object-fit:cover;border-radius:6px;background:#090e15;border:1px solid #1e2d3d; }
+        .dataset-caption { min-height:58px;padding:8px;font-size:12px;resize:vertical; }
+        .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
+
         /* Drop zone */
         .drop-zone { border: 2px dashed #1a2a3a; border-radius: 10px; padding: 30px; text-align: center; color: #3a5a7a; transition: all 0.2s; cursor: pointer; }
         .drop-zone:hover, .drop-zone.dragover { border-color: #00d4ff; background: rgba(0,212,255,0.05); color: #00d4ff; }
@@ -175,6 +201,8 @@
             .modal-box { min-width: auto; margin: 0 12px; }
             .action-bar { gap: 6px; }
             .action-bar .btn-sm { font-size: 11px; padding: 6px 10px; }
+            .dataset-layout { grid-template-columns:1fr; }
+            .dataset-metrics { grid-template-columns:repeat(2,1fr); }
         }
         #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
         .toast { background: #1a2a1a; color: #4caf50; padding: 10px 18px; border-radius: 8px; font-size: 13px; border: 1px solid #2a4a2a; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards; pointer-events: auto; }
@@ -203,7 +231,7 @@
         <div class="app-header">
             <div>
                 <h1>🚀 AI Toolkit</h1>
-                <div class="subtitle">SDXL · LoRA · Caption</div>
+                <div class="subtitle">AI Media · Dataset · LoRA Lab</div>
             </div>
             <div class="gpu-badge" id="gpu-badge">
                 <span class="gpu-dot" id="gpu-dot"></span>
@@ -214,7 +242,7 @@
         <div class="tabs">
             <button class="tab active" onclick="showTab('generate')">🎨 Generate</button>
             <button class="tab" onclick="showTab('batch')">🧪 Test LoRA</button>
-            <button class="tab" onclick="showTab('train')">🏋️ Train LoRA</button>
+            <button class="tab" onclick="showTab('train')">🗂️ Dataset</button>
             <button class="tab" onclick="showTab('merge')">🔗 Merge/Extract</button>
             <button class="tab" onclick="showTab('tools')">🔧 Tools</button>
             <button class="tab" onclick="showTab('loadmodel')">📦 Model Manager</button>
@@ -484,97 +512,83 @@
         </div>
 
         <div id="train" class="panel">
-            <div class="card">
-                <h2>🧠 Train LoRA</h2>
-                <div class="sub-tabs">
-                <button class="sub-tab active" onclick="showSubTab('train-normal')">Train LoRA (50 images)</button>
-                <button class="sub-tab" onclick="showSubTab('train-image2lora')">Image to LoRA (1-3 images)</button>
+            <div style="margin-bottom:18px;">
+                <h2 style="color:#e8f4ff;font-size:1.35rem;margin-bottom:5px;">Dataset Workspace</h2>
+                <div style="color:#5a7a9a;font-size:13px;">One preparation flow for 1–5 source images and full datasets up to 2,000 images.</div>
             </div>
 
-            <div id="train-normal" class="sub-panel active">
-                <div class="form-group">
-                    <label>Upload Images (5-50)</label>
-                    <input type="file" id="train-full-images" accept="image/*" multiple>
-                    <div class="file-list" id="train-full-file-list"></div>
-                </div>
-                <div class="row">
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Concept Name</label>
-                            <input type="text" id="train-full-concept" placeholder="e.g., my_style">
+            <div class="dataset-layout">
+                <div class="card">
+                    <h2>＋ New dataset</h2>
+                    <div class="form-group">
+                        <label>Dataset name</label>
+                        <input id="dataset-name" placeholder="e.g. Nara character v1">
+                    </div>
+                    <div class="row">
+                        <div class="col">
+                            <div class="form-group">
+                                <label>LoRA type</label>
+                                <select id="dataset-type">
+                                    <option value="person">Person / character</option>
+                                    <option value="style">Visual style</option>
+                                    <option value="clothing">Clothing</option>
+                                    <option value="environment">Room / environment</option>
+                                    <option value="vehicle">Vehicle</option>
+                                    <option value="object">Object</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="form-group">
+                                <label>Trigger word <span style="color:#3a5a7a;">(optional)</span></label>
+                                <input id="dataset-trigger" placeholder="e.g. nara_person">
+                            </div>
                         </div>
                     </div>
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Steps</label>
-                            <input type="number" id="train-full-steps" value="500" min="50">
-                        </div>
+                    <div class="form-group">
+                        <label>Source images (1–2,000)</label>
+                        <input type="file" id="dataset-files" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple>
+                        <div id="dataset-file-summary" style="color:#5a7a9a;font-size:12px;margin-top:7px;">No images selected</div>
                     </div>
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Rank</label>
-                            <input type="number" id="train-full-rank" value="64" min="4" max="128">
-                        </div>
+                    <button id="dataset-create-btn" class="btn" onclick="createDatasetWorkspace()">Create workspace</button>
+                    <div id="dataset-create-status" style="font-size:12px;margin-top:10px;color:#5a7a9a;"></div>
+                </div>
+
+                <div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                        <h2 style="margin:0;">Your datasets</h2>
+                        <button class="btn-small btn-add" onclick="loadDatasets()">↻ Refresh</button>
                     </div>
-                </div>
-                <div class="form-group">
-                    <label>Base Model</label>
-                    <select id="train-full-model" class="base-model" onchange="onModelSelect(this, 'train-full-model-custom')">
-                        <option value="">-- Select local model --</option>
-                        <option value="__custom__">Custom (type manually)...</option>
-                    </select>
-                    <input type="text" id="train-full-model-custom" placeholder="Model ID or path (e.g. stabilityai/stable-diffusion-xl-base-1.0)" style="display:none;margin-top:8px;">
-                </div>
-                <button class="btn" onclick="autoCaptionFull()" style="background:linear-gradient(135deg,#ff8c00,#cc7000);margin-bottom:20px;">🤖 Auto Caption Images</button>
-                <div class="form-group">
-                    <label>Captions (one per line, auto-filled from Auto Caption)</label>
-                    <textarea id="train-full-captions" placeholder="Captions will appear here after Auto Caption..." style="min-height:100px;font-size:12px;font-family:monospace;"></textarea>
-                </div>
-                <button class="btn" onclick="trainFull()">🚀 Train LoRA</button>
-                <div class="output" id="train-full-output">
-                    <span class="placeholder">Full LoRA training (50 images)</span>
+                    <div id="dataset-list" class="dataset-list">
+                        <div class="dataset-empty">No datasets yet</div>
+                    </div>
                 </div>
             </div>
 
-            <div id="train-image2lora" class="sub-panel">
-                <div class="form-group">
-                    <label>Upload Images (1-3)</label>
-                    <input type="file" id="train-img-images" accept="image/*" multiple>
-                    <div class="file-list" id="train-img-file-list"></div>
-                </div>
-                <div class="row">
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Concept Name</label>
-                            <input type="text" id="train-img-concept" placeholder="e.g., my_style">
-                        </div>
+            <div id="dataset-detail" class="card" style="display:none;">
+                <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                    <div>
+                        <h2 id="dataset-detail-name" style="margin-bottom:4px;"></h2>
+                        <div id="dataset-detail-meta" style="color:#5a7a9a;font-size:12px;"></div>
                     </div>
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Steps</label>
-                            <input type="number" id="train-img-steps" value="50" min="10">
-                        </div>
-                    </div>
-                    <div class="col">
-                        <div class="form-group">
-                            <label>Rank</label>
-                            <input type="number" id="train-img-rank" value="16" min="4" max="128">
-                        </div>
-                    </div>
+                    <span id="dataset-detail-status" class="dataset-badge"></span>
                 </div>
-                <div class="form-group">
-                    <label>Base Model</label>
-                    <select id="train-img-model" class="base-model" onchange="onModelSelect(this, 'train-img-model-custom')">
-                        <option value="">-- Select local model --</option>
-                        <option value="__custom__">Custom (type manually)...</option>
-                    </select>
-                    <input type="text" id="train-img-model-custom" placeholder="Model ID or path (e.g. stabilityai/stable-diffusion-xl-base-1.0)" style="display:none;margin-top:8px;">
+                <div id="dataset-metrics" class="dataset-metrics"></div>
+                <div id="dataset-issues" style="margin-bottom:14px;"></div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+                    <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
+                    <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
+                    <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
+                    <button class="btn btn-sm btn-ghost" disabled title="A real trainer will be connected in the next milestone">Configure training — next milestone</button>
                 </div>
-                <button class="btn" onclick="trainImage2LoRA()">Image to LoRA</button>
-                <div class="output" id="train-img-output">
-                    <span class="placeholder">Quick LoRA (1-3 images)</span>
+                <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
+                <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
+                <div class="dataset-table-wrap">
+                    <table class="dataset-table">
+                        <thead><tr><th style="width:78px;">Image</th><th style="width:190px;">File</th><th>Caption</th></tr></thead>
+                        <tbody id="dataset-image-rows"></tbody>
+                    </table>
                 </div>
-            </div>
             </div>
         </div>
 
@@ -803,7 +817,7 @@
                     document.getElementById('main-content').style.display = 'block';
                     checkGPU();
                     loadSettings();
-                    loadTrainModels();
+                    loadDatasets();
                     loadGenModels();
                     refreshLoraList();
                     browseFiles();
@@ -1058,7 +1072,7 @@
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.querySelector(`.tab[onclick="showTab('${tab}')"]`).classList.add('active');
             document.getElementById(tab).classList.add('active');
-            if (tab === 'train') loadTrainModels();
+            if (tab === 'train') loadDatasets();
             if (tab === 'generate') { loadGenModels(); refreshLoraList(); }
             if (tab === 'batch') {
                 if (!document.querySelector('#cmp-combos .cmp-combo-row')) addComboRow('Base');
@@ -2087,106 +2101,212 @@
             }
         }
 
-        async function autoCaptionFull() {
-            const output = document.getElementById('train-full-output');
-            output.innerHTML = '<span class="loading">Auto-captioning...</span>';
+        var activeDatasetId = '';
+        var activeDatasetCaptionJob = '';
+        var datasetThumbUrls = [];
 
-            const files = document.getElementById('train-full-images').files;
-            if (files.length < 1) {
-                output.innerHTML = '<span class="error">Please upload images first</span>';
-                return;
-            }
-
-            const formData = new FormData();
-            for (const f of files) formData.append('files', f);
-
+        async function datasetResponseError(response) {
             try {
-                const res = await fetch('/api/auto_caption', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                const data = await res.json();
+                var body = await response.clone().json();
+                return body.detail || JSON.stringify(body);
+            } catch (e) {
+                return await response.text() || ('Request failed (' + response.status + ')');
+            }
+        }
 
-                let captionText = '';
-                data.captions.forEach((c, i) => {
-                    const label = c.source === 'metadata' ? '📋' : '🤖';
-                    captionText += `${i+1}. ${label} ${c.caption}\n`;
+        function datasetStatusLabel(status) {
+            return ({
+                'ready': 'Ready',
+                'needs_captions': 'Needs captions',
+                'needs_expansion': 'Needs expansion',
+                'empty': 'Empty'
+            })[status] || status;
+        }
+
+        async function loadDatasets(selectId) {
+            var list = document.getElementById('dataset-list');
+            if (!list) return;
+            list.innerHTML = '<div class="dataset-empty"><span class="loading">Loading datasets…</span></div>';
+            try {
+                var response = await fetch('/api/datasets', { headers: { 'Authorization': 'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var data = await response.json();
+                if (!data.datasets.length) {
+                    list.innerHTML = '<div class="dataset-empty">No datasets yet.<br>Create one from your source images.</div>';
+                    return;
+                }
+                list.innerHTML = data.datasets.map(function(item) {
+                    var analysis = item.analysis || {};
+                    var active = item.id === (selectId || activeDatasetId) ? ' active' : '';
+                    return '<div class="dataset-item' + active + '" data-dataset-id="' + escapeHtml(item.id) + '" onclick="openDataset(\'' + escapeHtml(item.id) + '\')">' +
+                        '<div class="dataset-item-head"><span class="dataset-item-name">' + escapeHtml(item.name) + '</span>' +
+                        '<span class="dataset-badge ' + escapeHtml(analysis.status || '') + '">' + escapeHtml(datasetStatusLabel(analysis.status || '')) + '</span></div>' +
+                        '<div class="dataset-meta"><span>' + escapeHtml(item.type) + '</span><span>' + (analysis.image_count || 0) + ' images</span><span>' + (analysis.captioned_count || 0) + ' captioned</span></div></div>';
+                }).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="dataset-empty error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        async function createDatasetWorkspace() {
+            var name = document.getElementById('dataset-name').value.trim();
+            var files = document.getElementById('dataset-files').files;
+            var status = document.getElementById('dataset-create-status');
+            var button = document.getElementById('dataset-create-btn');
+            if (!name) { status.innerHTML = '<span class="error">Enter a dataset name.</span>'; return; }
+            if (!files.length || files.length > 2000) { status.innerHTML = '<span class="error">Select 1–2,000 images.</span>'; return; }
+
+            var formData = new FormData();
+            Array.from(files).forEach(function(file) { formData.append('files', file); });
+            formData.append('name', name);
+            formData.append('dataset_type', document.getElementById('dataset-type').value);
+            formData.append('trigger_word', document.getElementById('dataset-trigger').value.trim());
+            button.disabled = true;
+            status.innerHTML = '<span class="loading">Validating and importing ' + files.length + ' images…</span>';
+            try {
+                var response = await fetch('/api/datasets', { method:'POST', body:formData, headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var dataset = await response.json();
+                status.innerHTML = '<span style="color:#69d47c;">Workspace created. ' + dataset.analysis.image_count + ' unique images imported.</span>';
+                document.getElementById('dataset-files').value = '';
+                document.getElementById('dataset-file-summary').textContent = 'No images selected';
+                await loadDatasets(dataset.id);
+                await openDataset(dataset.id);
+            } catch (e) {
+                status.innerHTML = '<span class="error">' + escapeHtml(e.message) + '</span>';
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function openDataset(datasetId) {
+            activeDatasetId = datasetId;
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                renderDatasetDetail(await response.json());
+                document.querySelectorAll('.dataset-item').forEach(function(item) {
+                    item.classList.toggle('active', item.getAttribute('data-dataset-id') === datasetId);
                 });
-
-                document.getElementById('train-full-captions').value = captionText;
-                output.innerHTML = '<span style="color:#00ff00;">Captions generated! Review and edit if needed, then Train.</span>';
-            } catch(e) {
-                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+            } catch (e) {
+                showAlert('Dataset error', e.message);
             }
         }
 
-        async function trainFull() {
-            const output = document.getElementById('train-full-output');
-            output.innerHTML = '<span class="loading">Training...</span>';
+        function renderDatasetDetail(dataset) {
+            var analysis = dataset.analysis || {};
+            document.getElementById('dataset-detail').style.display = 'block';
+            document.getElementById('dataset-detail-name').textContent = dataset.name;
+            document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action;
+            var badge = document.getElementById('dataset-detail-status');
+            badge.className = 'dataset-badge ' + analysis.status;
+            badge.textContent = datasetStatusLabel(analysis.status);
+            document.getElementById('dataset-metrics').innerHTML =
+                '<div class="dataset-metric"><strong>' + analysis.image_count + '</strong><span>Images</span></div>' +
+                '<div class="dataset-metric"><strong>' + analysis.captioned_count + '</strong><span>Captioned</span></div>' +
+                '<div class="dataset-metric"><strong>' + analysis.duplicate_count + '</strong><span>Duplicates skipped</span></div>' +
+                '<div class="dataset-metric"><strong>' + analysis.low_resolution_count + '</strong><span>Low resolution</span></div>';
+            document.getElementById('dataset-issues').innerHTML = (analysis.issues || []).map(function(issue) {
+                return '<div class="dataset-issue ' + escapeHtml(issue.severity || '') + '">' + escapeHtml(issue.message) + '</div>';
+            }).join('');
 
-            const files = document.getElementById('train-full-images').files;
-            if (files.length < 5) {
-                output.innerHTML = '<span class="error">Please upload at least 5 images</span>';
-                return;
-            }
+            datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
+            datasetThumbUrls = [];
+            var visibleImages = (dataset.images || []).slice(0, 200);
+            document.getElementById('dataset-image-note').textContent = dataset.images.length > 200
+                ? 'Showing the first 200 images. Auto-caption processes the complete dataset.'
+                : 'Captions are saved as both manifest data and .txt sidecars.';
+            document.getElementById('dataset-image-rows').innerHTML = visibleImages.map(function(image) {
+                return '<tr><td><img class="dataset-thumb" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
+                    '<td><div style="color:#dcecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(image.original_filename) + '">' + escapeHtml(image.original_filename) + '</div>' +
+                    '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div></td>' +
+                    '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" placeholder="Describe what should remain variable…">' + escapeHtml(image.caption || '') + '</textarea></td></tr>';
+            }).join('');
+            loadDatasetThumbnails(dataset.id);
+        }
 
-            const formData = new FormData();
-            for (const f of files) formData.append('files', f);
-            formData.append('concept', document.getElementById('train-full-concept').value);
-            formData.append('steps', document.getElementById('train-full-steps').value);
-            formData.append('rank', document.getElementById('train-full-rank').value);
-            formData.append('base_model', getModelValue('train-full-model', 'train-full-model-custom'));
-
-            const raw = document.getElementById('train-full-captions').value.trim();
-            if (raw) {
-                const lines = raw.split('\n').filter(l => l.trim());
-                const captions = lines.map(l => l.replace(/^\d+\.\s*[📋🤖]\s*/, '').trim());
-                formData.append('captions', JSON.stringify(captions));
-            }
-
-            try {
-                const res = await fetch('/api/train_lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = document.getElementById('train-full-concept').value + '.safetensors';
-                a.click();
-                output.innerHTML = '<span>LoRA trained and downloaded!</span>';
-            } catch(e) {
-                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+        async function loadDatasetThumbnails(datasetId) {
+            var images = Array.from(document.querySelectorAll('.dataset-thumb'));
+            for (var i = 0; i < images.length; i++) {
+                if (datasetId !== activeDatasetId) return;
+                try {
+                    var imageId = images[i].getAttribute('data-image-id');
+                    var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/images/' + encodeURIComponent(imageId), { headers:{ 'Authorization':'Basic ' + auth } });
+                    if (!response.ok) continue;
+                    var url = URL.createObjectURL(await response.blob());
+                    datasetThumbUrls.push(url);
+                    images[i].src = url;
+                } catch (e) {}
             }
         }
 
-        async function trainImage2LoRA() {
-            const output = document.getElementById('train-img-output');
-            output.innerHTML = '<span class="loading">Training...</span>';
-
-            const files = document.getElementById('train-img-images').files;
-            if (files.length < 1 || files.length > 3) {
-                output.innerHTML = '<span class="error">Please upload 1-3 images</span>';
-                return;
-            }
-
-            const formData = new FormData();
-            for (const f of files) formData.append('files', f);
-            formData.append('concept', document.getElementById('train-img-concept').value);
-            formData.append('steps', document.getElementById('train-img-steps').value);
-            formData.append('rank', document.getElementById('train-img-rank').value);
-            formData.append('base_model', getModelValue('train-img-model', 'train-img-model-custom'));
-
+        async function saveDatasetCaptions() {
+            if (!activeDatasetId) return;
+            var captions = {};
+            document.querySelectorAll('.dataset-caption').forEach(function(input) {
+                captions[input.getAttribute('data-image-id')] = input.value;
+            });
             try {
-                const res = await fetch('/api/image2lora', { method: 'POST', body: formData, headers: { 'Authorization': 'Basic ' + auth } });
-                if (!res.ok) throw new Error(await res.text());
-                const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = document.getElementById('train-img-concept').value + '.safetensors';
-                a.click();
-                output.innerHTML = '<span>LoRA trained and downloaded!</span>';
-            } catch(e) {
-                output.innerHTML = `<span class="error">Error: ${e.message}</span>`;
+                var response = await fetch('/api/datasets/' + encodeURIComponent(activeDatasetId) + '/captions', {
+                    method:'PUT',
+                    headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
+                    body:JSON.stringify({ captions:captions })
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                renderDatasetDetail(await response.json());
+                loadDatasets(activeDatasetId);
+                showToast('Caption edits saved');
+            } catch (e) { showAlert('Save failed', e.message); }
+        }
+
+        async function startDatasetCaptioning() {
+            if (!activeDatasetId) return;
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(activeDatasetId) + '/auto-caption', { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var data = await response.json();
+                activeDatasetCaptionJob = data.job_id;
+                document.getElementById('dataset-caption-btn').disabled = true;
+                document.getElementById('dataset-caption-cancel').style.display = 'inline-flex';
+                document.getElementById('dataset-caption-progress').style.display = 'block';
+                pollDatasetCaptioning();
+            } catch (e) { showAlert('Captioning failed', e.message); }
+        }
+
+        async function pollDatasetCaptioning() {
+            if (!activeDatasetCaptionJob) return;
+            try {
+                var response = await fetch('/api/datasets/caption-progress/' + encodeURIComponent(activeDatasetCaptionJob), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var job = await response.json();
+                var percent = job.total ? Math.round((job.completed || 0) * 100 / job.total) : 100;
+                document.getElementById('dataset-caption-progress').textContent = 'Captioning ' + (job.completed || 0) + '/' + (job.total || 0) + ' (' + percent + '%)' + (job.current_image ? ' · ' + job.current_image : '');
+                if (job.status === 'queued' || job.status === 'running') {
+                    setTimeout(pollDatasetCaptioning, 700);
+                    return;
+                }
+                document.getElementById('dataset-caption-btn').disabled = false;
+                document.getElementById('dataset-caption-cancel').style.display = 'none';
+                if (job.status === 'done') {
+                    showToast('Dataset captioning complete');
+                    await openDataset(activeDatasetId);
+                    loadDatasets(activeDatasetId);
+                } else if (job.status === 'error') {
+                    showAlert('Captioning failed', job.error || 'Unknown error');
+                }
+                activeDatasetCaptionJob = '';
+            } catch (e) {
+                document.getElementById('dataset-caption-btn').disabled = false;
+                document.getElementById('dataset-caption-cancel').style.display = 'none';
+                activeDatasetCaptionJob = '';
+                showAlert('Captioning failed', e.message);
             }
+        }
+
+        async function cancelDatasetCaptioning() {
+            if (!activeDatasetCaptionJob) return;
+            await fetch('/api/datasets/caption-cancel/' + encodeURIComponent(activeDatasetCaptionJob), { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
+            document.getElementById('dataset-caption-progress').textContent = 'Cancelling after the current image…';
         }
 
         async function mergeLora() {
@@ -2319,14 +2439,13 @@
             }
         }
 
-        document.getElementById('train-full-images').addEventListener('change', function() {
-            const list = document.getElementById('train-full-file-list');
-            list.textContent = Array.from(this.files).map(f => f.name).join(', ');
-        });
-
-        document.getElementById('train-img-images').addEventListener('change', function() {
-            const list = document.getElementById('train-img-file-list');
-            list.textContent = Array.from(this.files).map(f => f.name).join(', ');
+        document.getElementById('dataset-files').addEventListener('change', function() {
+            const summary = document.getElementById('dataset-file-summary');
+            const files = Array.from(this.files);
+            const totalBytes = files.reduce(function(sum, file) { return sum + file.size; }, 0);
+            summary.textContent = files.length
+                ? files.length + ' images · ' + formatSize(totalBytes)
+                : 'No images selected';
         });
 
         document.getElementById('merge-files').addEventListener('change', function() {
@@ -2460,42 +2579,6 @@
             return select.value;
         }
 
-        async function loadTrainModels() {
-            try {
-                const res = await fetch('/api/models', { headers: { 'Authorization': 'Basic ' + auth } });
-                const data = await res.json();
-                const modelsPath = data.models_path || '';
-                const localModels = data.models || [];
-                const selects = [
-                    document.getElementById('train-full-model'),
-                    document.getElementById('train-img-model')
-                ];
-                function _getFname(f) { return typeof f === 'string' ? f : f.name; }
-                selects.forEach(function(select) {
-                    if (!select) return;
-                    while (select.options.length > 2) select.remove(2);
-                    localModels.forEach(function(m) {
-                        if (m.type === 'folder' && m.files && m.files.length > 0) {
-                            (m.files).forEach(function(f) {
-                                const relPath = m.name + '/' + _getFname(f);
-                                const opt = document.createElement('option');
-                                opt.textContent = relPath;
-                                opt.value = modelsPath ? modelsPath + '/' + relPath : relPath;
-                                select.appendChild(opt);
-                            });
-                        } else if (m.type === 'file') {
-                            const opt = document.createElement('option');
-                            opt.textContent = m.name;
-                            opt.value = modelsPath ? modelsPath + '/' + m.name : m.name;
-                            select.appendChild(opt);
-                        }
-                    });
-                });
-            } catch(e) {
-                console.error('Failed to load train models:', e);
-            }
-        }
-
         async function saveSettings() {
             const output = document.getElementById('settings-output');
             output.innerHTML = '<span class="loading">Saving...</span>';
@@ -2512,7 +2595,7 @@
                 const data = await res.json();
                 output.innerHTML = '<span style="color:#00ff00;">' + data.message + '</span>';
                 loadSettings();
-                loadTrainModels();
+                loadDatasets();
                 browseFiles();
             } catch(e) {
                 output.innerHTML = '<span class="error">Error: ' + e.message + '</span>';

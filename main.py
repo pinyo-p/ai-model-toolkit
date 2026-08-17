@@ -19,8 +19,10 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from PIL import Image
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
+from core import datasets as dataset_module
 from core import gpu, caption, sdxl, lora, image as img_module, utils
 import threading
 import time
@@ -39,6 +41,10 @@ _evaluation_progress: dict = {}
 _evaluation_lock = threading.Lock()
 _evaluation_cancel_events: dict = {}
 _evaluation_cancel_lock = threading.Lock()
+
+_dataset_caption_jobs: dict = {}
+_dataset_caption_lock = threading.Lock()
+_dataset_caption_cancel_events: dict = {}
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "users.db")
 
@@ -95,6 +101,10 @@ def save_settings(settings):
         json.dump(settings, f, indent=2)
 
 settings = load_settings()
+
+
+def _datasets_root() -> str:
+    return settings.get("datasets_path") or os.path.join(os.path.dirname(__file__), "datasets")
 
 # Set HF token from settings as env var so core/sdxl.py can use it
 if settings.get("hf_token"):
@@ -166,6 +176,173 @@ async def api_auto_caption(files: list[UploadFile] = File(...), user: str = Depe
         return {"captions": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class DatasetCaptionPayload(BaseModel):
+    captions: dict[str, str]
+
+
+def _set_dataset_caption_job(job_id: str, **updates):
+    with _dataset_caption_lock:
+        job = _dataset_caption_jobs.get(job_id, {})
+        job.update(updates)
+        _dataset_caption_jobs[job_id] = job
+
+
+def _run_dataset_caption_job(job_id: str, dataset_id: str):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        pending = [item for item in manifest["images"] if not item.get("caption", "").strip()]
+        _set_dataset_caption_job(job_id, status="running", total=len(pending), completed=0)
+        if not pending:
+            _set_dataset_caption_job(job_id, status="done", message="All images already have captions")
+            return
+
+        for index, item in enumerate(pending, start=1):
+            with _dataset_caption_lock:
+                cancel_event = _dataset_caption_cancel_events.get(job_id)
+            if cancel_event and cancel_event.is_set():
+                _set_dataset_caption_job(job_id, status="cancelled", message="Captioning cancelled")
+                return
+
+            path = dataset_module.image_path(_datasets_root(), dataset_id, item["id"])
+            result = caption.auto_caption([str(path)])[0]
+            generated_caption = result.get("caption", "").strip()
+            if generated_caption:
+                dataset_module.update_captions(
+                    _datasets_root(),
+                    dataset_id,
+                    {item["id"]: generated_caption},
+                    source=result.get("source", "auto"),
+                )
+            _set_dataset_caption_job(
+                job_id,
+                completed=index,
+                current_image=item["original_filename"],
+            )
+
+        result = dataset_module.get_dataset(_datasets_root(), dataset_id)
+        _set_dataset_caption_job(
+            job_id,
+            status="done",
+            completed=len(pending),
+            dataset=result,
+            message="Captioning complete",
+        )
+    except Exception as exc:
+        _set_dataset_caption_job(job_id, status="error", error=str(exc))
+
+
+@app.get("/api/datasets")
+async def api_list_datasets(user: str = Depends(get_current_user)):
+    return {
+        "datasets_root": _datasets_root(),
+        "datasets": dataset_module.list_datasets(_datasets_root()),
+    }
+
+
+@app.post("/api/datasets")
+async def api_create_dataset(
+    files: list[UploadFile] = File(...),
+    name: str = Form(...),
+    dataset_type: str = Form(...),
+    trigger_word: str = Form(""),
+    user: str = Depends(get_current_user),
+):
+    try:
+        uploads = [(file.filename or "image", file.file) for file in files]
+        return dataset_module.create_dataset(
+            _datasets_root(), name, dataset_type, trigger_word, uploads
+        )
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets/{dataset_id}")
+async def api_get_dataset(dataset_id: str, user: str = Depends(get_current_user)):
+    try:
+        return dataset_module.get_dataset(_datasets_root(), dataset_id)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets/{dataset_id}/images/{image_id}")
+async def api_get_dataset_image(
+    dataset_id: str,
+    image_id: str,
+    user: str = Depends(get_current_user),
+):
+    try:
+        return FileResponse(dataset_module.image_path(_datasets_root(), dataset_id, image_id))
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.put("/api/datasets/{dataset_id}/captions")
+async def api_update_dataset_captions(
+    dataset_id: str,
+    payload: DatasetCaptionPayload,
+    user: str = Depends(get_current_user),
+):
+    try:
+        return dataset_module.update_captions(
+            _datasets_root(), dataset_id, payload.captions, source="manual"
+        )
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except dataset_module.DatasetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/datasets/{dataset_id}/auto-caption")
+async def api_auto_caption_dataset(dataset_id: str, user: str = Depends(get_current_user)):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    with _dataset_caption_lock:
+        for job_id, job in _dataset_caption_jobs.items():
+            if job.get("dataset_id") == dataset_id and job.get("status") in {"queued", "running"}:
+                return {"status": job["status"], "job_id": job_id}
+        job_id = uuid.uuid4().hex
+        _dataset_caption_jobs[job_id] = {
+            "job_id": job_id,
+            "dataset_id": dataset_id,
+            "dataset_name": manifest["name"],
+            "status": "queued",
+            "completed": 0,
+            "total": manifest["analysis"]["image_count"] - manifest["analysis"]["captioned_count"],
+        }
+        _dataset_caption_cancel_events[job_id] = threading.Event()
+
+    thread = threading.Thread(
+        target=_run_dataset_caption_job,
+        args=(job_id, dataset_id),
+        daemon=True,
+    )
+    thread.start()
+    return {"status": "queued", "job_id": job_id}
+
+
+@app.get("/api/datasets/caption-progress/{job_id}")
+async def api_dataset_caption_progress(job_id: str, user: str = Depends(get_current_user)):
+    with _dataset_caption_lock:
+        job = _dataset_caption_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Caption job not found")
+        return dict(job)
+
+
+@app.post("/api/datasets/caption-cancel/{job_id}")
+async def api_cancel_dataset_caption(job_id: str, user: str = Depends(get_current_user)):
+    with _dataset_caption_lock:
+        event = _dataset_caption_cancel_events.get(job_id)
+        job = _dataset_caption_jobs.get(job_id)
+        if not event or not job:
+            raise HTTPException(status_code=404, detail="Caption job not found")
+        event.set()
+    return {"status": "cancelling", "job_id": job_id}
 
 
 @app.post("/api/image2lora")
@@ -692,6 +869,18 @@ async def api_active_jobs(user: str = Depends(get_current_user)):
                     "id": evaluation_id,
                     "status": data.get("status"),
                     "message": data.get("message", ""),
+                })
+    with _dataset_caption_lock:
+        for job_id, data in _dataset_caption_jobs.items():
+            if data.get("status") in {"queued", "running"}:
+                jobs.append({
+                    "type": "dataset_caption",
+                    "id": job_id,
+                    "status": data.get("status"),
+                    "message": (
+                        f"Captioning {data.get('dataset_name', 'dataset')} "
+                        f"({data.get('completed', 0)}/{data.get('total', 0)})"
+                    ),
                 })
     return {"jobs": jobs}
 

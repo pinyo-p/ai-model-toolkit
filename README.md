@@ -38,8 +38,9 @@ and configuring `HF_TOKEN` in Settings.
 |-----|---------|-------------|
 | Generate | **Generate** | Image generation with LoRA, prompt, negative prompt, steps, seed, resolution |
 | Test LoRA | **LoRA Evaluation** | Deterministic Prompt × Variant grid with matched seeds, per-variant settings, progress/cancel, and a downloadable test manifest |
-| Train | **Train LoRA (prototype)** | Current UI scaffold for dataset training; the training engine is not production-ready yet |
-| Train | **Image to LoRA (prototype)** | Planned quick workflow that expands 1-5 source images into a reviewed training dataset |
+| Dataset | **Dataset Workspace** | Persistent preparation flow for 1–5 source images or full datasets up to 2,000 images |
+| Dataset | **Validation & readiness** | Rejects invalid images, skips exact duplicates, reports resolution/aspect/caption coverage, and recommends the next action |
+| Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
 | Load Model | **File Manager** | Browse directories, upload (drag & drop), rename, create/delete dirs and files |
@@ -112,8 +113,14 @@ Default login: `admin` / `admin` (change in Settings)
 | GET | `/api/comparison_progress` | Poll LoRA evaluation progress |
 | GET | `/api/comparison_result` | Get a completed evaluation grid + reproducible manifest |
 | POST | `/api/comparison_cancel` | Cancel an active evaluation |
-| POST | `/api/image2lora` | LoRA from 1-3 images |
-| POST | `/api/train_lora` | LoRA from 5-50 images |
+| POST | `/api/image2lora` | Legacy experimental LoRA endpoint (not production-ready) |
+| POST | `/api/train_lora` | Legacy experimental LoRA endpoint (not production-ready) |
+| GET/POST | `/api/datasets` | List or create persistent dataset workspaces |
+| GET | `/api/datasets/{id}` | Dataset manifest, image metadata, readiness, and captions |
+| PUT | `/api/datasets/{id}/captions` | Save caption edits and matching `.txt` sidecars |
+| POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
+| GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |
+| POST | `/api/datasets/caption-cancel/{job_id}` | Cancel dataset captioning |
 | POST | `/api/merge_lora` | Merge LoRA files |
 | POST | `/api/lora_info` | LoRA metadata |
 | POST | `/api/extract_lora` | Extract LoRA from ckpt |
@@ -147,6 +154,7 @@ ai-toolkit/
 ├── core/
 │   ├── sdxl.py          # Generation dispatch + deterministic LoRA evaluation
 │   ├── runtimes.py      # Model-family detection, loaders, and generation defaults
+│   ├── datasets.py      # Persistent dataset manifests, validation, captions, readiness
 │   ├── flux2.py         # FLUX.2[k]/[D] generation (Klein + Dev pipelines)
 │   ├── zimage.py        # z-Image-Base/Turbo generation
 │   ├── lora.py          # LoRA train/merge/extract

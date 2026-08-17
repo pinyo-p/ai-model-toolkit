@@ -13,8 +13,8 @@ _processor = None
 def _get_model():
     global _model, _processor
     if _model is None:
-        dtype = torch.float16
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
         _processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
         _model = BlipForConditionalGeneration.from_pretrained(
             "Salesforce/blip-image-captioning-base",
