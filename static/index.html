@@ -82,6 +82,17 @@
         .evaluation-history-head { display:flex;justify-content:space-between;gap:9px;align-items:flex-start; }
         .evaluation-history-counts { display:flex;gap:5px;flex-wrap:wrap;margin-top:8px; }
         .evaluation-history-count { padding:3px 6px;border-radius:99px;background:#182736;color:#7895ab;font-size:10px; }
+        .training-history { margin:14px 0;padding:14px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
+        .training-history-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:10px; }
+        .training-history-card { padding:11px;background:#101925;border:1px solid #1a2a3a;border-radius:9px; }
+        .training-history-head { display:flex;justify-content:space-between;gap:9px;align-items:flex-start; }
+        .training-history-meta { display:flex;gap:5px;flex-wrap:wrap;margin-top:8px; }
+        .training-history-chip { padding:3px 6px;border-radius:99px;background:#182736;color:#7895ab;font-size:10px; }
+        .training-run-status { padding:3px 7px;border-radius:99px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.35px;background:#24303b;color:#8ba0b1; }
+        .training-run-status.done { background:#17351f;color:#69d47c; }
+        .training-run-status.error { background:#3a1d24;color:#ff8a9a; }
+        .training-run-status.cancelled { background:#302b20;color:#d8b86d; }
+        .training-run-status.running,.training-run-status.preparing,.training-run-status.queued { background:#172d43;color:#73bfff; }
 
         /* Action bar (file manager) */
         .action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -234,6 +245,7 @@
             .training-recipe-grid { grid-template-columns:repeat(2,1fr); }
             .expansion-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .evaluation-history-list { grid-template-columns:1fr; }
+            .training-history-list { grid-template-columns:1fr; }
         }
         #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 99999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
         .toast { background: #1a2a1a; color: #4caf50; padding: 10px 18px; border-radius: 8px; font-size: 13px; border: 1px solid #2a4a2a; box-shadow: 0 4px 16px rgba(0,0,0,0.5); animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards; pointer-events: auto; }
@@ -667,6 +679,11 @@
                         <div id="dataset-training-log" class="training-log" style="display:none;"></div>
                         <button id="dataset-training-log-toggle" class="btn-small" onclick="toggleDatasetTrainingLog()" style="margin-top:8px;">Show log</button>
                     </div>
+                </div>
+                <div id="dataset-training-history" class="training-history" style="display:none;">
+                    <div style="color:#e8f4ff;font-weight:650;">Krea 2 training runs</div>
+                    <div style="color:#55748d;font-size:11px;margin-top:3px;">Every attempt stays attached to this dataset; completed runs can be tested independently</div>
+                    <div id="dataset-training-history-list" class="training-history-list"></div>
                 </div>
                 <div id="dataset-evaluation-history" class="evaluation-history" style="display:none;">
                     <div style="color:#e8f4ff;font-weight:650;">LoRA evaluation history</div>
@@ -1922,6 +1939,7 @@
                     savedRuns = savedRuns.filter(function(item) { return item.evaluation_id !== saved.evaluation_id; });
                     savedRuns.push(saved);
                     activeDatasetData.evaluation_runs = savedRuns;
+                    renderDatasetTrainingHistory(activeDatasetData);
                     renderDatasetEvaluationHistory(activeDatasetData);
                 }
                 showToast('Review saved · ' + label);
@@ -2416,6 +2434,7 @@
             if (document.getElementById('dataset-expansion-panel').style.display !== 'none') {
                 renderLatestDatasetExpansion(dataset);
             }
+            renderDatasetTrainingHistory(dataset);
             renderDatasetEvaluationHistory(dataset);
 
             datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
@@ -2431,6 +2450,73 @@
                     '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" placeholder="Describe what should remain variable…">' + escapeHtml(image.caption || '') + '</textarea></td></tr>';
             }).join('');
             loadDatasetThumbnails(dataset.id);
+        }
+
+        function renderDatasetTrainingHistory(dataset) {
+            var panel = document.getElementById('dataset-training-history');
+            var list = document.getElementById('dataset-training-history-list');
+            var runs = dataset.training_runs || [];
+            panel.style.display = runs.length ? 'block' : 'none';
+            if (!runs.length) { list.innerHTML = ''; return; }
+
+            var evaluationsByRun = {};
+            (dataset.evaluation_runs || []).forEach(function(record) {
+                evaluationsByRun[record.training_run_id] = record;
+            });
+            list.innerHTML = runs.map(function(run, index) {
+                var status = run.status || 'unknown';
+                var recipe = run.recipe || {};
+                var evaluation = evaluationsByRun[run.job_id] || null;
+                var summary = evaluation ? (evaluation.summary || {}) : {};
+                var verdict = summary.winner
+                    ? 'Reviewed · ' + summary.winner.label
+                    : evaluation ? 'Reviewed · tie / inconclusive' : 'Not reviewed yet';
+                var created = run.updated_at || run.created_at;
+                var date = created ? new Date(created) : null;
+                var dateText = date && !isNaN(date.getTime()) ? date.toLocaleString() : 'Saved run';
+                var totalSteps = run.total_steps || recipe.max_train_steps;
+                var completedSteps = run.completed_steps;
+                var stepText = totalSteps
+                    ? (completedSteps === undefined ? totalSteps : completedSteps + '/' + totalSteps) + ' steps'
+                    : '';
+                var chips = [
+                    run.engine || 'Krea 2',
+                    run.seed === undefined ? '' : 'seed ' + run.seed,
+                    stepText,
+                    recipe.rank ? 'rank ' + recipe.rank : '',
+                    recipe.resolution ? recipe.resolution + ' px' : '',
+                    run.loss === undefined ? '' : 'loss ' + run.loss
+                ].filter(Boolean).map(function(value) {
+                    return '<span class="training-history-chip">' + escapeHtml(String(value)) + '</span>';
+                }).join('');
+                var pathParts = String(run.lora_path || '').split(/[\\/]/);
+                var fileName = pathParts[pathParts.length - 1] || '';
+                var details = status === 'error'
+                    ? '<div style="color:#ff8a9a;font-size:10px;margin-top:7px;">' + escapeHtml(run.error || 'Training failed') + '</div>'
+                    : fileName
+                        ? '<div style="color:#5f819b;font-size:10px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(fileName) + '</div>'
+                        : '';
+                var canTest = status === 'done' && run.lora_path;
+                return '<div class="training-history-card">'
+                    + '<div class="training-history-head"><div><div style="color:#dcecff;font-weight:600;text-transform:capitalize;">' + escapeHtml((run.profile || 'training') + ' profile') + '</div>'
+                    + '<div style="color:#4e6d84;font-size:9px;margin-top:2px;">' + escapeHtml(dateText) + '</div></div>'
+                    + '<span class="training-run-status ' + escapeHtml(status) + '">' + escapeHtml(status) + '</span></div>'
+                    + '<div class="training-history-meta">' + chips + '</div>' + details
+                    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;">'
+                    + '<span style="color:' + (summary.verdict === 'lora' ? '#69d47c' : '#6f8da5') + ';font-size:10px;">' + escapeHtml(verdict) + '</span>'
+                    + (canTest ? '<button class="btn-small btn-add" onclick="testDatasetTrainingRun(' + index + ')">Test this LoRA</button>' : '')
+                    + '</div></div>';
+            }).reverse().join('');
+        }
+
+        function testDatasetTrainingRun(index) {
+            var runs = activeDatasetData ? (activeDatasetData.training_runs || []) : [];
+            var run = runs[index];
+            if (!run || run.status !== 'done' || !run.lora_path) {
+                showAlert('LoRA unavailable', 'This training run does not have a completed LoRA file.');
+                return;
+            }
+            openDatasetEvaluation(run.job_id);
         }
 
         function renderDatasetEvaluationHistory(dataset) {
@@ -2962,9 +3048,9 @@
             }
         }
 
-        async function openDatasetEvaluation() {
+        async function openDatasetEvaluation(requestedRunId) {
             if (!activeDatasetId) return;
-            var runId = document.getElementById('dataset-test-lora-btn').getAttribute('data-run-id') || '';
+            var runId = requestedRunId || document.getElementById('dataset-test-lora-btn').getAttribute('data-run-id') || '';
             try {
                 var url = '/api/datasets/' + encodeURIComponent(activeDatasetId) + '/evaluation-preset';
                 if (runId) url += '?run_id=' + encodeURIComponent(runId);

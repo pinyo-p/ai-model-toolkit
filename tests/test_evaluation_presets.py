@@ -92,6 +92,32 @@ class EvaluationPresetTests(unittest.TestCase):
                 _manifest_with_run("/missing/trained.safetensors")
             )
 
+    def test_requested_older_training_run_builds_its_own_preset(self):
+        with tempfile.TemporaryDirectory() as root:
+            older_lora = Path(root) / "older.safetensors"
+            latest_lora = Path(root) / "latest.safetensors"
+            older_lora.write_bytes(b"older")
+            latest_lora.write_bytes(b"latest")
+            manifest = _manifest_with_run(str(older_lora))
+            manifest["training_runs"][0]["job_id"] = "run-older"
+            manifest["training_runs"][0]["seed"] = 11
+            manifest["training_runs"][0]["recipe"]["seed"] = 11
+            manifest["training_runs"].append({
+                "job_id": "run-latest",
+                "status": "done",
+                "profile": "quality",
+                "lora_path": str(latest_lora),
+                "seed": 99,
+            })
+
+            preset = evaluation_presets.build_evaluation_preset(
+                manifest, run_id="run-older"
+            )
+
+            self.assertEqual(preset["training_run_id"], "run-older")
+            self.assertEqual(preset["seed"], 11)
+            self.assertEqual(preset["variants"][1]["lora_path"], str(older_lora))
+
     def test_every_dataset_type_has_six_triggered_prompts(self):
         for dataset_type in ("person", "style", "clothing", "environment", "vehicle", "object"):
             with self.subTest(dataset_type=dataset_type):

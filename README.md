@@ -53,6 +53,7 @@ expanded and reviewed.
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
+| Dataset | **Training history** | Compare every training attempt, its recipe/progress/file and linked human verdict; re-test any completed run instead of only the latest |
 | Dataset | **Evaluation history** | Review saved Base/LoRA results and load the winning model, adapter weight, prompt, seed, and generation settings in one click |
 | Merge | **Merge LoRA** | Merge multiple LoRA with weights |
 | Merge | **Extract LoRA** | Extract LoRA from checkpoint |
