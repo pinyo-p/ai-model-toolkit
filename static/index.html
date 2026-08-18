@@ -183,6 +183,12 @@
         .dataset-image-toolbar input,.dataset-image-toolbar select { width:auto;padding:7px 9px;font-size:11px; }
         .dataset-image-toolbar input { flex:1 1 210px;min-width:160px; }
         .dataset-page-info { color:#5a7a9a;font-size:11px;min-width:72px;text-align:center; }
+        .dataset-bulk-caption-panel { display:none;margin:0 0 9px;padding:11px;background:#0b121c;border:1px solid #1b3042;border-radius:9px; }
+        .dataset-bulk-caption-controls { display:flex;gap:7px;align-items:flex-end;flex-wrap:wrap;margin-top:8px; }
+        .dataset-bulk-caption-controls label { margin-bottom:3px;font-size:10px; }
+        .dataset-bulk-caption-controls input,.dataset-bulk-caption-controls select { width:auto;min-width:130px;padding:7px 9px;font-size:11px; }
+        .dataset-bulk-caption-controls .bulk-caption-value { flex:1 1 240px; }
+        .dataset-bulk-caption-target { color:#7fa0b8;font-size:11px; }
         .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
         .training-panel { margin:14px 0;padding:16px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
         .training-recipe-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0; }
@@ -720,9 +726,29 @@
                     <input id="dataset-image-search" placeholder="Search filename or caption…" oninput="scheduleDatasetImageRender()">
                     <select id="dataset-image-filter" onchange="setDatasetImageFilter()"><option value="all">All images</option><option value="missing">Missing captions</option><option value="captioned">Captioned</option><option value="lowres">Low resolution</option><option value="generated">Generated</option><option value="original">Original sources</option></select>
                     <select id="dataset-image-page-size" onchange="setDatasetImageFilter()"><option value="50">50 / page</option><option value="100" selected>100 / page</option><option value="200">200 / page</option></select>
+                    <button class="btn-small" onclick="toggleDatasetBulkCaptions()">Bulk captions</button>
                     <button id="dataset-page-prev" class="btn-small" onclick="changeDatasetImagePage(-1)">← Prev</button>
                     <span id="dataset-page-info" class="dataset-page-info">Page 1 / 1</span>
                     <button id="dataset-page-next" class="btn-small" onclick="changeDatasetImagePage(1)">Next →</button>
+                </div>
+                <div id="dataset-bulk-caption-panel" class="dataset-bulk-caption-panel">
+                    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <div>
+                            <div style="color:#e8f4ff;font-weight:650;font-size:12px;">Bulk caption drafts</div>
+                            <div id="dataset-bulk-caption-target" class="dataset-bulk-caption-target">Current filtered result</div>
+                        </div>
+                        <button class="btn-small" onclick="toggleDatasetBulkCaptions(false)">Close</button>
+                    </div>
+                    <div class="dataset-bulk-caption-controls">
+                        <div><label>Action</label><select id="dataset-bulk-caption-action" onchange="updateDatasetBulkCaptionControls()"><option value="prepend">Prepend</option><option value="append">Append</option><option value="replace">Find / replace</option><option value="clear">Clear captions</option></select></div>
+                        <div id="dataset-bulk-caption-value-wrap" class="bulk-caption-value"><label>Text</label><input id="dataset-bulk-caption-value" maxlength="4000" placeholder="e.g. ohwx person" style="width:100%;"></div>
+                        <div id="dataset-bulk-caption-find-wrap" class="bulk-caption-value" style="display:none;"><label>Find</label><input id="dataset-bulk-caption-find" maxlength="4000" placeholder="Text to find" style="width:100%;"></div>
+                        <div id="dataset-bulk-caption-replace-wrap" class="bulk-caption-value" style="display:none;"><label>Replace with</label><input id="dataset-bulk-caption-replace" maxlength="4000" placeholder="Leave blank to remove" style="width:100%;"></div>
+                        <div id="dataset-bulk-caption-separator-wrap"><label>Separator</label><select id="dataset-bulk-caption-separator"><option value=", ">comma + space</option><option value=" ">space</option><option value="">none</option></select></div>
+                        <button id="dataset-bulk-caption-trigger" class="btn-small" onclick="fillDatasetBulkTrigger()">Use trigger</button>
+                        <button class="btn btn-sm btn-success" onclick="applyDatasetBulkCaptions()">Apply as drafts</button>
+                    </div>
+                    <div style="color:#55748d;font-size:10px;margin-top:7px;">Selected images take priority across every page. With no selection, the current search and filter result is used. Nothing is written until Save caption edits.</div>
                 </div>
                 <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
                 <div class="dataset-table-wrap">
@@ -2571,6 +2597,7 @@
             var all = document.getElementById('dataset-select-all-images');
             all.checked = boxes.length > 0 && boxes.every(function(box) { return box.checked; });
             all.indeterminate = boxes.some(function(box) { return box.checked; }) && !all.checked;
+            updateDatasetBulkCaptionTarget();
         }
 
         function toggleDatasetImageSelection(checkbox) {
@@ -2755,6 +2782,105 @@
                 : (image.caption || '');
         }
 
+        function getFilteredDatasetImages() {
+            if (!activeDatasetData) return [];
+            var query = document.getElementById('dataset-image-search').value.trim().toLowerCase();
+            var filter = document.getElementById('dataset-image-filter').value;
+            return (activeDatasetData.images || []).filter(function(image) {
+                var caption = effectiveDatasetCaption(image);
+                var searchable = ((image.original_filename || '') + ' ' + (image.filename || '') + ' ' + caption).toLowerCase();
+                if (query && searchable.indexOf(query) === -1) return false;
+                if (filter === 'missing') return !caption.trim();
+                if (filter === 'captioned') return !!caption.trim();
+                if (filter === 'lowres') return Math.min(image.width || 0, image.height || 0) < 512;
+                if (filter === 'generated') return !!image.generated;
+                if (filter === 'original') return !image.generated;
+                return true;
+            });
+        }
+
+        function getDatasetBulkCaptionTargets() {
+            if (!activeDatasetData) return [];
+            if (!datasetSelectedImageIds.size) return getFilteredDatasetImages();
+            return (activeDatasetData.images || []).filter(function(image) {
+                return datasetSelectedImageIds.has(image.id);
+            });
+        }
+
+        function updateDatasetBulkCaptionTarget() {
+            var label = document.getElementById('dataset-bulk-caption-target');
+            if (!label) return;
+            var count = getDatasetBulkCaptionTargets().length;
+            label.textContent = datasetSelectedImageIds.size
+                ? count + ' selected image' + (count === 1 ? '' : 's') + ' across all pages'
+                : count + ' image' + (count === 1 ? '' : 's') + ' in the current search / filter';
+        }
+
+        function toggleDatasetBulkCaptions(force) {
+            var panel = document.getElementById('dataset-bulk-caption-panel');
+            var show = force === undefined ? panel.style.display === 'none' || !panel.style.display : !!force;
+            panel.style.display = show ? 'block' : 'none';
+            if (show) {
+                updateDatasetBulkCaptionControls();
+                updateDatasetBulkCaptionTarget();
+            }
+        }
+
+        function updateDatasetBulkCaptionControls() {
+            var action = document.getElementById('dataset-bulk-caption-action').value;
+            var replace = action === 'replace';
+            var textAction = action === 'prepend' || action === 'append';
+            document.getElementById('dataset-bulk-caption-value-wrap').style.display = textAction ? 'block' : 'none';
+            document.getElementById('dataset-bulk-caption-find-wrap').style.display = replace ? 'block' : 'none';
+            document.getElementById('dataset-bulk-caption-replace-wrap').style.display = replace ? 'block' : 'none';
+            document.getElementById('dataset-bulk-caption-separator-wrap').style.display = textAction ? 'block' : 'none';
+            document.getElementById('dataset-bulk-caption-trigger').style.display = textAction ? 'inline-flex' : 'none';
+        }
+
+        function fillDatasetBulkTrigger() {
+            if (!activeDatasetData) return;
+            document.getElementById('dataset-bulk-caption-value').value = activeDatasetData.trigger_word || '';
+        }
+
+        function applyDatasetBulkCaptions() {
+            var targets = getDatasetBulkCaptionTargets();
+            if (!targets.length) {
+                showAlert('No matching images', 'Select images or change the current search and filter.');
+                return;
+            }
+            var action = document.getElementById('dataset-bulk-caption-action').value;
+            var value = document.getElementById('dataset-bulk-caption-value').value;
+            var find = document.getElementById('dataset-bulk-caption-find').value;
+            var replacement = document.getElementById('dataset-bulk-caption-replace').value;
+            var separator = document.getElementById('dataset-bulk-caption-separator').value;
+            if ((action === 'prepend' || action === 'append') && !value) {
+                showAlert('Text required', 'Enter the text to add to these captions.');
+                return;
+            }
+            if (action === 'replace' && !find) {
+                showAlert('Find text required', 'Enter the text that should be replaced.');
+                return;
+            }
+            var actionLabel = ({ prepend:'prepend text to', append:'append text to', replace:'find and replace in', clear:'clear' })[action];
+            if ((action === 'clear' || targets.length > 200) && !confirm('Apply “' + actionLabel + '” to ' + targets.length + ' caption' + (targets.length === 1 ? '' : 's') + ' as unsaved drafts?')) return;
+            var changed = 0;
+            targets.forEach(function(image) {
+                var current = effectiveDatasetCaption(image);
+                var next = current;
+                if (action === 'prepend') next = current ? value + separator + current : value;
+                else if (action === 'append') next = current ? current + separator + value : value;
+                else if (action === 'replace') next = current.split(find).join(replacement);
+                else if (action === 'clear') next = '';
+                next = next.slice(0, 4000);
+                if (next === current) return;
+                if (next === (image.caption || '')) datasetCaptionDrafts.delete(image.id);
+                else datasetCaptionDrafts.set(image.id, next);
+                changed += 1;
+            });
+            renderDatasetImages();
+            showToast(changed ? changed + ' caption draft' + (changed === 1 ? '' : 's') + ' updated' : 'No captions needed changing');
+        }
+
         function updateDatasetCaptionDraft(input) {
             if (!activeDatasetData) return;
             var imageId = input.getAttribute('data-image-id');
@@ -2809,21 +2935,9 @@
             datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
             datasetThumbUrls = [];
             var token = ++datasetImageRenderToken;
-            var query = document.getElementById('dataset-image-search').value.trim().toLowerCase();
-            var filter = document.getElementById('dataset-image-filter').value;
             var pageSize = parseInt(document.getElementById('dataset-image-page-size').value, 10) || 100;
             var allImages = activeDatasetData.images || [];
-            var filtered = allImages.filter(function(image) {
-                var caption = effectiveDatasetCaption(image);
-                var searchable = ((image.original_filename || '') + ' ' + (image.filename || '') + ' ' + caption).toLowerCase();
-                if (query && searchable.indexOf(query) === -1) return false;
-                if (filter === 'missing') return !caption.trim();
-                if (filter === 'captioned') return !!caption.trim();
-                if (filter === 'lowres') return Math.min(image.width || 0, image.height || 0) < 512;
-                if (filter === 'generated') return !!image.generated;
-                if (filter === 'original') return !image.generated;
-                return true;
-            });
+            var filtered = getFilteredDatasetImages();
             var pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
             datasetImagePage = Math.min(Math.max(datasetImagePage, 1), pageCount);
             var start = (datasetImagePage - 1) * pageSize;

@@ -57,6 +57,7 @@ expanded and reviewed.
 | Dataset | **ImageFolder import** | Import external ZIP datasets with nested images and matching `.txt` sidecars or root `metadata.jsonl` captions |
 | Dataset | **Caption workspace** | Background metadata/BLIP captioning, editable captions, progress/cancel, and trainer-ready `.txt` sidecars |
 | Dataset | **Large-dataset review** | Search, filter, and page through up to 2,000 images while retaining unsaved caption drafts across views |
+| Dataset | **Bulk caption drafts** | Prepend, append, find/replace, or clear captions across selected images or the current filtered result, then review before saving |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
 | Dataset | **Dataset revisions** | Tracks the exact dataset revision and image count used by each LoRA, and warns when later image or caption changes make a run historical |
