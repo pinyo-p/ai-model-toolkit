@@ -24,7 +24,10 @@ MAX_IMAGES = 2000
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
 MAX_EXPORT_MANIFEST_BYTES = 16 * 1024 * 1024
+MAX_CAPTION_BYTES = 1024 * 1024
+MAX_ZIP_MEMBERS = MAX_IMAGES * 3 + 100
 DATASET_TYPES = {"person", "style", "clothing", "environment", "vehicle", "object"}
+_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
 _EVALUATION_IMAGE_PATTERN = re.compile(r"^eval_[a-f0-9-]{32,40}\.png$")
 _FORMAT_EXTENSIONS = {
@@ -628,9 +631,137 @@ def create_dataset_export(
     return export_manifest
 
 
-def import_dataset_export(
+def _read_archive_text(
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    label: str,
+    max_bytes: int,
+) -> str:
+    file_type = (info.external_attr >> 16) & 0o170000
+    if info.is_dir() or file_type == stat.S_IFLNK or info.flag_bits & 0x1:
+        raise DatasetError(f"Dataset ZIP {label} is invalid")
+    if info.file_size > max_bytes:
+        raise DatasetError(f"Dataset ZIP {label} is too large")
+    try:
+        return archive.read(info).decode("utf-8")
+    except (UnicodeDecodeError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise DatasetError(f"Dataset ZIP {label} is invalid") from exc
+
+
+def _import_imagefolder_zip(
+    root: str | os.PathLike,
+    archive: zipfile.ZipFile,
+    infos: list[zipfile.ZipInfo],
+    name: str,
+    dataset_type: str,
+    trigger_word: str,
+    opened_members: list,
+) -> tuple[dict, dict]:
+    if not str(name).strip():
+        raise DatasetError("Dataset name is required for an ImageFolder ZIP")
+    if str(dataset_type).strip().lower() not in DATASET_TYPES:
+        raise DatasetError("Select a valid LoRA type for an ImageFolder ZIP")
+
+    image_infos = sorted(
+        (
+            info for info in infos
+            if not info.is_dir()
+            and not info.filename.startswith("__MACOSX/")
+            and PurePosixPath(info.filename).suffix.lower() in _IMAGE_SUFFIXES
+        ),
+        key=lambda info: info.filename.casefold(),
+    )
+    if not 1 <= len(image_infos) <= MAX_IMAGES:
+        raise DatasetError(f"ImageFolder ZIP must contain 1-{MAX_IMAGES} images")
+
+    info_by_casefold = {info.filename.casefold(): info for info in infos}
+    metadata_captions = {}
+    metadata_info = info_by_casefold.get("metadata.jsonl")
+    if metadata_info:
+        metadata_text = _read_archive_text(
+            archive, metadata_info, "metadata.jsonl", MAX_EXPORT_MANIFEST_BYTES
+        )
+        for line_number, line in enumerate(metadata_text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise DatasetError(f"Invalid metadata.jsonl line {line_number}") from exc
+            if not isinstance(record, dict) or not isinstance(record.get("file_name"), str):
+                raise DatasetError(f"Invalid metadata.jsonl line {line_number}")
+            metadata_path = PurePosixPath(record["file_name"])
+            if (
+                metadata_path.is_absolute()
+                or ".." in metadata_path.parts
+                or "\\" in record["file_name"]
+            ):
+                raise DatasetError(f"Unsafe metadata.jsonl path on line {line_number}")
+            metadata_key = str(metadata_path).casefold()
+            if metadata_key in metadata_captions:
+                raise DatasetError(f"Duplicate metadata.jsonl path on line {line_number}")
+            metadata_captions[metadata_key] = str(record.get("text", ""))
+
+    basename_counts = {}
+    for info in image_infos:
+        basename = PurePosixPath(info.filename).name.casefold()
+        basename_counts[basename] = basename_counts.get(basename, 0) + 1
+
+    uploads = []
+    captions = []
+    for image_info in image_infos:
+        filename = PurePosixPath(image_info.filename).name
+        file_type = (image_info.external_attr >> 16) & 0o170000
+        if file_type == stat.S_IFLNK or image_info.flag_bits & 0x1:
+            raise DatasetError(f"Dataset ZIP image is invalid: {filename}")
+        if image_info.file_size <= 0 or image_info.file_size > MAX_IMAGE_BYTES:
+            raise DatasetError(f"Dataset ZIP image has an invalid size: {filename}")
+
+        sidecar_name = str(PurePosixPath(image_info.filename).with_suffix(".txt"))
+        sidecar_info = info_by_casefold.get(sidecar_name.casefold())
+        if sidecar_info:
+            caption_value = _read_archive_text(
+                archive, sidecar_info, f"caption for {filename}", MAX_CAPTION_BYTES
+            ).strip()
+        else:
+            archive_key = image_info.filename.casefold()
+            basename_key = filename.casefold()
+            if archive_key in metadata_captions:
+                caption_value = metadata_captions[archive_key]
+            elif basename_counts[basename_key] == 1 and basename_key in metadata_captions:
+                caption_value = metadata_captions[basename_key]
+            else:
+                caption_value = ""
+        try:
+            member = archive.open(image_info)
+        except (RuntimeError, zipfile.BadZipFile) as exc:
+            raise DatasetError(f"Cannot read dataset ZIP image: {filename}") from exc
+        opened_members.append(member)
+        uploads.append((filename, member))
+        captions.append(caption_value)
+
+    result = create_dataset(
+        root,
+        str(name),
+        str(dataset_type),
+        str(trigger_word),
+        uploads,
+        initial_captions=captions,
+    )
+    return result, {
+        "imported": result["analysis"]["image_count"],
+        "source_format": "imagefolder",
+        "source_dataset_id": None,
+        "source_revision": None,
+    }
+
+
+def import_dataset_archive(
     root: str | os.PathLike,
     archive_source: object,
+    name: str = "",
+    dataset_type: str = "",
+    trigger_word: str = "",
 ) -> dict:
     try:
         archive_source.seek(0)
@@ -641,18 +772,31 @@ def import_dataset_export(
     opened_members = []
     try:
         infos = archive.infolist()
+        if len(infos) > MAX_ZIP_MEMBERS:
+            raise DatasetError(f"Dataset ZIP contains more than {MAX_ZIP_MEMBERS} entries")
         names = [info.filename for info in infos]
-        if len(names) != len(set(names)):
+        if len(names) != len({name.casefold() for name in names}):
             raise DatasetError("Dataset ZIP contains duplicate paths")
-        for name in names:
-            path = PurePosixPath(name)
-            if path.is_absolute() or ".." in path.parts or "\\" in name:
+        for member_name in names:
+            path = PurePosixPath(member_name)
+            if path.is_absolute() or ".." in path.parts or "\\" in member_name:
                 raise DatasetError("Dataset ZIP contains an unsafe path")
+        for info in infos:
+            file_type = (info.external_attr >> 16) & 0o170000
+            if file_type == stat.S_IFLNK:
+                raise DatasetError("Dataset ZIP contains a symlink")
+            if info.flag_bits & 0x1:
+                raise DatasetError("Encrypted dataset ZIP files are not supported")
 
-        try:
-            manifest_info = archive.getinfo("dataset-export.json")
-        except KeyError as exc:
-            raise DatasetError("Dataset ZIP is missing dataset-export.json") from exc
+        manifest_info = next(
+            (info for info in infos if info.filename == "dataset-export.json"), None
+        )
+        if manifest_info is None:
+            result, import_result = _import_imagefolder_zip(
+                root, archive, infos, name, dataset_type, trigger_word, opened_members
+            )
+            result["import_result"] = import_result
+            return result
         if manifest_info.file_size > MAX_EXPORT_MANIFEST_BYTES:
             raise DatasetError("Dataset export manifest is too large")
         try:
@@ -721,6 +865,7 @@ def import_dataset_export(
 
     result["import_result"] = {
         "imported": result["analysis"]["image_count"],
+        "source_format": "portable",
         "source_dataset_id": exported.get("source_dataset_id"),
         "source_revision": exported.get("dataset_revision"),
     }

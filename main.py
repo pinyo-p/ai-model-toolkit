@@ -355,10 +355,15 @@ async def api_create_dataset(
 @app.post("/api/datasets/import")
 async def api_import_dataset(
     file: UploadFile = File(...),
+    name: str = Form(""),
+    dataset_type: str = Form(""),
+    trigger_word: str = Form(""),
     user: str = Depends(get_current_user),
 ):
     try:
-        return dataset_module.import_dataset_export(_datasets_root(), file.file)
+        return dataset_module.import_dataset_archive(
+            _datasets_root(), file.file, name, dataset_type, trigger_word
+        )
     except dataset_module.DatasetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

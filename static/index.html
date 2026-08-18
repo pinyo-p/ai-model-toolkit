@@ -598,7 +598,8 @@
                     <button id="dataset-create-btn" class="btn" onclick="createDatasetWorkspace()">Create workspace</button>
                     <div id="dataset-create-status" style="font-size:12px;margin-top:10px;color:#5a7a9a;"></div>
                     <div style="border-top:1px solid #1a2a3a;margin:16px 0 13px;padding-top:13px;">
-                        <label style="color:#8aa8bf;font-size:12px;">Restore portable dataset ZIP</label>
+                        <label style="color:#8aa8bf;font-size:12px;">Import portable or ImageFolder ZIP</label>
+                        <div style="color:#47677f;font-size:10px;margin-top:3px;">External ZIPs use the name, LoRA type, and trigger fields above. Supports matching .txt captions or metadata.jsonl.</div>
                         <input id="dataset-import-file" type="file" accept=".zip,application/zip" style="margin:7px 0;">
                         <button id="dataset-import-btn" class="btn btn-sm btn-ghost" onclick="importDatasetWorkspace()">Import ZIP</button>
                     </div>
@@ -2446,11 +2447,14 @@
         async function importDatasetWorkspace() {
             var input = document.getElementById('dataset-import-file');
             var file = input.files && input.files[0];
-            if (!file) { showAlert('Select an export', 'Choose a portable dataset ZIP first.'); return; }
+            if (!file) { showAlert('Select a dataset', 'Choose a portable or ImageFolder ZIP first.'); return; }
             var button = document.getElementById('dataset-import-btn');
             var status = document.getElementById('dataset-create-status');
             var formData = new FormData();
             formData.append('file', file);
+            formData.append('name', document.getElementById('dataset-name').value.trim());
+            formData.append('dataset_type', document.getElementById('dataset-type').value);
+            formData.append('trigger_word', document.getElementById('dataset-trigger').value.trim());
             button.disabled = true;
             button.textContent = 'Importing…';
             status.innerHTML = '<span class="loading">Validating and restoring dataset…</span>';

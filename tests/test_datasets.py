@@ -231,7 +231,7 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 self.assertNotIn("training_runs", portable)
 
             with archive_path.open("rb") as source:
-                restored = datasets.import_dataset_export(root, source)
+                restored = datasets.import_dataset_archive(root, source)
             self.assertNotEqual(restored["id"], created["id"])
             self.assertEqual(restored["name"], "Portable set")
             self.assertEqual(restored["type"], "environment")
@@ -251,7 +251,7 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 archive.writestr("../dataset-export.json", "{}")
             unsafe.seek(0)
             with self.assertRaisesRegex(datasets.DatasetError, "unsafe path"):
-                datasets.import_dataset_export(root, unsafe)
+                datasets.import_dataset_archive(root, unsafe)
 
             incomplete = io.BytesIO()
             with zipfile.ZipFile(incomplete, "w") as archive:
@@ -264,7 +264,39 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 }))
             incomplete.seek(0)
             with self.assertRaisesRegex(datasets.DatasetError, "missing image"):
-                datasets.import_dataset_export(root, incomplete)
+                datasets.import_dataset_archive(root, incomplete)
+
+    def test_imagefolder_zip_imports_sidecars_and_metadata_jsonl(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive_buffer = io.BytesIO()
+            with zipfile.ZipFile(archive_buffer, "w") as archive:
+                archive.writestr("nested/first.png", _image_file("red").getvalue())
+                archive.writestr("nested/first.txt", "a red object\n")
+                archive.writestr("nested/second.png", _image_file("blue").getvalue())
+                archive.writestr(
+                    "metadata.jsonl",
+                    json.dumps({
+                        "file_name": "nested/second.png",
+                        "text": "a blue object",
+                    }) + "\n",
+                )
+            archive_buffer.seek(0)
+
+            imported = datasets.import_dataset_archive(
+                root, archive_buffer, "External set", "object", "object_x"
+            )
+
+            self.assertEqual(imported["analysis"]["image_count"], 2)
+            self.assertEqual(imported["analysis"]["captioned_count"], 2)
+            self.assertEqual(
+                [item["caption"] for item in imported["images"]],
+                ["a red object", "a blue object"],
+            )
+            self.assertEqual(imported["import_result"]["source_format"], "imagefolder")
+
+            archive_buffer.seek(0)
+            with self.assertRaisesRegex(datasets.DatasetError, "name is required"):
+                datasets.import_dataset_archive(root, archive_buffer)
 
     def test_add_images_rolls_back_when_any_upload_is_invalid(self):
         with tempfile.TemporaryDirectory() as root:
@@ -385,6 +417,32 @@ class DatasetWorkspaceTests(unittest.TestCase):
                     self.assertEqual(import_response.status_code, 200, import_response.text)
                     self.assertNotEqual(import_response.json()["id"], created["id"])
                     self.assertEqual(import_response.json()["type"], "clothing")
+
+                    imagefolder_zip = io.BytesIO()
+                    with zipfile.ZipFile(imagefolder_zip, "w") as archive:
+                        archive.writestr("external.png", _image_file("orange").getvalue())
+                        archive.writestr("external.txt", "an orange jacket\n")
+                    imagefolder_response = client.post(
+                        "/api/datasets/import",
+                        data={
+                            "name": "External jacket",
+                            "dataset_type": "clothing",
+                            "trigger_word": "orange_jacket",
+                        },
+                        files={
+                            "file": (
+                                "imagefolder.zip",
+                                imagefolder_zip.getvalue(),
+                                "application/zip",
+                            )
+                        },
+                    )
+                    self.assertEqual(
+                        imagefolder_response.status_code, 200, imagefolder_response.text
+                    )
+                    self.assertEqual(
+                        imagefolder_response.json()["analysis"]["captioned_count"], 1
+                    )
 
                     image_id = created["images"][0]["id"]
                     update = client.put(
