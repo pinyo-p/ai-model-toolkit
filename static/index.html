@@ -179,6 +179,10 @@
         .dataset-table td { border-top:1px solid #172331;padding:9px;vertical-align:middle;font-size:12px; }
         .dataset-thumb { width:58px;height:58px;object-fit:cover;border-radius:6px;background:#090e15;border:1px solid #1e2d3d; }
         .dataset-caption { min-height:58px;padding:8px;font-size:12px;resize:vertical; }
+        .dataset-image-toolbar { display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:12px 0 7px; }
+        .dataset-image-toolbar input,.dataset-image-toolbar select { width:auto;padding:7px 9px;font-size:11px; }
+        .dataset-image-toolbar input { flex:1 1 210px;min-width:160px; }
+        .dataset-page-info { color:#5a7a9a;font-size:11px;min-width:72px;text-align:center; }
         .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
         .training-panel { margin:14px 0;padding:16px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
         .training-recipe-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0; }
@@ -634,7 +638,8 @@
                     <button id="dataset-export-btn" class="btn btn-sm btn-ghost" onclick="exportDatasetWorkspace()">Export ZIP</button>
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
-                    <button class="btn btn-sm btn-success" onclick="saveDatasetCaptions()">Save caption edits</button>
+                    <button id="dataset-save-captions-btn" class="btn btn-sm btn-success" onclick="saveDatasetCaptions()" disabled>Save caption edits</button>
+                    <button id="dataset-discard-captions-btn" class="btn btn-sm btn-ghost" onclick="discardDatasetCaptionDrafts()" style="display:none;">Discard drafts</button>
                     <button id="dataset-expansion-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetExpansion()">Generate candidates</button>
                     <button id="dataset-training-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetTraining()">Configure Krea 2 training</button>
                     <button id="dataset-test-lora-btn" class="btn btn-sm btn-success" onclick="openDatasetEvaluation()" style="display:none;">Test latest LoRA</button>
@@ -710,6 +715,14 @@
                     <div style="color:#e8f4ff;font-weight:650;">LoRA evaluation history</div>
                     <div style="color:#55748d;font-size:11px;margin-top:3px;">Human-reviewed comparisons saved from Test LoRA</div>
                     <div id="dataset-evaluation-history-list" class="evaluation-history-list"></div>
+                </div>
+                <div class="dataset-image-toolbar">
+                    <input id="dataset-image-search" placeholder="Search filename or caption…" oninput="scheduleDatasetImageRender()">
+                    <select id="dataset-image-filter" onchange="setDatasetImageFilter()"><option value="all">All images</option><option value="missing">Missing captions</option><option value="captioned">Captioned</option><option value="lowres">Low resolution</option><option value="generated">Generated</option><option value="original">Original sources</option></select>
+                    <select id="dataset-image-page-size" onchange="setDatasetImageFilter()"><option value="50">50 / page</option><option value="100" selected>100 / page</option><option value="200">200 / page</option></select>
+                    <button id="dataset-page-prev" class="btn-small" onclick="changeDatasetImagePage(-1)">← Prev</button>
+                    <span id="dataset-page-info" class="dataset-page-info">Page 1 / 1</span>
+                    <button id="dataset-page-next" class="btn-small" onclick="changeDatasetImagePage(1)">Next →</button>
                 </div>
                 <div id="dataset-image-note" style="color:#5a7a9a;font-size:11px;margin-bottom:7px;"></div>
                 <div class="dataset-table-wrap">
@@ -2367,8 +2380,19 @@
         var activeDatasetExpansionRun = '';
         var datasetThumbUrls = [];
         var datasetSelectedImageIds = new Set();
+        var datasetCaptionDrafts = new Map();
+        var datasetImagePage = 1;
+        var datasetImageRenderToken = 0;
+        var datasetImageSearchTimer = null;
+        var datasetCaptionSaveActive = false;
         var datasetCandidateUrls = [];
         var renderedExpansionKey = '';
+
+        window.addEventListener('beforeunload', function(event) {
+            if (!datasetCaptionDrafts.size && !datasetCaptionSaveActive) return;
+            event.preventDefault();
+            event.returnValue = '';
+        });
 
         async function datasetResponseError(response) {
             try {
@@ -2477,6 +2501,20 @@
         }
 
         async function openDataset(datasetId) {
+            if (activeDatasetId !== datasetId && datasetCaptionSaveActive) {
+                showAlert('Saving captions', 'Wait for the current caption save to finish before switching datasets.');
+                return;
+            }
+            if (activeDatasetId && activeDatasetId !== datasetId && datasetCaptionDrafts.size) {
+                if (!confirm('Discard ' + datasetCaptionDrafts.size + ' unsaved caption edit' + (datasetCaptionDrafts.size === 1 ? '' : 's') + ' and open another dataset?')) return;
+            }
+            if (activeDatasetId !== datasetId) {
+                datasetCaptionDrafts.clear();
+                datasetSelectedImageIds.clear();
+                datasetImagePage = 1;
+                document.getElementById('dataset-image-search').value = '';
+                document.getElementById('dataset-image-filter').value = 'all';
+            }
             activeDatasetId = datasetId;
             try {
                 var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId), { headers:{ 'Authorization':'Basic ' + auth } });
@@ -2568,6 +2606,7 @@
                 });
                 if (!response.ok) throw new Error(await datasetResponseError(response));
                 var dataset = await response.json();
+                imageIds.forEach(function(imageId) { datasetCaptionDrafts.delete(imageId); });
                 datasetSelectedImageIds.clear();
                 if (activeDatasetId === datasetId) renderDatasetDetail(dataset);
                 await loadDatasets(activeDatasetId);
@@ -2626,6 +2665,10 @@
 
         async function exportDatasetWorkspace() {
             if (!activeDatasetId) return;
+            if (datasetCaptionDrafts.size) {
+                showAlert('Unsaved captions', 'Save or discard caption drafts before exporting this dataset.');
+                return;
+            }
             var datasetId = activeDatasetId;
             var button = document.getElementById('dataset-export-btn');
             button.disabled = true;
@@ -2703,21 +2746,105 @@
             renderDatasetTrainingHistory(dataset);
             renderDatasetEvaluationHistory(dataset);
 
+            renderDatasetImages();
+        }
+
+        function effectiveDatasetCaption(image) {
+            return datasetCaptionDrafts.has(image.id)
+                ? datasetCaptionDrafts.get(image.id)
+                : (image.caption || '');
+        }
+
+        function updateDatasetCaptionDraft(input) {
+            if (!activeDatasetData) return;
+            var imageId = input.getAttribute('data-image-id');
+            var image = (activeDatasetData.images || []).find(function(item) { return item.id === imageId; });
+            if (!image) return;
+            if (input.value === (image.caption || '')) datasetCaptionDrafts.delete(imageId);
+            else datasetCaptionDrafts.set(imageId, input.value);
+            updateDatasetCaptionDraftState();
+        }
+
+        function updateDatasetCaptionDraftState() {
+            var count = datasetCaptionDrafts.size;
+            var save = document.getElementById('dataset-save-captions-btn');
+            save.disabled = count === 0 || datasetCaptionSaveActive;
+            save.textContent = datasetCaptionSaveActive
+                ? 'Saving captions…'
+                : count ? 'Save caption edits (' + count + ')' : 'Save caption edits';
+            var discard = document.getElementById('dataset-discard-captions-btn');
+            discard.style.display = count ? 'inline-flex' : 'none';
+            discard.disabled = datasetCaptionSaveActive;
+        }
+
+        function discardDatasetCaptionDrafts() {
+            if (!datasetCaptionDrafts.size) return;
+            if (!confirm('Discard ' + datasetCaptionDrafts.size + ' unsaved caption edit' + (datasetCaptionDrafts.size === 1 ? '' : 's') + '?')) return;
+            datasetCaptionDrafts.clear();
+            renderDatasetImages();
+            showToast('Caption drafts discarded');
+        }
+
+        function scheduleDatasetImageRender() {
+            clearTimeout(datasetImageSearchTimer);
+            datasetImageSearchTimer = setTimeout(function() {
+                datasetImagePage = 1;
+                renderDatasetImages();
+            }, 180);
+        }
+
+        function setDatasetImageFilter() {
+            datasetImagePage = 1;
+            renderDatasetImages();
+        }
+
+        function changeDatasetImagePage(delta) {
+            datasetImagePage += delta;
+            renderDatasetImages();
+            document.querySelector('.dataset-table-wrap').scrollTop = 0;
+        }
+
+        function renderDatasetImages() {
+            if (!activeDatasetData) return;
             datasetThumbUrls.forEach(function(url) { URL.revokeObjectURL(url); });
             datasetThumbUrls = [];
-            var visibleImages = (dataset.images || []).slice(0, 200);
-            document.getElementById('dataset-image-note').textContent = dataset.images.length > 200
-                ? 'Showing the first 200 images. Auto-caption processes the complete dataset.'
-                : 'Captions are saved as both manifest data and .txt sidecars.';
+            var token = ++datasetImageRenderToken;
+            var query = document.getElementById('dataset-image-search').value.trim().toLowerCase();
+            var filter = document.getElementById('dataset-image-filter').value;
+            var pageSize = parseInt(document.getElementById('dataset-image-page-size').value, 10) || 100;
+            var allImages = activeDatasetData.images || [];
+            var filtered = allImages.filter(function(image) {
+                var caption = effectiveDatasetCaption(image);
+                var searchable = ((image.original_filename || '') + ' ' + (image.filename || '') + ' ' + caption).toLowerCase();
+                if (query && searchable.indexOf(query) === -1) return false;
+                if (filter === 'missing') return !caption.trim();
+                if (filter === 'captioned') return !!caption.trim();
+                if (filter === 'lowres') return Math.min(image.width || 0, image.height || 0) < 512;
+                if (filter === 'generated') return !!image.generated;
+                if (filter === 'original') return !image.generated;
+                return true;
+            });
+            var pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+            datasetImagePage = Math.min(Math.max(datasetImagePage, 1), pageCount);
+            var start = (datasetImagePage - 1) * pageSize;
+            var visibleImages = filtered.slice(start, start + pageSize);
+            document.getElementById('dataset-page-info').textContent = 'Page ' + datasetImagePage + ' / ' + pageCount;
+            document.getElementById('dataset-page-prev').disabled = datasetImagePage <= 1;
+            document.getElementById('dataset-page-next').disabled = datasetImagePage >= pageCount;
+            document.getElementById('dataset-image-note').textContent = filtered.length
+                ? 'Showing ' + (start + 1) + '–' + (start + visibleImages.length) + ' of ' + filtered.length + ' matching images · ' + allImages.length + ' total'
+                : 'No images match this search or filter.';
             document.getElementById('dataset-image-rows').innerHTML = visibleImages.map(function(image) {
-                return '<tr><td><input class="dataset-image-select" type="checkbox" data-image-id="' + escapeHtml(image.id) + '" onchange="toggleDatasetImageSelection(this)" aria-label="Select ' + escapeHtml(image.original_filename) + '"></td>' +
+                var checked = datasetSelectedImageIds.has(image.id) ? ' checked' : '';
+                return '<tr><td><input class="dataset-image-select" type="checkbox" data-image-id="' + escapeHtml(image.id) + '" onchange="toggleDatasetImageSelection(this)" aria-label="Select ' + escapeHtml(image.original_filename) + '"' + checked + '></td>' +
                     '<td><img class="dataset-thumb" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
                     '<td><div style="color:#dcecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(image.original_filename) + '">' + escapeHtml(image.original_filename) + '</div>' +
                     '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div></td>' +
-                    '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" placeholder="Describe what should remain variable…">' + escapeHtml(image.caption || '') + '</textarea></td></tr>';
+                    '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" maxlength="4000" oninput="updateDatasetCaptionDraft(this)" placeholder="Describe what should remain variable…">' + escapeHtml(effectiveDatasetCaption(image)) + '</textarea></td></tr>';
             }).join('');
             updateDatasetImageSelection();
-            loadDatasetThumbnails(dataset.id);
+            updateDatasetCaptionDraftState();
+            loadDatasetThumbnails(activeDatasetData.id, token);
         }
 
         function renderDatasetTrainingHistory(dataset) {
@@ -2925,15 +3052,18 @@
             showToast('Evaluation winner loaded in Generate');
         }
 
-        async function loadDatasetThumbnails(datasetId) {
+        async function loadDatasetThumbnails(datasetId, renderToken) {
             var images = Array.from(document.querySelectorAll('.dataset-thumb'));
             for (var i = 0; i < images.length; i++) {
-                if (datasetId !== activeDatasetId) return;
+                if (datasetId !== activeDatasetId || renderToken !== datasetImageRenderToken) return;
                 try {
                     var imageId = images[i].getAttribute('data-image-id');
                     var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/images/' + encodeURIComponent(imageId), { headers:{ 'Authorization':'Basic ' + auth } });
                     if (!response.ok) continue;
-                    var url = URL.createObjectURL(await response.blob());
+                    if (renderToken !== datasetImageRenderToken) return;
+                    var blob = await response.blob();
+                    if (renderToken !== datasetImageRenderToken) return;
+                    var url = URL.createObjectURL(blob);
                     datasetThumbUrls.push(url);
                     images[i].src = url;
                 } catch (e) {}
@@ -2941,26 +3071,41 @@
         }
 
         async function saveDatasetCaptions() {
-            if (!activeDatasetId) return;
-            var captions = {};
-            document.querySelectorAll('.dataset-caption').forEach(function(input) {
-                captions[input.getAttribute('data-image-id')] = input.value;
-            });
+            if (!activeDatasetId || datasetCaptionSaveActive || !datasetCaptionDrafts.size) return;
+            var datasetId = activeDatasetId;
+            var captions = Object.fromEntries(datasetCaptionDrafts);
+            datasetCaptionSaveActive = true;
+            updateDatasetCaptionDraftState();
             try {
-                var response = await fetch('/api/datasets/' + encodeURIComponent(activeDatasetId) + '/captions', {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/captions', {
                     method:'PUT',
                     headers:{ 'Authorization':'Basic ' + auth, 'Content-Type':'application/json' },
                     body:JSON.stringify({ captions:captions })
                 });
                 if (!response.ok) throw new Error(await datasetResponseError(response));
+                Object.keys(captions).forEach(function(imageId) {
+                    if (datasetCaptionDrafts.get(imageId) === captions[imageId]) {
+                        datasetCaptionDrafts.delete(imageId);
+                    }
+                });
+                if (datasetId !== activeDatasetId) return;
                 renderDatasetDetail(await response.json());
-                loadDatasets(activeDatasetId);
+                loadDatasets(datasetId);
                 showToast('Caption edits saved');
-            } catch (e) { showAlert('Save failed', e.message); }
+            } catch (e) {
+                showAlert('Save failed', e.message);
+            } finally {
+                datasetCaptionSaveActive = false;
+                updateDatasetCaptionDraftState();
+            }
         }
 
         async function startDatasetCaptioning() {
             if (!activeDatasetId) return;
+            if (datasetCaptionDrafts.size) {
+                showAlert('Unsaved captions', 'Save or discard caption drafts before auto-captioning.');
+                return;
+            }
             try {
                 var response = await fetch('/api/datasets/' + encodeURIComponent(activeDatasetId) + '/auto-caption', { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
                 if (!response.ok) throw new Error(await datasetResponseError(response));
@@ -3246,6 +3391,10 @@
 
         async function startDatasetTraining() {
             if (!activeDatasetId || activeDatasetTrainingJob) return;
+            if (datasetCaptionDrafts.size) {
+                showAlert('Unsaved captions', 'Save or discard caption drafts before starting training.');
+                return;
+            }
             var datasetId = activeDatasetId;
             var profile = document.getElementById('dataset-training-profile').value;
             var seed = Number(document.getElementById('dataset-training-seed').value);
