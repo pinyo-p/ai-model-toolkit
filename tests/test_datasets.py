@@ -35,6 +35,43 @@ def _checker_file(size=(256, 256)):
 
 
 class DatasetWorkspaceTests(unittest.TestCase):
+    def test_startup_reconciliation_marks_only_active_training_runs_interrupted(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Recovery",
+                "object",
+                "object_x",
+                [("object.png", _image_file("red"))],
+            )
+            datasets.record_training_run(root, created["id"], {
+                "job_id": "running-run",
+                "status": "running",
+                "profile": "balanced",
+                "seed": 42,
+                "output_dir": "/models/lora/krea2/recovery",
+                "process_pid": 12345,
+            })
+            datasets.record_training_run(root, created["id"], {
+                "job_id": "done-run",
+                "status": "done",
+                "lora_path": "/models/lora/krea2/done.safetensors",
+            })
+
+            summary = datasets.reconcile_interrupted_training_runs(root)
+            manifest = datasets.get_dataset(root, created["id"])
+            by_id = {run["job_id"]: run for run in manifest["training_runs"]}
+            self.assertEqual(summary, {"datasets_updated": 1, "runs_interrupted": 1})
+            self.assertEqual(by_id["running-run"]["status"], "interrupted")
+            self.assertIn("output files were preserved", by_id["running-run"]["error"])
+            self.assertEqual(by_id["running-run"]["process_pid"], 12345)
+            self.assertEqual(by_id["done-run"]["status"], "done")
+            self.assertEqual(manifest["dataset_revision"], 1)
+            self.assertEqual(
+                datasets.reconcile_interrupted_training_runs(root),
+                {"datasets_updated": 0, "runs_interrupted": 0},
+            )
+
     def test_quality_audit_adds_review_flags_without_advancing_revision(self):
         with tempfile.TemporaryDirectory() as root:
             created = datasets.create_dataset(

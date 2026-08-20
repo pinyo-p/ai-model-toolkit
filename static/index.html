@@ -92,6 +92,7 @@
         .training-run-status.done { background:#17351f;color:#69d47c; }
         .training-run-status.error { background:#3a1d24;color:#ff8a9a; }
         .training-run-status.cancelled { background:#302b20;color:#d8b86d; }
+        .training-run-status.interrupted { background:#3a291b;color:#f0b36b; }
         .training-run-status.running,.training-run-status.preparing,.training-run-status.queued { background:#172d43;color:#73bfff; }
 
         /* Action bar (file manager) */
@@ -3080,12 +3081,13 @@
                 }).join('');
                 var pathParts = String(run.lora_path || '').split(/[\\/]/);
                 var fileName = pathParts[pathParts.length - 1] || '';
-                var details = status === 'error'
-                    ? '<div style="color:#ff8a9a;font-size:10px;margin-top:7px;">' + escapeHtml(run.error || 'Training failed') + '</div>'
+                var details = status === 'error' || status === 'interrupted'
+                    ? '<div style="color:' + (status === 'interrupted' ? '#e0a761' : '#ff8a9a') + ';font-size:10px;margin-top:7px;">' + escapeHtml(run.error || (status === 'interrupted' ? 'Training stopped when the server restarted. Output files were preserved.' : 'Training failed')) + '</div>'
                     : fileName
                         ? '<div style="color:#5f819b;font-size:10px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(fileName) + '</div>'
                         : '';
                 var canTest = status === 'done' && run.lora_path;
+                var canRetry = status === 'interrupted' || status === 'error' || status === 'cancelled';
                 var lossChart = buildTrainingLossChart(run.loss_history || [], true);
                 return '<div class="training-history-card">'
                     + '<div class="training-history-head"><div><div style="color:#dcecff;font-weight:600;text-transform:capitalize;">' + escapeHtml((run.profile || 'training') + ' profile') + '</div>'
@@ -3094,7 +3096,10 @@
                     + '<div class="training-history-meta">' + chips + '</div>' + lossChart + details
                     + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;">'
                     + '<span style="color:' + (summary.verdict === 'lora' ? '#69d47c' : '#6f8da5') + ';font-size:10px;">' + escapeHtml(verdict) + '</span>'
+                    + '<div style="display:flex;gap:5px;">'
+                    + (canRetry ? '<button class="btn-small" onclick="prepareDatasetTrainingRetry(' + index + ')">Retry setup</button>' : '')
                     + (canTest ? '<button class="btn-small btn-add" onclick="testDatasetTrainingRun(' + index + ')">Test this LoRA</button>' : '')
+                    + '</div>'
                     + '</div></div>';
             }).reverse().join('');
         }
@@ -3157,6 +3162,20 @@
                 return;
             }
             openDatasetEvaluation(run.job_id);
+        }
+
+        function prepareDatasetTrainingRetry(index) {
+            var runs = activeDatasetData ? (activeDatasetData.training_runs || []) : [];
+            var run = runs[index];
+            if (!run) return;
+            var panel = document.getElementById('dataset-training-panel');
+            panel.style.display = 'block';
+            document.getElementById('dataset-training-toggle').textContent = 'Hide training setup';
+            document.getElementById('dataset-training-profile').value = run.profile || 'balanced';
+            if (run.seed !== undefined && run.seed !== null) document.getElementById('dataset-training-seed').value = run.seed;
+            loadDatasetTrainingRecipe();
+            panel.scrollIntoView({ behavior:'smooth', block:'start' });
+            showToast('Previous profile and seed loaded · review before starting a new run');
         }
 
         function renderDatasetEvaluationHistory(dataset) {

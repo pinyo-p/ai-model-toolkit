@@ -1097,6 +1097,44 @@ def record_training_run(root: str | os.PathLike, dataset_id: str, run: dict) -> 
     return _with_analysis(manifest)
 
 
+def reconcile_interrupted_training_runs(root: str | os.PathLike) -> dict:
+    """Mark persisted active runs as interrupted after a server restart."""
+    root_path = Path(root).resolve()
+    summary = {"datasets_updated": 0, "runs_interrupted": 0}
+    if not root_path.exists():
+        return summary
+    active_statuses = {"queued", "preparing", "running", "cancelling"}
+    interrupted_at = _utc_now()
+    with _manifest_lock:
+        for dataset_dir in root_path.iterdir():
+            if not dataset_dir.is_dir() or dataset_dir.name.startswith("."):
+                continue
+            manifest_path = dataset_dir / "dataset.json"
+            try:
+                manifest = _load_manifest(manifest_path)
+            except DatasetError:
+                continue
+            changed = 0
+            for run in manifest.get("training_runs", []):
+                if run.get("status") not in active_statuses:
+                    continue
+                run["status"] = "interrupted"
+                run["interrupted_at"] = interrupted_at
+                run["updated_at"] = interrupted_at
+                run["message"] = "Server stopped before this training run finished"
+                run["error"] = (
+                    "Training was interrupted by a server restart; output files were preserved."
+                    if run.get("output_dir")
+                    else "Training was interrupted by a server restart before an output directory was recorded."
+                )
+                changed += 1
+            if changed:
+                _save_manifest(manifest_path, manifest)
+                summary["datasets_updated"] += 1
+                summary["runs_interrupted"] += changed
+    return summary
+
+
 def record_evaluation_verdict(
     root: str | os.PathLike,
     dataset_id: str,

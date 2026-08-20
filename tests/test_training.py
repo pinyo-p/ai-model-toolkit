@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -125,6 +126,35 @@ class TrainingRecipeTests(unittest.TestCase):
 
 
 class TrainingJobTests(unittest.TestCase):
+    def test_graceful_shutdown_stops_owned_training_process_group(self):
+        job_id = "shutdown-training-test"
+        process = Mock()
+        process.pid = 24680
+        process.poll.return_value = None
+        cancel_event = threading.Event()
+        with main._training_lock:
+            main._training_jobs[job_id] = {"status": "running"}
+            main._training_processes[job_id] = process
+            main._training_cancel_events[job_id] = cancel_event
+        try:
+            if os.name == "nt":
+                main._shutdown_active_training_processes()
+                process.terminate.assert_called_once()
+            else:
+                with (
+                    patch.object(main.os, "getpgid", return_value=24680),
+                    patch.object(main.os, "killpg") as killpg,
+                ):
+                    main._shutdown_active_training_processes()
+                    killpg.assert_called_once_with(24680, main.signal.SIGTERM)
+            self.assertTrue(cancel_event.is_set())
+            self.assertEqual(main._training_jobs[job_id]["status"], "cancelling")
+        finally:
+            with main._training_lock:
+                main._training_jobs.pop(job_id, None)
+                main._training_processes.pop(job_id, None)
+                main._training_cancel_events.pop(job_id, None)
+
     def test_loss_history_is_bounded_and_keeps_latest_sample(self):
         job_id = "loss-history-test"
         with main._training_lock:
@@ -177,6 +207,7 @@ class TrainingJobTests(unittest.TestCase):
             )
             fake_process.wait.return_value = 0
             fake_process.poll.return_value = 0
+            fake_process.pid = 12345
 
             def fake_lora(output_dir):
                 path = Path(output_dir) / "pytorch_lora_weights.safetensors"
@@ -200,6 +231,7 @@ class TrainingJobTests(unittest.TestCase):
                 {"step": 100, "loss": 0.9},
                 {"step": 500, "loss": 0.25},
             ])
+            self.assertEqual(job["process_pid"], 12345)
             self.assertTrue(job["lora_path"].endswith("pytorch_lora_weights.safetensors"))
             manifest = datasets.get_dataset(root, created["id"])
             self.assertEqual(manifest["training_runs"][-1]["status"], "done")

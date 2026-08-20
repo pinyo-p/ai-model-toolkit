@@ -187,9 +187,18 @@ if settings.get("hf_token"):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    recovery = dataset_module.reconcile_interrupted_training_runs(_datasets_root())
+    if recovery["runs_interrupted"]:
+        print(
+            f"Recovered {recovery['runs_interrupted']} interrupted training run(s) "
+            f"across {recovery['datasets_updated']} dataset(s)"
+        )
     gpu_info = gpu.check_gpu()
     print(f"👑 ai-toolkit ready on GB10 | GPU: {gpu_info['gpu_name']} | VRAM: {gpu_info['vram_total_gb']}GB")
-    yield
+    try:
+        yield
+    finally:
+        _shutdown_active_training_processes()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -774,6 +783,7 @@ def _training_run_record(job: dict) -> dict:
             "job_id", "status", "profile", "engine", "created_at", "updated_at",
             "completed_steps", "total_steps", "loss", "output_dir", "lora_path", "error",
             "loss_history",
+            "process_pid",
             "seed", "recipe", "dataset_revision", "dataset_image_count",
             "dataset_captioned_count",
         )
@@ -785,6 +795,29 @@ def _training_was_cancelled(job_id: str) -> bool:
     with _training_lock:
         event = _training_cancel_events.get(job_id)
         return bool(event and event.is_set())
+
+
+def _shutdown_active_training_processes() -> None:
+    with _training_lock:
+        processes = list(_training_processes.items())
+        for job_id, process in processes:
+            job = _training_jobs.get(job_id, {})
+            if job.get("status") in {"queued", "preparing", "running"}:
+                job["status"] = "cancelling"
+                job["message"] = "Server shutdown interrupted training"
+            event = _training_cancel_events.get(job_id)
+            if event:
+                event.set()
+    for _job_id, process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            if os.name == "nt":
+                process.terminate()
+            else:
+                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
 
 
 def _active_expansion_job() -> bool:
@@ -854,6 +887,12 @@ def _run_krea2_training(job_id: str, dataset_id: str, profile: str, seed: int):
         process = subprocess.Popen(command, **popen_kwargs)
         with _training_lock:
             _training_processes[job_id] = process
+        _set_training_job(job_id, process_pid=process.pid)
+        with _training_lock:
+            process_job = dict(_training_jobs[job_id])
+        dataset_module.record_training_run(
+            _datasets_root(), dataset_id, _training_run_record(process_job)
+        )
 
         for message in _iter_process_messages(process.stdout):
             _append_training_log(job_id, message)
