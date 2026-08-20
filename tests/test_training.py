@@ -125,6 +125,26 @@ class TrainingRecipeTests(unittest.TestCase):
 
 
 class TrainingJobTests(unittest.TestCase):
+    def test_loss_history_is_bounded_and_keeps_latest_sample(self):
+        job_id = "loss-history-test"
+        with main._training_lock:
+            main._training_jobs[job_id] = {"completed_steps": 0, "loss_history": []}
+        try:
+            for step in range(1, 1001):
+                main._set_training_job(
+                    job_id, completed_steps=step, loss=1.0 / step
+                )
+            with main._training_lock:
+                history = list(main._training_jobs[job_id]["loss_history"])
+            self.assertLessEqual(len(history), 300)
+            self.assertEqual(history[-1], {"step": 1000, "loss": 0.001})
+            self.assertEqual(sorted(sample["step"] for sample in history), [
+                sample["step"] for sample in history
+            ])
+        finally:
+            with main._training_lock:
+                main._training_jobs.pop(job_id, None)
+
     def test_runner_publishes_completed_lora(self):
         colors = ["red", "green", "blue", "yellow", "purple", "orange"]
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as models_root:
@@ -151,7 +171,10 @@ class TrainingJobTests(unittest.TestCase):
                 main._training_cancel_events[job_id] = threading.Event()
 
             fake_process = Mock()
-            fake_process.stdout = io.StringIO("Steps: 100%|###| 500/500 [loss=0.25]\n")
+            fake_process.stdout = io.StringIO(
+                "Steps: 20%|#| 100/500 [loss=0.90]\r"
+                "Steps: 100%|###| 500/500 [loss=0.25]\n"
+            )
             fake_process.wait.return_value = 0
             fake_process.poll.return_value = 0
 
@@ -173,11 +196,16 @@ class TrainingJobTests(unittest.TestCase):
             job = main._training_jobs[job_id]
             self.assertEqual(job["status"], "done")
             self.assertEqual(job["completed_steps"], 500)
+            self.assertEqual(job["loss_history"], [
+                {"step": 100, "loss": 0.9},
+                {"step": 500, "loss": 0.25},
+            ])
             self.assertTrue(job["lora_path"].endswith("pytorch_lora_weights.safetensors"))
             manifest = datasets.get_dataset(root, created["id"])
             self.assertEqual(manifest["training_runs"][-1]["status"], "done")
             self.assertEqual(manifest["training_runs"][-1]["dataset_revision"], 2)
             self.assertEqual(manifest["training_runs"][-1]["dataset_image_count"], 6)
+            self.assertEqual(manifest["training_runs"][-1]["loss_history"], job["loss_history"])
             self.assertEqual(manifest["training_state"]["status"], "current")
 
 

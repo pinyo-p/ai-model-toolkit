@@ -721,6 +721,20 @@ def _set_training_job(job_id: str, **updates):
     with _training_lock:
         job = _training_jobs.get(job_id, {})
         job.update(updates)
+        loss = updates.get("loss")
+        step = updates.get("completed_steps", job.get("completed_steps"))
+        if isinstance(loss, (int, float)) and isinstance(step, int) and step >= 0:
+            history = job.setdefault("loss_history", [])
+            sample = {"step": step, "loss": round(float(loss), 8)}
+            if history and history[-1].get("step") == step:
+                history[-1] = sample
+            else:
+                history.append(sample)
+            if len(history) > 300:
+                reduced = history[::2]
+                if reduced[-1] is not history[-1]:
+                    reduced.append(history[-1])
+                job["loss_history"] = reduced
         job["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         _training_jobs[job_id] = job
 
@@ -759,6 +773,7 @@ def _training_run_record(job: dict) -> dict:
         for key in (
             "job_id", "status", "profile", "engine", "created_at", "updated_at",
             "completed_steps", "total_steps", "loss", "output_dir", "lora_path", "error",
+            "loss_history",
             "seed", "recipe", "dataset_revision", "dataset_image_count",
             "dataset_captioned_count",
         )
@@ -945,6 +960,7 @@ async def api_start_training(
             "created_at": now,
             "updated_at": now,
             "logs": [],
+            "loss_history": [],
             **dataset_module.training_snapshot(manifest),
         }
         _training_cancel_events[job_id] = threading.Event()

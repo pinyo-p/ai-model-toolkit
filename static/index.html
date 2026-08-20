@@ -200,6 +200,11 @@
         .training-recipe-item span { color:#4f718d;font-size:10px;text-transform:uppercase; }
         .training-progress-track { height:6px;background:#172331;border-radius:99px;overflow:hidden;margin:9px 0; }
         .training-progress-fill { height:100%;width:0;background:linear-gradient(90deg,#00a8d6,#67e8f9);transition:width .3s; }
+        .training-loss-chart { display:none;margin-top:9px;padding:7px 8px;background:#080e15;border:1px solid #162331;border-radius:7px; }
+        .training-loss-chart svg { display:block;width:100%;height:64px;overflow:visible; }
+        .training-loss-chart polyline { fill:none;stroke:#62d6e8;stroke-width:2;vector-effect:non-scaling-stroke; }
+        .training-loss-chart circle { fill:#9af2ff; }
+        .training-loss-chart-meta { display:flex;justify-content:space-between;gap:8px;color:#4f718d;font-size:9px;margin-top:4px; }
         .training-log { max-height:190px;overflow:auto;background:#070b11;border:1px solid #162331;border-radius:7px;padding:10px;color:#708da5;font:11px/1.55 monospace;white-space:pre-wrap;margin-top:10px; }
         .expansion-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-top:12px; }
         .expansion-card { position:relative;background:#101925;border:1px solid #1a2a3a;border-radius:9px;overflow:hidden; }
@@ -721,6 +726,8 @@
                     <div id="dataset-training-progress" style="display:none;margin-top:13px;">
                         <div style="display:flex;justify-content:space-between;color:#7fa0b8;font-size:11px;"><span id="dataset-training-progress-text">Preparing…</span><span id="dataset-training-progress-count"></span></div>
                         <div class="training-progress-track"><div id="dataset-training-progress-fill" class="training-progress-fill"></div></div>
+                        <div id="dataset-training-loss-chart" class="training-loss-chart"></div>
+                        <div style="color:#3f607a;font-size:9px;margin-top:5px;">Loss is a training signal, not an image-quality score. Use Test LoRA for the actual verdict.</div>
                         <div id="dataset-training-output" style="font-size:12px;color:#6f8da5;"></div>
                         <div id="dataset-training-log" class="training-log" style="display:none;"></div>
                         <button id="dataset-training-log-toggle" class="btn-small" onclick="toggleDatasetTrainingLog()" style="margin-top:8px;">Show log</button>
@@ -3079,16 +3086,67 @@
                         ? '<div style="color:#5f819b;font-size:10px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(fileName) + '</div>'
                         : '';
                 var canTest = status === 'done' && run.lora_path;
+                var lossChart = buildTrainingLossChart(run.loss_history || [], true);
                 return '<div class="training-history-card">'
                     + '<div class="training-history-head"><div><div style="color:#dcecff;font-weight:600;text-transform:capitalize;">' + escapeHtml((run.profile || 'training') + ' profile') + '</div>'
                     + '<div style="color:#4e6d84;font-size:9px;margin-top:2px;">' + escapeHtml(dateText) + '</div></div>'
                     + '<span class="training-run-status ' + escapeHtml(status) + '">' + escapeHtml(status) + '</span></div>'
-                    + '<div class="training-history-meta">' + chips + '</div>' + details
+                    + '<div class="training-history-meta">' + chips + '</div>' + lossChart + details
                     + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;">'
                     + '<span style="color:' + (summary.verdict === 'lora' ? '#69d47c' : '#6f8da5') + ';font-size:10px;">' + escapeHtml(verdict) + '</span>'
                     + (canTest ? '<button class="btn-small btn-add" onclick="testDatasetTrainingRun(' + index + ')">Test this LoRA</button>' : '')
                     + '</div></div>';
             }).reverse().join('');
+        }
+
+        function buildTrainingLossChart(history, compact) {
+            var points = (history || []).map(function(sample) {
+                return { step:Number(sample.step), loss:Number(sample.loss) };
+            }).filter(function(sample) {
+                return Number.isFinite(sample.step) && Number.isFinite(sample.loss);
+            });
+            if (!points.length) return '';
+            var width = 300;
+            var height = compact ? 46 : 64;
+            var losses = points.map(function(sample) { return sample.loss; });
+            var minLoss = Math.min.apply(null, losses);
+            var maxLoss = Math.max.apply(null, losses);
+            var range = maxLoss - minLoss || Math.max(Math.abs(maxLoss) * 0.1, 0.001);
+            var sameLoss = maxLoss === minLoss;
+            var minStep = points[0].step;
+            var maxStep = points[points.length - 1].step;
+            var stepRange = maxStep - minStep || 1;
+            var coordinateList = points.map(function(sample) {
+                var x = (sample.step - minStep) * width / stepRange;
+                var y = sameLoss ? height / 2 : 4 + (maxLoss - sample.loss) * (height - 8) / range;
+                return x.toFixed(1) + ',' + y.toFixed(1);
+            });
+            var coordinates = coordinateList.join(' ');
+            var lastCoordinate = coordinateList[coordinateList.length - 1].split(',');
+            var latest = points[points.length - 1];
+            return '<div class="training-loss-chart" style="display:block;' + (compact ? 'margin-top:8px;' : '') + '">'
+                + '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" role="img" aria-label="Training loss over steps"><polyline points="' + coordinates + '"></polyline><circle cx="' + lastCoordinate[0] + '" cy="' + lastCoordinate[1] + '" r="2.5"></circle></svg>'
+                + '<div class="training-loss-chart-meta"><span>loss curve · ' + points.length + ' samples</span><span>min ' + minLoss.toFixed(4) + ' · latest ' + latest.loss.toFixed(4) + '</span></div>'
+                + '</div>';
+        }
+
+        function renderLiveTrainingLoss(history) {
+            var container = document.getElementById('dataset-training-loss-chart');
+            var html = buildTrainingLossChart(history || [], false);
+            if (!html) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+            container.style.display = 'block';
+            container.innerHTML = html;
+            var inner = container.firstElementChild;
+            if (inner) {
+                inner.style.margin = '0';
+                inner.style.padding = '0';
+                inner.style.border = '0';
+                inner.style.background = 'transparent';
+            }
         }
 
         function testDatasetTrainingRun(index) {
@@ -3668,6 +3726,7 @@
                 document.getElementById('dataset-training-progress-fill').style.width = '0%';
                 document.getElementById('dataset-training-progress-text').textContent = 'Queued…';
                 document.getElementById('dataset-training-progress-count').textContent = '0/' + data.recipe.max_train_steps;
+                renderLiveTrainingLoss([]);
                 document.getElementById('dataset-training-output').textContent = '';
                 document.getElementById('dataset-training-log').textContent = '';
                 pollDatasetTraining();
@@ -3700,6 +3759,7 @@
                 document.getElementById('dataset-training-progress-text').textContent = statusText;
                 document.getElementById('dataset-training-progress-count').textContent = total ? completed + '/' + total + ' (' + percent + '%)' : '';
                 document.getElementById('dataset-training-progress-fill').style.width = percent + '%';
+                renderLiveTrainingLoss(job.loss_history || []);
                 document.getElementById('dataset-training-log').textContent = (job.logs || []).join('\n');
                 if (job.status === 'queued' || job.status === 'preparing' || job.status === 'running' || job.status === 'cancelling') {
                     document.getElementById('dataset-training-cancel').disabled = job.status === 'cancelling';
