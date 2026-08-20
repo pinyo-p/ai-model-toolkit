@@ -191,6 +191,7 @@
         .dataset-bulk-caption-target { color:#7fa0b8;font-size:11px; }
         .dataset-sensitive-label { color:#ffb86b; }
         .sensitive-preview { filter:blur(14px);transform:scale(1.06); }
+        .quality-flag { display:inline-flex;margin:4px 4px 0 0;padding:2px 5px;border-radius:4px;background:#332818;color:#e7b86f;font-size:9px; }
         .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
         .training-panel { margin:14px 0;padding:16px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
         .training-recipe-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0; }
@@ -650,6 +651,8 @@
                     <button id="dataset-export-btn" class="btn btn-sm btn-ghost" onclick="exportDatasetWorkspace()">Export ZIP</button>
                     <button id="dataset-caption-btn" class="btn btn-sm" onclick="startDatasetCaptioning()">Auto-caption missing</button>
                     <button id="dataset-caption-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetCaptioning()" style="display:none;">Cancel captioning</button>
+                    <button id="dataset-quality-btn" class="btn btn-sm btn-ghost" onclick="startDatasetQualityAudit()">Audit image quality</button>
+                    <button id="dataset-quality-cancel" class="btn btn-sm btn-danger" onclick="cancelDatasetQualityAudit()" style="display:none;">Cancel audit</button>
                     <button id="dataset-save-captions-btn" class="btn btn-sm btn-success" onclick="saveDatasetCaptions()" disabled>Save caption edits</button>
                     <button id="dataset-discard-captions-btn" class="btn btn-sm btn-ghost" onclick="discardDatasetCaptionDrafts()" style="display:none;">Discard drafts</button>
                     <button id="dataset-expansion-toggle" class="btn btn-sm btn-ghost" onclick="toggleDatasetExpansion()">Generate candidates</button>
@@ -671,6 +674,7 @@
                     <div style="display:flex;gap:8px;"><button id="dataset-settings-save" class="btn btn-sm btn-success" onclick="saveDatasetSettings()">Save settings</button><button class="btn btn-sm btn-ghost" onclick="toggleDatasetSettings(false)">Cancel</button></div>
                 </div>
                 <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
+                <div id="dataset-quality-progress" style="display:none;margin-bottom:12px;color:#7fa0b8;font-size:12px;"></div>
                 <div id="dataset-expansion-panel" class="training-panel" style="display:none;">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                         <div>
@@ -734,7 +738,7 @@
                 </div>
                 <div class="dataset-image-toolbar">
                     <input id="dataset-image-search" placeholder="Search filename or caption…" oninput="scheduleDatasetImageRender()">
-                    <select id="dataset-image-filter" onchange="setDatasetImageFilter()"><option value="all">All images</option><option value="missing">Missing captions</option><option value="captioned">Captioned</option><option value="lowres">Low resolution</option><option value="generated">Generated</option><option value="original">Original sources</option></select>
+                    <select id="dataset-image-filter" onchange="setDatasetImageFilter()"><option value="all">All images</option><option value="missing">Missing captions</option><option value="captioned">Captioned</option><option value="lowres">Low resolution</option><option value="quality_flagged">Any quality flag</option><option value="possible_blur">Possible blur</option><option value="lighting">Very dark / bright</option><option value="low_contrast">Low contrast</option><option value="extreme_aspect">Extreme aspect</option><option value="unaudited">Not audited</option><option value="generated">Generated</option><option value="original">Original sources</option></select>
                     <select id="dataset-image-page-size" onchange="setDatasetImageFilter()"><option value="50">50 / page</option><option value="100" selected>100 / page</option><option value="200">200 / page</option></select>
                     <button class="btn-small" onclick="toggleDatasetBulkCaptions()">Bulk captions</button>
                     <button id="dataset-page-prev" class="btn-small" onclick="changeDatasetImagePage(-1)">← Prev</button>
@@ -2409,6 +2413,7 @@
         var activeDatasetId = '';
         var activeDatasetData = null;
         var activeDatasetCaptionJob = '';
+        var activeDatasetQualityJob = '';
         var activeDatasetTrainingJob = '';
         var activeDatasetTrainingDataset = '';
         var activeDatasetExpansionJob = '';
@@ -2794,6 +2799,15 @@
             document.getElementById('dataset-issues').innerHTML = (analysis.issues || []).map(function(issue) {
                 return '<div class="dataset-issue ' + escapeHtml(issue.severity || '') + '">' + escapeHtml(issue.message) + '</div>';
             }).join('');
+            if (!activeDatasetQualityJob) {
+                var audited = analysis.quality_audited_count || 0;
+                var qualityProgress = document.getElementById('dataset-quality-progress');
+                qualityProgress.style.display = audited ? 'block' : 'none';
+                qualityProgress.textContent = audited
+                    ? 'Technical quality audit · ' + audited + '/' + analysis.image_count + ' images checked · ' + (analysis.quality_flagged_count || 0) + ' flagged for review'
+                    : '';
+                document.getElementById('dataset-quality-btn').textContent = audited ? 'Re-audit image quality' : 'Audit image quality';
+            }
             var expansionRuns = dataset.expansion_runs || [];
             var expansionToggle = document.getElementById('dataset-expansion-toggle');
             expansionToggle.disabled = analysis.source_mode !== 'quick' && !expansionRuns.length;
@@ -2833,6 +2847,14 @@
                 if (filter === 'missing') return !caption.trim();
                 if (filter === 'captioned') return !!caption.trim();
                 if (filter === 'lowres') return Math.min(image.width || 0, image.height || 0) < 512;
+                var quality = image.quality || {};
+                var qualityFlags = Array.isArray(quality.flags) ? quality.flags : [];
+                if (filter === 'quality_flagged') return qualityFlags.length > 0;
+                if (filter === 'possible_blur') return qualityFlags.indexOf('possible_blur') !== -1;
+                if (filter === 'lighting') return qualityFlags.indexOf('very_dark') !== -1 || qualityFlags.indexOf('very_bright') !== -1;
+                if (filter === 'low_contrast') return qualityFlags.indexOf('low_contrast') !== -1;
+                if (filter === 'extreme_aspect') return qualityFlags.indexOf('extreme_aspect') !== -1;
+                if (filter === 'unaudited') return quality.version !== 1;
                 if (filter === 'generated') return !!image.generated;
                 if (filter === 'original') return !image.generated;
                 return true;
@@ -2991,10 +3013,13 @@
             document.getElementById('dataset-image-rows').innerHTML = visibleImages.map(function(image) {
                 var checked = datasetSelectedImageIds.has(image.id) ? ' checked' : '';
                 var sensitiveClass = shouldBlurDatasetPreviews() ? ' sensitive-preview' : '';
+                var qualityFlags = (image.quality && image.quality.flags) || [];
+                var qualityLabels = { possible_blur:'possible blur', very_dark:'very dark', very_bright:'very bright', low_contrast:'low contrast', extreme_aspect:'extreme aspect' };
+                var qualityHtml = qualityFlags.map(function(flag) { return '<span class="quality-flag">' + escapeHtml(qualityLabels[flag] || flag) + '</span>'; }).join('');
                 return '<tr><td><input class="dataset-image-select" type="checkbox" data-image-id="' + escapeHtml(image.id) + '" onchange="toggleDatasetImageSelection(this)" aria-label="Select ' + escapeHtml(image.original_filename) + '"' + checked + '></td>' +
                     '<td><img class="dataset-thumb' + sensitiveClass + '" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
                     '<td><div style="color:#dcecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(image.original_filename) + '">' + escapeHtml(image.original_filename) + '</div>' +
-                    '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div></td>' +
+                    '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div>' + qualityHtml + '</td>' +
                     '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" maxlength="4000" oninput="updateDatasetCaptionDraft(this)" placeholder="Describe what should remain variable…">' + escapeHtml(effectiveDatasetCaption(image)) + '</textarea></td></tr>';
             }).join('');
             updateDatasetImageSelection();
@@ -3307,6 +3332,70 @@
             if (!activeDatasetCaptionJob) return;
             await fetch('/api/datasets/caption-cancel/' + encodeURIComponent(activeDatasetCaptionJob), { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
             document.getElementById('dataset-caption-progress').textContent = 'Cancelling after the current image…';
+        }
+
+        async function startDatasetQualityAudit() {
+            if (!activeDatasetId || activeDatasetQualityJob) return;
+            var datasetId = activeDatasetId;
+            var button = document.getElementById('dataset-quality-btn');
+            button.disabled = true;
+            document.getElementById('dataset-quality-progress').style.display = 'block';
+            document.getElementById('dataset-quality-progress').textContent = 'Starting technical image audit…';
+            try {
+                var response = await fetch('/api/datasets/' + encodeURIComponent(datasetId) + '/quality-audit', {
+                    method:'POST', headers:{ 'Authorization':'Basic ' + auth }
+                });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var job = await response.json();
+                activeDatasetQualityJob = job.job_id;
+                document.getElementById('dataset-quality-cancel').style.display = 'inline-flex';
+                document.getElementById('dataset-quality-cancel').disabled = false;
+                pollDatasetQualityAudit();
+            } catch (e) {
+                button.disabled = false;
+                document.getElementById('dataset-quality-progress').style.display = 'none';
+                showAlert('Could not audit dataset', e.message);
+            }
+        }
+
+        async function pollDatasetQualityAudit() {
+            if (!activeDatasetQualityJob) return;
+            var jobId = activeDatasetQualityJob;
+            try {
+                var response = await fetch('/api/datasets/quality-progress/' + encodeURIComponent(jobId), { headers:{ 'Authorization':'Basic ' + auth } });
+                if (!response.ok) throw new Error(await datasetResponseError(response));
+                var job = await response.json();
+                document.getElementById('dataset-quality-progress').textContent =
+                    'Technical quality audit · ' + (job.completed || 0) + '/' + (job.total || 0) +
+                    (job.current_image ? ' · ' + job.current_image : '');
+                if (job.status === 'queued' || job.status === 'running' || job.status === 'cancelling') {
+                    setTimeout(pollDatasetQualityAudit, 500);
+                    return;
+                }
+                activeDatasetQualityJob = '';
+                document.getElementById('dataset-quality-btn').disabled = false;
+                document.getElementById('dataset-quality-cancel').style.display = 'none';
+                document.getElementById('dataset-quality-cancel').disabled = false;
+                if (job.dataset && job.dataset.id === activeDatasetId) renderDatasetDetail(job.dataset);
+                else if (activeDatasetId) await openDataset(activeDatasetId);
+                await loadDatasets(activeDatasetId);
+                if (job.status === 'done') showToast('Technical image audit complete · review flags are ready');
+                else if (job.status === 'cancelled') showToast('Quality audit cancelled · completed results were kept');
+                else showAlert('Quality audit failed', job.error || 'Unknown error');
+            } catch (e) {
+                activeDatasetQualityJob = '';
+                document.getElementById('dataset-quality-btn').disabled = false;
+                document.getElementById('dataset-quality-cancel').style.display = 'none';
+                document.getElementById('dataset-quality-cancel').disabled = false;
+                showAlert('Quality audit failed', e.message);
+            }
+        }
+
+        async function cancelDatasetQualityAudit() {
+            if (!activeDatasetQualityJob) return;
+            await fetch('/api/datasets/quality-cancel/' + encodeURIComponent(activeDatasetQualityJob), { method:'POST', headers:{ 'Authorization':'Basic ' + auth } });
+            document.getElementById('dataset-quality-progress').textContent = 'Cancelling quality audit after the current image…';
+            document.getElementById('dataset-quality-cancel').disabled = true;
         }
 
         function toggleDatasetExpansion() {

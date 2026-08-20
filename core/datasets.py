@@ -16,7 +16,7 @@ import threading
 import uuid
 import zipfile
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageFilter, ImageStat, UnidentifiedImageError
 
 
 SCHEMA_VERSION = 2
@@ -26,6 +26,7 @@ MAX_IMAGE_PIXELS = 100_000_000
 MAX_EXPORT_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_CAPTION_BYTES = 1024 * 1024
 MAX_ZIP_MEMBERS = MAX_IMAGES * 3 + 100
+QUALITY_AUDIT_VERSION = 1
 DATASET_TYPES = {"person", "style", "clothing", "environment", "vehicle", "object"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,95}$")
@@ -101,12 +102,19 @@ def analyze_dataset(manifest: dict) -> dict:
         for item in images
     )
     aspect_counts = {"portrait": 0, "square": 0, "landscape": 0}
+    quality_flag_counts = {}
+    quality_audited_count = 0
     for item in images:
         width = max(int(item.get("width", 0)), 1)
         height = max(int(item.get("height", 0)), 1)
         ratio = width / height
         bucket = "portrait" if ratio < 0.9 else "landscape" if ratio > 1.1 else "square"
         aspect_counts[bucket] += 1
+        quality = item.get("quality")
+        if isinstance(quality, dict) and quality.get("version") == QUALITY_AUDIT_VERSION:
+            quality_audited_count += 1
+            for flag in quality.get("flags", []):
+                quality_flag_counts[flag] = quality_flag_counts.get(flag, 0) + 1
 
     if image_count <= 5:
         source_mode = "quick"
@@ -140,6 +148,18 @@ def analyze_dataset(manifest: dict) -> dict:
             "severity": "warning",
             "message": f"{low_resolution_count} images have a short edge below 512 px.",
         })
+    quality_flagged_count = sum(
+        bool(item.get("quality", {}).get("flags"))
+        for item in images
+        if isinstance(item.get("quality"), dict)
+        and item["quality"].get("version") == QUALITY_AUDIT_VERSION
+    )
+    if quality_flagged_count:
+        issues.append({
+            "code": "quality_review",
+            "severity": "info",
+            "message": f"{quality_flagged_count} images have technical quality flags to review.",
+        })
 
     if image_count == 0:
         status, next_action = "empty", "Add images"
@@ -159,8 +179,108 @@ def analyze_dataset(manifest: dict) -> dict:
         "duplicate_count": len(manifest.get("duplicates", [])),
         "low_resolution_count": low_resolution_count,
         "aspect_counts": aspect_counts,
+        "quality_audited_count": quality_audited_count,
+        "quality_flagged_count": quality_flagged_count,
+        "quality_flag_counts": quality_flag_counts,
         "issues": issues,
     }
+
+
+def _histogram_percentile(histogram: list[int], fraction: float) -> int:
+    target = max(1, int(sum(histogram) * fraction))
+    seen = 0
+    for value, count in enumerate(histogram):
+        seen += count
+        if seen >= target:
+            return value
+    return 255
+
+
+def inspect_image_quality(path: str | os.PathLike, width: int, height: int) -> dict:
+    """Return conservative technical hints; these are review flags, never blockers."""
+    with Image.open(path) as source:
+        gray = source.convert("L")
+        gray.thumbnail((256, 256), Image.Resampling.LANCZOS)
+        brightness = ImageStat.Stat(gray).mean[0]
+        histogram = gray.histogram()
+        tonal_range = _histogram_percentile(histogram, 0.95) - _histogram_percentile(
+            histogram, 0.05
+        )
+        edges = gray.filter(ImageFilter.FIND_EDGES)
+        if edges.width > 2 and edges.height > 2:
+            edges = edges.crop((1, 1, edges.width - 1, edges.height - 1))
+        sharpness = ImageStat.Stat(edges).var[0]
+
+    flags = []
+    if sharpness < 35:
+        flags.append("possible_blur")
+    if brightness < 18:
+        flags.append("very_dark")
+    elif brightness > 237:
+        flags.append("very_bright")
+    if tonal_range < 24:
+        flags.append("low_contrast")
+    short_edge = max(min(int(width), int(height)), 1)
+    long_edge = max(int(width), int(height), 1)
+    if long_edge / short_edge > 3:
+        flags.append("extreme_aspect")
+    return {
+        "version": QUALITY_AUDIT_VERSION,
+        "audited_at": _utc_now(),
+        "sharpness": round(sharpness, 2),
+        "mean_brightness": round(brightness, 2),
+        "tonal_range": int(tonal_range),
+        "flags": flags,
+    }
+
+
+def audit_dataset_quality(
+    root: str | os.PathLike,
+    dataset_id: str,
+    cancel_event: threading.Event | None = None,
+    progress_callback=None,
+) -> dict:
+    manifest_path = _manifest_path(root, dataset_id)
+    with _manifest_lock:
+        snapshot = _load_manifest(manifest_path)
+        images = [dict(item) for item in snapshot.get("images", [])]
+
+    results = {}
+    total = len(images)
+    for index, item in enumerate(images, start=1):
+        if cancel_event and cancel_event.is_set():
+            break
+        filename = str(item.get("filename", ""))
+        if not filename or Path(filename).name != filename:
+            raise DatasetError("Dataset image path is invalid")
+        path = manifest_path.parent / "images" / filename
+        if not path.is_file() or path.is_symlink():
+            raise DatasetError(f"Dataset image is missing or invalid: {filename}")
+        results[item["id"]] = inspect_image_quality(
+            path, int(item.get("width", 0)), int(item.get("height", 0))
+        )
+        if progress_callback:
+            progress_callback(index, total, item.get("original_filename", filename))
+
+    if results:
+        with _manifest_lock:
+            manifest = _load_manifest(manifest_path)
+            for item in manifest.get("images", []):
+                quality = results.get(item.get("id"))
+                if quality:
+                    item["quality"] = quality
+            manifest["quality_audited_at"] = _utc_now()
+            _save_manifest(manifest_path, manifest)
+    else:
+        with _manifest_lock:
+            manifest = _load_manifest(manifest_path)
+    result = _with_analysis(manifest)
+    result["quality_audit_result"] = {
+        "audited": len(results),
+        "total": total,
+        "cancelled": bool(cancel_event and cancel_event.is_set()),
+    }
+    return result
 
 
 def _with_analysis(manifest: dict) -> dict:

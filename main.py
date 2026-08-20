@@ -48,6 +48,10 @@ _dataset_caption_jobs: dict = {}
 _dataset_caption_lock = threading.Lock()
 _dataset_caption_cancel_events: dict = {}
 
+_dataset_quality_jobs: dict = {}
+_dataset_quality_lock = threading.Lock()
+_dataset_quality_cancel_events: dict = {}
+
 _training_jobs: dict = {}
 _training_lock = threading.Lock()
 _training_processes: dict = {}
@@ -68,6 +72,13 @@ def _dataset_has_active_job(dataset_id: str) -> bool:
             job.get("dataset_id") == dataset_id
             and job.get("status") in {"queued", "running"}
             for job in _dataset_caption_jobs.values()
+        ):
+            return True
+    with _dataset_quality_lock:
+        if any(
+            job.get("dataset_id") == dataset_id
+            and job.get("status") in {"queued", "running", "cancelling"}
+            for job in _dataset_quality_jobs.values()
         ):
             return True
     with _expansion_lock:
@@ -328,6 +339,42 @@ def _run_dataset_caption_job(job_id: str, dataset_id: str):
         _set_dataset_caption_job(job_id, status="error", error=str(exc))
 
 
+def _set_dataset_quality_job(job_id: str, **updates):
+    with _dataset_quality_lock:
+        job = _dataset_quality_jobs.get(job_id, {})
+        job.update(updates)
+        _dataset_quality_jobs[job_id] = job
+
+
+def _run_dataset_quality_job(job_id: str, dataset_id: str):
+    try:
+        _set_dataset_quality_job(job_id, status="running")
+
+        def progress(completed: int, total: int, current_image: str):
+            _set_dataset_quality_job(
+                job_id,
+                completed=completed,
+                total=total,
+                current_image=current_image,
+            )
+
+        with _dataset_quality_lock:
+            cancel_event = _dataset_quality_cancel_events.get(job_id)
+        result = dataset_module.audit_dataset_quality(
+            _datasets_root(), dataset_id, cancel_event, progress
+        )
+        cancelled = result.get("quality_audit_result", {}).get("cancelled", False)
+        _set_dataset_quality_job(
+            job_id,
+            status="cancelled" if cancelled else "done",
+            dataset=result,
+            completed=result.get("quality_audit_result", {}).get("audited", 0),
+            message="Quality audit cancelled" if cancelled else "Quality audit complete",
+        )
+    except Exception as exc:
+        _set_dataset_quality_job(job_id, status="error", error=str(exc))
+
+
 @app.get("/api/datasets")
 async def api_list_datasets(user: str = Depends(get_current_user)):
     return {
@@ -582,6 +629,72 @@ async def api_auto_caption_dataset(dataset_id: str, user: str = Depends(get_curr
     )
     thread.start()
     return {"status": "queued", "job_id": job_id}
+
+
+@app.post("/api/datasets/{dataset_id}/quality-audit")
+async def api_audit_dataset_quality(
+    dataset_id: str, user: str = Depends(get_current_user)
+):
+    try:
+        manifest = dataset_module.get_dataset(_datasets_root(), dataset_id)
+    except dataset_module.DatasetNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if _dataset_has_active_job(dataset_id):
+        with _dataset_quality_lock:
+            existing = next((
+                (job_id, job) for job_id, job in _dataset_quality_jobs.items()
+                if job.get("dataset_id") == dataset_id
+                and job.get("status") in {"queued", "running", "cancelling"}
+            ), None)
+        if existing:
+            return {"status": existing[1]["status"], "job_id": existing[0]}
+        raise HTTPException(
+            status_code=409,
+            detail="Wait for the active dataset job before auditing image quality",
+        )
+
+    job_id = uuid.uuid4().hex
+    with _dataset_quality_lock:
+        _dataset_quality_jobs[job_id] = {
+            "job_id": job_id,
+            "dataset_id": dataset_id,
+            "dataset_name": manifest["name"],
+            "status": "queued",
+            "completed": 0,
+            "total": manifest["analysis"]["image_count"],
+        }
+        _dataset_quality_cancel_events[job_id] = threading.Event()
+    threading.Thread(
+        target=_run_dataset_quality_job,
+        args=(job_id, dataset_id),
+        daemon=True,
+    ).start()
+    return {"status": "queued", "job_id": job_id}
+
+
+@app.get("/api/datasets/quality-progress/{job_id}")
+async def api_dataset_quality_progress(
+    job_id: str, user: str = Depends(get_current_user)
+):
+    with _dataset_quality_lock:
+        job = _dataset_quality_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Quality audit job not found")
+        return dict(job)
+
+
+@app.post("/api/datasets/quality-cancel/{job_id}")
+async def api_cancel_dataset_quality(
+    job_id: str, user: str = Depends(get_current_user)
+):
+    with _dataset_quality_lock:
+        event = _dataset_quality_cancel_events.get(job_id)
+        job = _dataset_quality_jobs.get(job_id)
+        if not event or not job:
+            raise HTTPException(status_code=404, detail="Quality audit job not found")
+        event.set()
+        job["status"] = "cancelling"
+    return {"status": "cancelling", "job_id": job_id}
 
 
 @app.get("/api/datasets/caption-progress/{job_id}")
@@ -1684,6 +1797,18 @@ async def api_active_jobs(user: str = Depends(get_current_user)):
                     "id": gid,
                     "status": data.get("status"),
                     "message": data.get("message", ""),
+                })
+    with _dataset_quality_lock:
+        for job_id, data in _dataset_quality_jobs.items():
+            if data.get("status") in {"queued", "running", "cancelling"}:
+                jobs.append({
+                    "type": "dataset_quality",
+                    "id": job_id,
+                    "status": data.get("status"),
+                    "message": (
+                        f"Auditing {data.get('dataset_name', 'dataset')} "
+                        f"({data.get('completed', 0)}/{data.get('total', 0)})"
+                    ),
                 })
     with _evaluation_lock:
         for evaluation_id, data in _evaluation_progress.items():

@@ -21,7 +21,81 @@ def _image_file(color, size=(768, 768), image_format="PNG"):
     return buffer
 
 
+def _checker_file(size=(256, 256)):
+    image = Image.new("L", size)
+    image.putdata([
+        255 if ((x // 8) + (y // 8)) % 2 else 0
+        for y in range(size[1])
+        for x in range(size[0])
+    ])
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+
 class DatasetWorkspaceTests(unittest.TestCase):
+    def test_quality_audit_adds_review_flags_without_advancing_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Quality review",
+                "object",
+                "object_x",
+                [
+                    ("dark.png", _image_file("black")),
+                    ("detail.png", _checker_file()),
+                    ("wide.png", _image_file("gray", size=(1000, 200))),
+                ],
+            )
+            progress = []
+            audited = datasets.audit_dataset_quality(
+                root,
+                created["id"],
+                progress_callback=lambda completed, total, current: progress.append(
+                    (completed, total, current)
+                ),
+            )
+
+            self.assertEqual(audited["dataset_revision"], 1)
+            self.assertEqual(audited["quality_audit_result"]["audited"], 3)
+            self.assertEqual(progress[-1][:2], (3, 3))
+            by_name = {item["original_filename"]: item for item in audited["images"]}
+            self.assertIn("very_dark", by_name["dark.png"]["quality"]["flags"])
+            self.assertIn("low_contrast", by_name["dark.png"]["quality"]["flags"])
+            self.assertNotIn("possible_blur", by_name["detail.png"]["quality"]["flags"])
+            self.assertIn("extreme_aspect", by_name["wide.png"]["quality"]["flags"])
+            self.assertEqual(audited["analysis"]["quality_audited_count"], 3)
+            self.assertGreaterEqual(audited["analysis"]["quality_flagged_count"], 2)
+
+    def test_background_quality_job_publishes_audited_dataset(self):
+        with tempfile.TemporaryDirectory() as root:
+            created = datasets.create_dataset(
+                root,
+                "Audit job",
+                "environment",
+                "room_x",
+                [("room.png", _image_file("black"))],
+            )
+            job_id = "quality-test"
+            with main._dataset_quality_lock:
+                main._dataset_quality_jobs[job_id] = {
+                    "job_id": job_id,
+                    "dataset_id": created["id"],
+                    "status": "queued",
+                    "completed": 0,
+                    "total": 1,
+                }
+                main._dataset_quality_cancel_events[job_id] = threading.Event()
+            with patch.object(main, "_datasets_root", return_value=root):
+                main._run_dataset_quality_job(job_id, created["id"])
+
+            with main._dataset_quality_lock:
+                job = dict(main._dataset_quality_jobs[job_id])
+            self.assertEqual(job["status"], "done")
+            self.assertEqual(job["completed"], 1)
+            self.assertEqual(job["dataset"]["analysis"]["quality_audited_count"], 1)
+
     def test_create_dataset_deduplicates_and_analyzes_quick_sources(self):
         with tempfile.TemporaryDirectory() as root:
             first = _image_file("red")

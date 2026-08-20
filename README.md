@@ -59,6 +59,7 @@ expanded and reviewed.
 | Dataset | **Large-dataset review** | Search, filter, and page through up to 2,000 images while retaining unsaved caption drafts across views |
 | Dataset | **Bulk caption drafts** | Prepend, append, find/replace, or clear captions across selected images or the current filtered result, then review before saving |
 | Dataset | **User-controlled sensitive label** | Optional metadata with local preview blurring; no content scanning, prompt rewriting, censorship, or workflow blocking |
+| Dataset | **Technical quality audit** | Background, cancellable review hints for possible blur, extreme lighting, low contrast, and extreme aspect ratios; never removes or blocks images |
 | Dataset | **Reference expansion** | Turn 1–5 source images into reviewable Qwen Image Edit candidates using concept-specific recipes; accepted images alone enter the dataset |
 | Dataset | **Krea 2 LoRA training** | Fast/Balanced/Quality recipes, official Diffusers trainer, live step/loss progress, cancellation, and automatic LoRA registration |
 | Dataset | **Dataset revisions** | Tracks the exact dataset revision and image count used by each LoRA, and warns when later image or caption changes make a run historical |
@@ -150,6 +151,9 @@ Default login: `admin` / `admin` (change in Settings)
 | POST | `/api/datasets/{id}/auto-caption` | Start background captioning for missing captions |
 | GET | `/api/datasets/caption-progress/{job_id}` | Poll dataset caption progress |
 | POST | `/api/datasets/caption-cancel/{job_id}` | Cancel dataset captioning |
+| POST | `/api/datasets/{id}/quality-audit` | Start a non-blocking technical image quality audit |
+| GET | `/api/datasets/quality-progress/{job_id}` | Poll quality audit progress and final review flags |
+| POST | `/api/datasets/quality-cancel/{job_id}` | Cancel an audit after its current image |
 | POST | `/api/datasets/{id}/expansion` | Start reference-guided dataset candidate generation |
 | GET | `/api/expansion/{job_id}` | Poll expansion progress and generated candidate metadata |
 | POST | `/api/expansion/{job_id}/cancel` | Cancel expansion at the next diffusion step |
