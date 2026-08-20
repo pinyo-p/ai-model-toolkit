@@ -253,6 +253,7 @@ class DatasetSettingsPayload(BaseModel):
     name: str
     dataset_type: str
     trigger_word: str = ""
+    sensitive_content: bool | None = None
 
 
 class TrainingStartPayload(BaseModel):
@@ -341,12 +342,14 @@ async def api_create_dataset(
     name: str = Form(...),
     dataset_type: str = Form(...),
     trigger_word: str = Form(""),
+    sensitive_content: bool = Form(False),
     user: str = Depends(get_current_user),
 ):
     try:
         uploads = [(file.filename or "image", file.file) for file in files]
         return dataset_module.create_dataset(
-            _datasets_root(), name, dataset_type, trigger_word, uploads
+            _datasets_root(), name, dataset_type, trigger_word, uploads,
+            sensitive_content=sensitive_content,
         )
     except dataset_module.DatasetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -358,11 +361,13 @@ async def api_import_dataset(
     name: str = Form(""),
     dataset_type: str = Form(""),
     trigger_word: str = Form(""),
+    sensitive_content: bool = Form(False),
     user: str = Depends(get_current_user),
 ):
     try:
         return dataset_module.import_dataset_archive(
-            _datasets_root(), file.file, name, dataset_type, trigger_word
+            _datasets_root(), file.file, name, dataset_type, trigger_word,
+            sensitive_content,
         )
     except dataset_module.DatasetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -394,6 +399,7 @@ async def api_update_dataset_settings(
             payload.name,
             payload.dataset_type,
             payload.trigger_word,
+            payload.sensitive_content,
         )
     except dataset_module.DatasetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

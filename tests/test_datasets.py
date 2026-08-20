@@ -170,19 +170,23 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 root, "Original", "person", "person_x", [("first.png", _image_file("red"))]
             )
             renamed = datasets.update_dataset_settings(
-                root, created["id"], "Renamed", "person", "person_x"
+                root, created["id"], "Renamed", "person", "person_x", True
             )
             self.assertEqual(renamed["name"], "Renamed")
+            self.assertTrue(renamed["sensitive_content"])
             self.assertEqual(renamed["dataset_revision"], 1)
             self.assertFalse(renamed["settings_result"]["training_changed"])
+            self.assertTrue(renamed["settings_result"]["sensitive_changed"])
 
             changed = datasets.update_dataset_settings(
                 root, created["id"], "Renamed", "style", "paint_x"
             )
             self.assertEqual(changed["type"], "style")
             self.assertEqual(changed["trigger_word"], "paint_x")
+            self.assertTrue(changed["sensitive_content"])
             self.assertEqual(changed["dataset_revision"], 2)
             self.assertTrue(changed["settings_result"]["training_changed"])
+            self.assertFalse(changed["settings_result"]["sensitive_changed"])
 
             with self.assertRaisesRegex(datasets.DatasetError, "Unsupported dataset type"):
                 datasets.update_dataset_settings(
@@ -197,6 +201,7 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 "environment",
                 "room_x",
                 [("first.png", _image_file("red")), ("second.png", _image_file("blue"))],
+                sensitive_content=True,
             )
             first = created["images"][0]
             datasets.update_captions(root, created["id"], {first["id"]: "a red room"})
@@ -228,6 +233,7 @@ class DatasetWorkspaceTests(unittest.TestCase):
                 })
                 portable = json.loads(archive.read("dataset-export.json"))
                 self.assertEqual(portable["dataset_revision"], 2)
+                self.assertTrue(portable["sensitive_content"])
                 self.assertNotIn("training_runs", portable)
 
             with archive_path.open("rb") as source:
@@ -236,6 +242,7 @@ class DatasetWorkspaceTests(unittest.TestCase):
             self.assertEqual(restored["name"], "Portable set")
             self.assertEqual(restored["type"], "environment")
             self.assertEqual(restored["trigger_word"], "room_x")
+            self.assertTrue(restored["sensitive_content"])
             self.assertEqual(restored["dataset_revision"], 1)
             self.assertEqual(restored["analysis"]["captioned_count"], 1)
             self.assertEqual(
@@ -372,11 +379,13 @@ class DatasetWorkspaceTests(unittest.TestCase):
                             "name": "Jacket",
                             "dataset_type": "clothing",
                             "trigger_word": "blue_jacket",
+                            "sensitive_content": "true",
                         },
                         files={"files": ("jacket.png", _image_file("navy"), "image/png")},
                     )
                     self.assertEqual(created_response.status_code, 200)
                     created = created_response.json()
+                    self.assertTrue(created["sensitive_content"])
 
                     settings_response = client.put(
                         f"/api/datasets/{created['id']}",
@@ -384,10 +393,12 @@ class DatasetWorkspaceTests(unittest.TestCase):
                             "name": "Jacket study",
                             "dataset_type": "clothing",
                             "trigger_word": "blue_jacket",
+                            "sensitive_content": True,
                         },
                     )
                     self.assertEqual(settings_response.status_code, 200, settings_response.text)
                     self.assertEqual(settings_response.json()["name"], "Jacket study")
+                    self.assertTrue(settings_response.json()["sensitive_content"])
 
                     export_response = client.post(
                         f"/api/datasets/{created['id']}/export"

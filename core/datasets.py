@@ -275,6 +275,7 @@ def create_dataset(
     trigger_word: str,
     uploads: list[tuple[str, object]],
     initial_captions: list[str] | None = None,
+    sensitive_content: bool = False,
 ) -> dict:
     name = name.strip()
     dataset_type = dataset_type.strip().lower()
@@ -304,6 +305,7 @@ def create_dataset(
         "name": name[:120],
         "type": dataset_type,
         "trigger_word": trigger_word[:120],
+        "sensitive_content": sensitive_content is True,
         "created_at": _utc_now(),
         "updated_at": _utc_now(),
         "dataset_revision": 1,
@@ -513,6 +515,7 @@ def update_dataset_settings(
     name: str,
     dataset_type: str,
     trigger_word: str,
+    sensitive_content: bool | None = None,
 ) -> dict:
     name = str(name).strip()
     dataset_type = str(dataset_type).strip().lower()
@@ -529,7 +532,13 @@ def update_dataset_settings(
             trigger_word = dataset_id.replace("-", "_")
         new_name = name[:120]
         new_trigger = trigger_word[:120]
-        metadata_changed = manifest.get("name") != new_name
+        new_sensitive = (
+            bool(manifest.get("sensitive_content", False))
+            if sensitive_content is None
+            else sensitive_content is True
+        )
+        sensitive_changed = bool(manifest.get("sensitive_content", False)) != new_sensitive
+        metadata_changed = manifest.get("name") != new_name or sensitive_changed
         training_changed = (
             manifest.get("type") != dataset_type
             or manifest.get("trigger_word") != new_trigger
@@ -538,6 +547,7 @@ def update_dataset_settings(
             manifest["name"] = new_name
             manifest["type"] = dataset_type
             manifest["trigger_word"] = new_trigger
+            manifest["sensitive_content"] = new_sensitive
             if training_changed:
                 _advance_dataset_revision(manifest)
             _save_manifest(manifest_path, manifest)
@@ -546,6 +556,7 @@ def update_dataset_settings(
     result["settings_result"] = {
         "changed": metadata_changed or training_changed,
         "training_changed": training_changed,
+        "sensitive_changed": sensitive_changed,
     }
     return result
 
@@ -610,6 +621,7 @@ def create_dataset_export(
                     "name": manifest.get("name"),
                     "type": manifest.get("type"),
                     "trigger_word": manifest.get("trigger_word"),
+                    "sensitive_content": bool(manifest.get("sensitive_content", False)),
                     "dataset_revision": _dataset_revision(manifest),
                     "created_at": manifest.get("created_at"),
                     "exported_at": _utc_now(),
@@ -655,6 +667,7 @@ def _import_imagefolder_zip(
     name: str,
     dataset_type: str,
     trigger_word: str,
+    sensitive_content: bool,
     opened_members: list,
 ) -> tuple[dict, dict]:
     if not str(name).strip():
@@ -747,6 +760,7 @@ def _import_imagefolder_zip(
         str(trigger_word),
         uploads,
         initial_captions=captions,
+        sensitive_content=sensitive_content,
     )
     return result, {
         "imported": result["analysis"]["image_count"],
@@ -762,6 +776,7 @@ def import_dataset_archive(
     name: str = "",
     dataset_type: str = "",
     trigger_word: str = "",
+    sensitive_content: bool = False,
 ) -> dict:
     try:
         archive_source.seek(0)
@@ -793,7 +808,8 @@ def import_dataset_archive(
         )
         if manifest_info is None:
             result, import_result = _import_imagefolder_zip(
-                root, archive, infos, name, dataset_type, trigger_word, opened_members
+                root, archive, infos, name, dataset_type, trigger_word,
+                sensitive_content, opened_members
             )
             result["import_result"] = import_result
             return result
@@ -809,6 +825,9 @@ def import_dataset_archive(
             raise DatasetError("Unsupported dataset export version")
         if not isinstance(exported.get("name"), str) or not exported["name"].strip():
             raise DatasetError("Dataset export name is invalid")
+        exported_sensitive = exported.get("sensitive_content", False)
+        if not isinstance(exported_sensitive, bool):
+            raise DatasetError("Dataset export sensitive-content flag is invalid")
 
         exported_images = exported.get("images")
         if not isinstance(exported_images, list) or not 1 <= len(exported_images) <= MAX_IMAGES:
@@ -853,6 +872,7 @@ def import_dataset_archive(
             str(exported.get("trigger_word", "")),
             uploads,
             initial_captions=captions,
+            sensitive_content=exported_sensitive,
         )
     except DatasetError:
         raise

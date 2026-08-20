@@ -189,6 +189,8 @@
         .dataset-bulk-caption-controls input,.dataset-bulk-caption-controls select { width:auto;min-width:130px;padding:7px 9px;font-size:11px; }
         .dataset-bulk-caption-controls .bulk-caption-value { flex:1 1 240px; }
         .dataset-bulk-caption-target { color:#7fa0b8;font-size:11px; }
+        .dataset-sensitive-label { color:#ffb86b; }
+        .sensitive-preview { filter:blur(14px);transform:scale(1.06); }
         .dataset-empty { color:#3a5a7a;text-align:center;padding:38px 16px;border:1px dashed #1a2a3a;border-radius:9px; }
         .training-panel { margin:14px 0;padding:16px;background:#0b121c;border:1px solid #1b3042;border-radius:10px; }
         .training-recipe-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0; }
@@ -600,6 +602,10 @@
                             </div>
                         </div>
                     </div>
+                    <div class="form-group" style="padding:9px 10px;background:#0b121c;border:1px solid #1a2a3a;border-radius:7px;">
+                        <label style="display:flex;align-items:center;gap:8px;margin:0;color:#b8cde0;cursor:pointer;"><input id="dataset-sensitive" type="checkbox" style="width:auto;"> Sensitive content</label>
+                        <div style="color:#55748d;font-size:10px;margin-top:5px;">Optional user label only. AI Toolkit does not scan, censor, or block content.</div>
+                    </div>
                     <div class="form-group">
                         <label>Source images (1–2,000)</label>
                         <input type="file" id="dataset-files" accept="image/jpeg,image/png,image/webp,image/tiff,image/bmp" multiple>
@@ -609,7 +615,7 @@
                     <div id="dataset-create-status" style="font-size:12px;margin-top:10px;color:#5a7a9a;"></div>
                     <div style="border-top:1px solid #1a2a3a;margin:16px 0 13px;padding-top:13px;">
                         <label style="color:#8aa8bf;font-size:12px;">Import portable or ImageFolder ZIP</label>
-                        <div style="color:#47677f;font-size:10px;margin-top:3px;">External ZIPs use the name, LoRA type, and trigger fields above. Supports matching .txt captions or metadata.jsonl.</div>
+                        <div style="color:#47677f;font-size:10px;margin-top:3px;">External ZIPs use the name, LoRA type, trigger, and sensitive label above. Supports matching .txt captions or metadata.jsonl.</div>
                         <input id="dataset-import-file" type="file" accept=".zip,application/zip" style="margin:7px 0;">
                         <button id="dataset-import-btn" class="btn btn-sm btn-ghost" onclick="importDatasetWorkspace()">Import ZIP</button>
                     </div>
@@ -657,7 +663,11 @@
                         <div class="col"><label>LoRA type</label><select id="dataset-settings-type"><option value="person">Person / character</option><option value="style">Visual style</option><option value="clothing">Clothing</option><option value="environment">Room / environment</option><option value="vehicle">Vehicle</option><option value="object">Object</option></select></div>
                         <div class="col"><label>Trigger word</label><input id="dataset-settings-trigger" maxlength="120" placeholder="Auto-generated if blank"></div>
                     </div>
-                    <div style="color:#55748d;font-size:11px;margin:8px 0 10px;">Changing LoRA type or trigger word creates a new dataset revision. Renaming does not.</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;">
+                        <label style="display:flex;align-items:center;gap:7px;color:#b8cde0;cursor:pointer;"><input id="dataset-settings-sensitive" type="checkbox" style="width:auto;"> Sensitive content <span style="color:#55748d;font-size:10px;">metadata only</span></label>
+                        <label style="display:flex;align-items:center;gap:7px;color:#b8cde0;cursor:pointer;"><input id="dataset-blur-sensitive" type="checkbox" style="width:auto;" onchange="setDatasetSensitivePreviewPreference(this.checked)"> Blur sensitive previews on this browser</label>
+                    </div>
+                    <div style="color:#55748d;font-size:11px;margin:8px 0 10px;">No automatic detection or workflow blocking. Type/trigger changes create a revision; name and sensitive label changes do not.</div>
                     <div style="display:flex;gap:8px;"><button id="dataset-settings-save" class="btn btn-sm btn-success" onclick="saveDatasetSettings()">Save settings</button><button class="btn btn-sm btn-ghost" onclick="toggleDatasetSettings(false)">Cancel</button></div>
                 </div>
                 <div id="dataset-caption-progress" style="display:none;margin-bottom:12px;color:#00d4ff;font-size:12px;"></div>
@@ -2413,6 +2423,7 @@
         var datasetCaptionSaveActive = false;
         var datasetCandidateUrls = [];
         var renderedExpansionKey = '';
+        var DATASET_SENSITIVE_BLUR_KEY = 'ai-toolkit-blur-sensitive-previews';
 
         window.addEventListener('beforeunload', function(event) {
             if (!datasetCaptionDrafts.size && !datasetCaptionSaveActive) return;
@@ -2438,6 +2449,25 @@
             })[status] || status;
         }
 
+        function datasetSensitivePreviewPreference() {
+            try { return localStorage.getItem(DATASET_SENSITIVE_BLUR_KEY) === 'true'; }
+            catch (e) { return false; }
+        }
+
+        function shouldBlurDatasetPreviews() {
+            return !!(activeDatasetData && activeDatasetData.sensitive_content && datasetSensitivePreviewPreference());
+        }
+
+        function setDatasetSensitivePreviewPreference(checked) {
+            try { localStorage.setItem(DATASET_SENSITIVE_BLUR_KEY, checked ? 'true' : 'false'); }
+            catch (e) {}
+            var input = document.getElementById('dataset-blur-sensitive');
+            if (input) input.checked = !!checked;
+            document.querySelectorAll('.dataset-thumb,.expansion-thumb,.eval-protected-image').forEach(function(image) {
+                image.classList.toggle('sensitive-preview', shouldBlurDatasetPreviews());
+            });
+        }
+
         async function loadDatasets(selectId) {
             var list = document.getElementById('dataset-list');
             if (!list) return;
@@ -2456,7 +2486,8 @@
                     return '<div class="dataset-item' + active + '" data-dataset-id="' + escapeHtml(item.id) + '" onclick="openDataset(\'' + escapeHtml(item.id) + '\')">' +
                         '<div class="dataset-item-head"><span class="dataset-item-name">' + escapeHtml(item.name) + '</span>' +
                         '<span class="dataset-badge ' + escapeHtml(analysis.status || '') + '">' + escapeHtml(datasetStatusLabel(analysis.status || '')) + '</span></div>' +
-                        '<div class="dataset-meta"><span>' + escapeHtml(item.type) + '</span><span>' + (analysis.image_count || 0) + ' images</span><span>' + (analysis.captioned_count || 0) + ' captioned</span></div></div>';
+                        '<div class="dataset-meta"><span>' + escapeHtml(item.type) + '</span><span>' + (analysis.image_count || 0) + ' images</span><span>' + (analysis.captioned_count || 0) + ' captioned</span>' +
+                        (item.sensitive_content ? '<span class="dataset-sensitive-label">Sensitive · user labelled</span>' : '') + '</div></div>';
                 }).join('');
             } catch (e) {
                 list.innerHTML = '<div class="dataset-empty error">' + escapeHtml(e.message) + '</div>';
@@ -2476,6 +2507,7 @@
             formData.append('name', name);
             formData.append('dataset_type', document.getElementById('dataset-type').value);
             formData.append('trigger_word', document.getElementById('dataset-trigger').value.trim());
+            formData.append('sensitive_content', document.getElementById('dataset-sensitive').checked ? 'true' : 'false');
             button.disabled = true;
             status.innerHTML = '<span class="loading">Validating and importing ' + files.length + ' images…</span>';
             try {
@@ -2505,6 +2537,7 @@
             formData.append('name', document.getElementById('dataset-name').value.trim());
             formData.append('dataset_type', document.getElementById('dataset-type').value);
             formData.append('trigger_word', document.getElementById('dataset-trigger').value.trim());
+            formData.append('sensitive_content', document.getElementById('dataset-sensitive').checked ? 'true' : 'false');
             button.disabled = true;
             button.textContent = 'Importing…';
             status.innerHTML = '<span class="loading">Validating and restoring dataset…</span>';
@@ -2653,6 +2686,8 @@
                 document.getElementById('dataset-settings-name').value = activeDatasetData.name || '';
                 document.getElementById('dataset-settings-type').value = activeDatasetData.type || 'person';
                 document.getElementById('dataset-settings-trigger').value = activeDatasetData.trigger_word || '';
+                document.getElementById('dataset-settings-sensitive').checked = !!activeDatasetData.sensitive_content;
+                document.getElementById('dataset-blur-sensitive').checked = datasetSensitivePreviewPreference();
             }
         }
 
@@ -2671,7 +2706,8 @@
                     body:JSON.stringify({
                         name:name,
                         dataset_type:document.getElementById('dataset-settings-type').value,
-                        trigger_word:document.getElementById('dataset-settings-trigger').value.trim()
+                        trigger_word:document.getElementById('dataset-settings-trigger').value.trim(),
+                        sensitive_content:document.getElementById('dataset-settings-sensitive').checked
                     })
                 });
                 if (!response.ok) throw new Error(await datasetResponseError(response));
@@ -2735,8 +2771,11 @@
                 document.getElementById('dataset-settings-name').value = dataset.name || '';
                 document.getElementById('dataset-settings-type').value = dataset.type || 'person';
                 document.getElementById('dataset-settings-trigger').value = dataset.trigger_word || '';
+                document.getElementById('dataset-settings-sensitive').checked = !!dataset.sensitive_content;
+                document.getElementById('dataset-blur-sensitive').checked = datasetSensitivePreviewPreference();
             }
-            document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') + ' · ' + analysis.next_action +
+            document.getElementById('dataset-detail-meta').textContent = dataset.type + (dataset.trigger_word ? ' · trigger: ' + dataset.trigger_word : '') +
+                (dataset.sensitive_content ? ' · Sensitive: user labelled' : '') + ' · ' + analysis.next_action +
                 (trainingState.status === 'current' ? ' · latest LoRA matches this dataset' :
                     trainingState.status === 'stale' ? ' · dataset changed since latest LoRA' :
                     trainingState.status === 'legacy' ? ' · latest LoRA dataset version unknown' : '');
@@ -2774,6 +2813,7 @@
             renderDatasetEvaluationHistory(dataset);
 
             renderDatasetImages();
+            setDatasetSensitivePreviewPreference(datasetSensitivePreviewPreference());
         }
 
         function effectiveDatasetCaption(image) {
@@ -2950,8 +2990,9 @@
                 : 'No images match this search or filter.';
             document.getElementById('dataset-image-rows').innerHTML = visibleImages.map(function(image) {
                 var checked = datasetSelectedImageIds.has(image.id) ? ' checked' : '';
+                var sensitiveClass = shouldBlurDatasetPreviews() ? ' sensitive-preview' : '';
                 return '<tr><td><input class="dataset-image-select" type="checkbox" data-image-id="' + escapeHtml(image.id) + '" onchange="toggleDatasetImageSelection(this)" aria-label="Select ' + escapeHtml(image.original_filename) + '"' + checked + '></td>' +
-                    '<td><img class="dataset-thumb" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
+                    '<td><img class="dataset-thumb' + sensitiveClass + '" data-image-id="' + escapeHtml(image.id) + '" alt=""></td>' +
                     '<td><div style="color:#dcecff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(image.original_filename) + '">' + escapeHtml(image.original_filename) + '</div>' +
                     '<div style="color:#3f607a;margin-top:4px;">' + image.width + '×' + image.height + ' · ' + escapeHtml(image.format) + '</div></td>' +
                     '<td><textarea class="dataset-caption" data-image-id="' + escapeHtml(image.id) + '" maxlength="4000" oninput="updateDatasetCaptionDraft(this)" placeholder="Describe what should remain variable…">' + escapeHtml(effectiveDatasetCaption(image)) + '</textarea></td></tr>';
@@ -3306,10 +3347,11 @@
             }
             container.innerHTML = candidates.map(function(candidate) {
                 var pending = candidate.status === 'pending';
+                var sensitiveClass = shouldBlurDatasetPreviews() ? ' sensitive-preview' : '';
                 return '<label class="expansion-card ' + escapeHtml(candidate.status || 'pending') + '">' +
                     (pending ? '<input class="expansion-card-select" type="checkbox" value="' + escapeHtml(candidate.id) + '">' : '') +
                     '<span class="expansion-card-status">' + escapeHtml(candidate.status || 'pending') + '</span>' +
-                    '<img class="expansion-thumb" data-candidate-id="' + escapeHtml(candidate.id) + '" alt="Expansion candidate">' +
+                    '<img class="expansion-thumb' + sensitiveClass + '" data-candidate-id="' + escapeHtml(candidate.id) + '" alt="Expansion candidate">' +
                     '<div class="expansion-card-meta">Seed ' + candidate.seed + '<br>' + escapeHtml(candidate.caption || '') + '</div></label>';
             }).join('');
             document.getElementById('dataset-expansion-review').style.display = candidates.some(function(item) { return item.status === 'pending'; }) ? 'flex' : 'none';
